@@ -68,7 +68,7 @@ def sent_cc(L, n0):
 
 
 # ------------------------------------------------------------------------------------------------ 0 the tags
-check('local PV = "m199"' in SRC["padmap"] and "m190 THE SWING WITH OUR TOP CAST BAR" in SRC["padmap"]
+check('local PV = "m200"' in SRC["padmap"] and "m190 THE SWING WITH OUR TOP CAST BAR" in SRC["padmap"]
       and "m187 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["padmap"]
       and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap m190 (m187's and m179's notes kept)")
 check('local BV = "b86"' in SRC["book"] and "b77 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["book"]

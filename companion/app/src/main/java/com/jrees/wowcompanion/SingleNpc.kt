@@ -23,6 +23,8 @@ object SingleNpc {
     const val TOOL = "tool"
     const val ROLLS = "rolls"
     const val LB = "lb"
+    /** the waiting page's row with the game screen up (SingleLook row 2b; the review 2026-11-25) */
+    const val START = "start"
 
     /** the screen's edge kept free (the docks' own margin) */
     const val EDGE = 16
@@ -99,6 +101,17 @@ object SingleNpc {
         return floatArrayOf(rw / 2f, LB_PAD * k(h), s)
     }
 
+    /**
+     * THE WAITING PAGE'S ROW over the game (SingleLook row 2b): the centred box's width at the screen's foot, [START_H] high - StartView
+     * draws its row from its own bottom in its own px (the line's panel 40 px up, the sign-in row over it, the region line over that:
+     * 334 px at most), so the height is never scaled down
+     */
+    fun startRect(w: Int, h: Int): IntArray {
+        val box = SingleScreen.panelBox(w, h)
+        return intArrayOf(box[0], h - START_H.coerceAtMost(h), box[2], h)
+    }
+    const val START_H = 352
+
     /** the type tool's strip for its tab ([tab] 0 = the Track Pad, 1 = the Keyboard) */
     fun toolRect(tab: Int, w: Int, h: Int, kbH: Int): IntArray = if (tab == 1) keysRect(w, h, kbH) else padRect(w, h)
 
@@ -136,7 +149,7 @@ object SingleNpc {
     }
 
     fun dimTap(i: SingleLook.In): Dim = when {
-        i.startPages || i.report || i.npc || (i.dialog && !i.fightRolls) || i.spells -> Dim.KEEP
+        i.startPages || i.report || i.npc || (i.dialog && !i.fightRolls) || i.spells || i.waiting -> Dim.KEEP
         i.pause -> Dim.CORE                                      // the wheel reads its own (a tap beside it closes it)
         i.room != SingleLook.HOME -> Dim.CORE
         i.glanceHub || i.homeSub -> Dim.CORE

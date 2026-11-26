@@ -9,6 +9,10 @@ package com.jrees.wowcompanion
  *  1 the launch swirl covers the screen                       HIDDEN
  *  2 start pages, the report, an NPC window, a game dialog,
  *    the Spellbook's Bind box                                 FULL 0.55, touch, the room column if a room is open (else Home's glance)
+ *  2b the waiting page with the game screen up (a logout,
+ *    a disconnect, a reload, "Loading your character")       HIDDEN, the strip "start": the page's own row (its line, Menu, Keyboard,
+ *                                                            the sign-in row) along the screen's foot - the game's login screen and
+ *                                                            character select stay the player's (the review, 2026-11-25)
  *  3 the pause wheel                                          FULL 0.55, touch, the same
  *  4 the top-screen layout editor (over Settings)            FULL 0.25, touch, ROOM: the pieces it moves show at the sides (NPC)
  *  4 a room (not Home)                                        FULL 0.55, touch, ROOM
@@ -37,9 +41,11 @@ object SingleLook {
         val classWheel: Boolean = false, val lb: Boolean = false, val tool: Int = -1,
         /** NPC: the top-screen layout editor (LayoutView) is open over the Settings room */
         val layoutEdit: Boolean = false,
+        /** the waiting page (StartView) with the game screen up and its Menu shut (the host's singleWaiting) */
+        val waiting: Boolean = false,
     )
 
-    /** what the top window does: [strip] = null, "tool", "rolls" or "lb" (NPC: SingleNpc's strip window) */
+    /** what the top window does: [strip] = null, "tool", "rolls", "lb" (NPC: SingleNpc's strip window) or "start" (the waiting page) */
     data class Look(val frame: Frame, val dim: Float, val touchable: Boolean, val root: Root, val docks: Boolean, val strip: String? = null) {
         /** the PLAY state: nothing of ours over the game */
         val play: Boolean get() = frame == Frame.HIDDEN && strip == null && root == Root.GONE && docks
@@ -60,6 +66,7 @@ object SingleLook {
             i.launchCover -> COVERED                                                                          // 1
             i.startPages || i.report || i.npc || (i.dialog && !i.fightRolls) || i.spells ->
                 Look(Frame.FULL, DIM_PANEL, true, under, docks = false)                                       // 2
+            i.waiting -> Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = false, strip = SingleNpc.START)     // 2b
             i.pause -> Look(Frame.FULL, DIM_PANEL, true, under, docks = false)                                // 3
             inRoom && i.layoutEdit -> Look(Frame.FULL, DIM_QUICK, true, Root.ROOM, docks = false)             // 4 NPC (the layout editor)
             inRoom -> Look(Frame.FULL, DIM_PANEL, true, Root.ROOM, docks = false)                             // 4

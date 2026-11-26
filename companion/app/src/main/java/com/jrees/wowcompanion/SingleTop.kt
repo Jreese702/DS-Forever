@@ -14,6 +14,8 @@ package com.jrees.wowcompanion
  * EditPreview's pattern: want = [SingleScreen.inUse] (every host runs it: the two-screen host sends OFF while `ss` says 1); sent out of
  * combat only, re-sent every [RESEND_MS] until `ss` says it (at most [TRIES] a wish), renewed every [RENEW_MS] (before the lease ends);
  * the four taps [GAP_MS] apart (TapSpacing.MIN_MS: code 0 right after the prefix's cell 0 would fall in TapPad's 0.25 s repeat guard).
+ * THE REVIEW (2026-11-25): a lease this host did not send (a new host: every switch, every launcher resume) is renewed at once out of a
+ * fight - the old host's lease may lapse before RENEW_MS from the new host's first sighting; PadMap m200 says a lapsed lease at once.
  * Pure.
  */
 object SingleTop {
@@ -40,17 +42,18 @@ object SingleTop {
     }
 
     /** [want] the mode (SingleScreen.inUse), [ss] the add-on's (null = an older add-on), [inFight] a fight now, [sinceSendMs] since this
-     *  wish's last send (null = none yet) */
+     *  host's last send of this wish (null = none yet: a mode shown on would be a lease this host never sent - renewed now) */
     fun decide(want: Boolean, ss: Int?, inFight: Boolean, sinceSendMs: Long?): Act {
         if (ss == null) return Act.Wait
         val shows = ss == 1
-        if (shows == want) return if (want && !inFight && sinceSendMs != null && sinceSendMs >= RENEW_MS) Act.Send(true) else Act.Matched
+        if (shows == want) return if (want && !inFight && (sinceSendMs == null || sinceSendMs >= RENEW_MS)) Act.Send(true) else Act.Matched
         if (inFight || (sinceSendMs != null && sinceSendMs < RESEND_MS)) return Act.Wait
         return Act.Send(want)
     }
 
-    /** how long from [now] until a mode still on is renewed: [RENEW_MS] after its send / first sighting [since] (null: from now) */
-    fun renewDelay(now: Long, since: Long?): Long = maxOf(1_000L, (since ?: now) + RENEW_MS - now)
+    /** how long from [now] until a mode still on is looked at again: [RENEW_MS] after this host's send [since]; none of its own yet
+     *  (null: in a fight, a lease it did not send) = [RESEND_MS] (renewed once the fight ends) */
+    fun renewDelay(now: Long, since: Long?): Long = if (since == null) RESEND_MS else maxOf(1_000L, since + RENEW_MS - now)
 
     /** the taps for the mode [on] */
     fun cells(on: Boolean): List<Pair<String, Int>> = PadMapModel.singleCells(on)

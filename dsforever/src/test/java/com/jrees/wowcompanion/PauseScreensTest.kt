@@ -73,6 +73,27 @@ class PauseScreensTest {
         assertTrue(host.contains("pauseView.screensRefusal = { SingleScreen.refusal(singleAsk()) }"))
     }
 
+    /**
+     * THE REVIEW (2026-11-25): Edit (X) in a fight in single screen mode refused where nothing showed it (Home's pencils flash on Home's
+     * page, which is not drawn while playing): the wheel's own red line says it and the wheel stays; two screens: no refusal of the
+     * wheel's (Edit Home's own pencils, as before)
+     */
+    @Test fun editsRefusalOnTheWheelInSingleScreenMode() {
+        val press = view.substringAfter("private fun editPress(how: String) {").substringBefore("\n    }")
+        assertTrue("refused: the red line, the wheel stays", press.indexOf("editRefusal()?.let {") in 0 until press.indexOf("close(\"Edit"))
+        assertTrue("two screens: none", view.contains("var editRefusal: () -> String? = { null }"))
+        assertTrue(host.contains("if (single != null) pauseView.editRefusal = { if (homeView.fightShown()) SingleScreen.NOT_FIGHT else null }"))
+    }
+
+    /** THE REVIEW (2026-11-25): the refusal is read again after the wait for the wheel's controller (a fight can begin in it) */
+    @Test fun theSwitchReadsTheRefusalAgainAfterTheWait() {
+        val sw = host.substringAfter("private fun singleSwitch(on: Boolean, why: String) {").substringBefore("\n    /**")
+        val go = sw.substringAfter("fun go() {")
+        assertTrue(go.indexOf("SingleScreen.refusal(singleAsk())?.let {") in 0 until go.indexOf("SingleScreen.request?.invoke(on, why)"))
+        // the review: back to two screens while an activity of ours is up on the other screen = refused (the new bottom window covered it)
+        assertTrue(host.contains("bottomBusy = single != null && SingleScreen.keysPaused,"))
+    }
+
     @Test fun theTwoPictures() {
         val draw = kit.substringAfter("fun pauseScreens(c: Canvas").substringBefore("\n    }")
         assertTrue("the red plate, pressed like the others", draw.contains("buttonPlate(c, r, if (down) Button.DOWN else Button.UP)") && draw.contains("pressed(c, r, down)"))

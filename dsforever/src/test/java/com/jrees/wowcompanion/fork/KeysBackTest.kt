@@ -72,6 +72,26 @@ class KeysBackTest {
             "android.permission.WAKE_LOCK"), perms)
     }
 
+    /**
+     * THE REVIEW (2026-11-25, "the keys hint can't be followed under a panel"): our windows are never focusable, so a tap on them never
+     * moves Android's keys back (WMS moves a display to the top only for a window that takes keys), and a panel covers all of display 0.
+     * While the other screen has the keys, a touch DOWN on the top window or a small one is the player's wish to play here: the game's
+     * task to the front (the one-second gap coalesces)
+     */
+    @Test fun aTouchOnOurWindowsTakesTheKeysBack() {
+        val src = source()
+        val hook = src.substringAfter("internal fun ourTouch() {").substringBefore("\n    }")
+        assertTrue(hook.contains("if (!singleKeysAway()) return") && hook.contains("gameToFront(\"one screen: a touch on our window\")"))
+        val top = source("TopWindow.kt").substringAfter("override fun dispatchTouchEvent(ev: MotionEvent): Boolean {").substringBefore("\n    }")
+        assertTrue(top.contains("if (ev.actionMasked == MotionEvent.ACTION_DOWN) screen.ourTouch()"))
+        val sub = source("SingleSub.kt")
+        assertTrue(sub.contains("override fun dispatchTouchEvent(ev: MotionEvent): Boolean {") &&
+            sub.contains("if (ev.actionMasked == MotionEvent.ACTION_DOWN) onDown()"))
+        assertTrue("the top window's small ones carry the hook", source("TopWindow.kt").contains("SubWindow(activity, id) { screen.ourTouch() }"))
+        // the plate's priorities: a timed note over the stuck words never ends them (SingleScreen.Plate)
+        assertTrue(source("TopWindow.kt").contains("private val plate = SingleScreen.Plate()"))
+    }
+
     private fun source(name: String = "DsForeverScreen.kt"): String =
         listOf("src/main/java/com/jrees/wowcompanion/fork/$name", "dsforever/src/main/java/com/jrees/wowcompanion/fork/$name")
             .map { java.io.File(it) }.first { it.canRead() }.readText()

@@ -57,13 +57,17 @@ object SingleScreen {
     fun switchedLately(now: Long, ms: Long = HEAL_MS): Boolean = changes > 0 && changedAt != 0L && now - changedAt in 0..ms
     const val HEAL_MS = 10_000L
 
-    /** what the button's switch would meet now (the host reads each) */
-    data class Ask(val swapInUse: Boolean, val streaming: Boolean, val loading: Boolean, val inWorld: Boolean, val fight: Boolean)
+    /** what the button's switch would meet now (the host reads each). [bottomBusy] = single screen mode with one of our activities up on
+     *  the other screen (keysPaused: the voice question, the frame-gen picker, the add-on import): the review (2026-11-25) - two screens'
+     *  new bottom window would cover it, out of reach (a Presentation sits above activities), the Chat voice page deaf */
+    data class Ask(val swapInUse: Boolean, val streaming: Boolean, val loading: Boolean, val inWorld: Boolean, val fight: Boolean,
+                   val bottomBusy: Boolean = false)
 
     const val SWAP_FIRST = "Turn Swap screens Off first"
     const val NOT_STREAMING = "Not while streaming"
     const val NOT_LOADING = "Not while loading"
     const val NOT_FIGHT = "Not in a fight"
+    const val BOTTOM_FIRST = "Close the bottom screen's window first"
 
     /** null = the switch may go; else the words the wheel shows on its red line (the first that applies, in this order; both directions) */
     fun refusal(a: Ask): String? = when {
@@ -71,6 +75,7 @@ object SingleScreen {
         a.streaming -> NOT_STREAMING
         a.loading || !a.inWorld -> NOT_LOADING
         a.fight -> NOT_FIGHT
+        a.bottomBusy -> BOTTOM_FIRST
         else -> null
     }
 
@@ -138,8 +143,24 @@ object SingleScreen {
     const val SWITCH_HOLD_MAX_MS = 5_000L
     /** a second screen came during a fight on a one-screen start: looked at again this often */
     const val DEVICE_RETRY_MS = 2_000L
+    /** the review (2026-11-25): a one-screen start waits this long with nothing but display 0 before single screen mode goes on by itself
+     *  (a second screen listed late at the start is no one-screen device: the Thor starts with two screens) */
+    const val ONE_GRACE_MS = 3_000L
     /** the host's safety look at what shows ([SingleLook]) while the mode is on */
     const val LOOK_POLL_MS = 100L
+
+    /**
+     * THE HINT PLATE'S WORDS (TopWindow's one plate; the review 2026-11-25: a later note replaced "Tap the game for the controller" and its
+     * timer hid the plate while the keys were still away): [set] with ms 0 = PINNED until cleared (null clears it), ms > 0 = a TIMED note
+     * over it; when the timed one ends ([timedEnd]) the pinned words come back. Each answer = the words to show now (null = none). Pure
+     */
+    class Plate {
+        var pinned: String? = null; private set
+        var timed: String? = null; private set
+        fun set(text: String?, ms: Long): String? { if (ms > 0L) timed = text else pinned = text; return now() }
+        fun timedEnd(): String? { timed = null; return now() }
+        fun now(): String? = timed ?: pinned
+    }
 
     /** tests */
     internal fun reset() {

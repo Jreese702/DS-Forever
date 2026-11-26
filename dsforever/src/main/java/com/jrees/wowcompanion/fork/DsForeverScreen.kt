@@ -105,6 +105,10 @@ class DsForeverScreen(private val context: Context) {
         Log.i(TAG, "start (launcher on display ${gameDisplay()})")
     }
 
+    /** the launcher's activity is being made again for a configuration change ([end]): the game keeps running, so the button's single
+     *  screen mode stays (the review 2026-11-25: a reopen from the bottom screen's icon moved the activity between the two panels) */
+    private var relaunching = false
+
     fun stop() {
         detachGame()
         running = false
@@ -189,8 +193,9 @@ class DsForeverScreen(private val context: Context) {
         // #568: the indoor maps may build from now on (once nobody looks at the launcher); a step that ended meanwhile starts again
         runCatching { com.jrees.wowcompanion.IndoorSchedulerStep.gameClosed(context) }
         Log.i(TAG, "game detached")
-        // single screen mode ends with the game (every start is two screens): the start pages before Play are the bottom screen's again
-        if (singleOffAtGameEnd(SingleScreen.why)) {
+        // single screen mode ends with the game (every start is two screens): the start pages before Play are the bottom screen's again;
+        // a configuration relaunch is no end of the game (the new activity's DS Forever opens the top window again)
+        if (singleOffAtGameEnd(SingleScreen.why, relaunching)) {
             SingleScreen.set(false, null, android.os.SystemClock.uptimeMillis())
             com.jrees.wowcompanion.DiagLog.event("app", "screens: one screen off (the game ended)")
             keysCancel()
@@ -275,9 +280,23 @@ class DsForeverScreen(private val context: Context) {
         // #232: the display ids chosen, in the problem report (ScreenSwap.line) and once per change in DS Forever's own log
         if (ScreenSwap.note(ScreenSwap.placement(game, pickId, pick?.activity == true, seen)))
             com.jrees.wowcompanion.DiagLog.event("app", "screens: ${ScreenSwap.last}" + if (swap) " (Swap screens)" else "")
+        // SINGLE SCREEN MODE, the review (2026-11-25): the launcher's activity off display 0 in the mode (a reopen from the bottom launcher's
+        // icon: moveToTop's move to display 0 is under way) - nothing opened or changed now (a window made there takes the bottom screen's
+        // size, the button would hide); the move's resume / relaunch runs update() again, and so does a short look again here
+        if (singleWaitsForTop(SingleScreen.inUse, swap, game)) {
+            if (shown != null) { shown?.close(); shown = null; companionGone() }
+            if (topTries++ < TOP_TRIES) { main.removeCallbacks(topRetry); main.postDelayed(topRetry, TOP_RETRY_MS) }
+            Log.i(TAG, "one screen: the launcher is on display $game, waiting for its move to the top screen")
+            return
+        }
+        topTries = 0
         // SINGLE SCREEN MODE (SingleScreen): a device with nothing but display 0 runs it by itself (the user's pick "Yes, automatically"),
-        // a second screen that comes ends that (never in a fight: looked at again a moment later); the button shows with a second screen
-        when (singleStep(pick != null, game, swap, SingleScreen.why, SingleScreen.fightNow())) {
+        // a second screen that comes ends that (never in a fight: looked at again a moment later); the button shows with a second screen.
+        // The review (2026-11-25): only a device that HAS one screen - a second screen seen once in this process (the Thor's bottom
+        // screen, gone a moment: USB-C, a display restart) keeps the two-screen way (the bottom window closed, as in 566d3ece1), and a
+        // one-screen start waits SingleScreen.ONE_GRACE_MS (a second screen listed late)
+        if (pick != null) sawSecond = true
+        when (singleStep(pick != null, game, swap, SingleScreen.why, SingleScreen.fightNow(), sawSecond, oneForMs(pick == null, android.os.SystemClock.uptimeMillis()))) {
             SingleStep.DEVICE_ON -> {
                 SingleScreen.set(true, SingleScreen.Why.DEVICE, android.os.SystemClock.uptimeMillis())
                 com.jrees.wowcompanion.DiagLog.event("app", "screens: one screen on (no other screen than the game's)")
@@ -287,11 +306,13 @@ class DsForeverScreen(private val context: Context) {
                 com.jrees.wowcompanion.DiagLog.event("app", "screens: one screen off (a second screen came)")
             }
             SingleStep.RETRY -> { main.removeCallbacks(deviceRetry); main.postDelayed(deviceRetry, SingleScreen.DEVICE_RETRY_MS) }
+            SingleStep.WAIT -> { main.removeCallbacks(deviceRetry); main.postDelayed(deviceRetry, SingleScreen.ONE_GRACE_MS) }
             SingleStep.NONE -> {}
         }
         SingleScreen.offered = pick != null
         if (SingleScreen.inUse) {
-            if (shown !is TopWindow) {
+            // (the review: a top window made at another size or on another display than the activity's now is made again)
+            if (shown !is TopWindow || (shown as TopWindow).stale()) {
                 shown?.close()
                 shown = openTop()
                 if (shown != null) Log.i(TAG, "DS Forever on the top screen (one screen, game on $game)")
@@ -331,8 +352,20 @@ class DsForeverScreen(private val context: Context) {
     /** the host asked to start over (its recreate, e.g. after a permission): a fresh Presentation (or activity) */
     internal fun rebuild() { main.post { shown?.close(); shown = null; update() } }
 
-    /** single screen mode: a second screen that came in a fight is looked at again ([SingleStep.RETRY]) */
+    /** single screen mode: a second screen that came in a fight is looked at again ([SingleStep.RETRY]), a one-screen start's grace
+     *  ([SingleStep.WAIT]) */
     private val deviceRetry = Runnable { update() }
+    /** single screen mode with the launcher's activity off display 0: looked at again a few times ([singleWaitsForTop]) */
+    private val topRetry = Runnable { update() }
+    private var topTries = 0
+    /** since when this DS Forever has seen nothing but display 0 (null = a second screen now) */
+    private var oneSince: Long? = null
+    /** how long nothing but display 0 has been seen, at [now] ([one] = so now) */
+    private fun oneForMs(one: Boolean, now: Long): Long {
+        if (!one) { oneSince = null; return 0L }
+        val since = oneSince ?: now.also { oneSince = it }
+        return now - since
+    }
 
     /** single screen mode's window on the top screen ([TopWindow]), with what a new bottom window gets (the board, the browser page) */
     private fun openTop(): BottomWindow? {
@@ -522,12 +555,22 @@ class DsForeverScreen(private val context: Context) {
         com.jrees.wowcompanion.GameUi.holdTaps(System.currentTimeMillis() + SingleScreen.SWITCH_HOLD_MAX_MS)
         main.post {
             if (!running || hidden || on == SingleScreen.inUse) return@post
+            // the review (2026-11-25): a fight that began since the host's look - never a teardown in a fight
+            if (SingleScreen.fightNow()) {
+                Log.i(TAG, "one screen ${if (on) "on" else "off"}: refused (a fight began) ($why)")
+                com.jrees.wowcompanion.DiagLog.event("app", "screens: one screen ${if (on) "on" else "off"} refused (a fight began)")
+                (shown as? TopWindow)?.hint(SingleScreen.NOT_FIGHT, SingleScreen.HINT_MS)
+                return@post
+            }
             SingleScreen.set(on, if (on) SingleScreen.Why.USER else null, android.os.SystemClock.uptimeMillis())
             com.jrees.wowcompanion.DiagLog.event("app", "screens: one screen ${if (on) "on" else "off"} ($why)")
             Log.i(TAG, "one screen ${if (on) "on" else "off"} ($why)")
             keysCancel()
             shown?.close(); shown = null; companionGone()
             update()
+            // the review (2026-11-25): Android's keys were on the other screen at the switch (a two-screen activity of ours there left them):
+            // no new top-resumed answer comes, so the last one is acted on now (the game's task forward)
+            if (on && !topNow) keysTop(false)
         }
         return true
     }
@@ -574,6 +617,17 @@ class DsForeverScreen(private val context: Context) {
     }
     /** the launcher's activity is the top resumed one (its last onTopResumedActivityChanged answer) */
     private var topNow = true
+
+    /**
+     * the review (2026-11-25): a touch DOWN on the top window or one of its small windows. They are never focusable, so Android never moves
+     * its keys back to display 0 for it (WMS moves a display to the top only for a window that takes keys) - and a panel covers all of
+     * display 0. While the other screen has the keys, the touch is the player's wish to play here: the game's task forward (the one-second
+     * gap coalesces a palm's repeats)
+     */
+    internal fun ourTouch() {
+        if (!singleKeysAway()) return
+        if (gameToFront("one screen: a touch on our window")) SingleScreen.noteKeys(back = true)
+    }
     /** NPC (spec 8.4): one of our activities on the other screen closed (SingleScreen.keysPaused off): Android leaves the keys where they
      *  were and sends no new answer, so the last one is acted on again - taken back only while the game is not on top */
     private val keysAgainHook: () -> Unit = { main.post { if (!topNow) keysTop(false) } }
@@ -708,26 +762,41 @@ class DsForeverScreen(private val context: Context) {
 
         // ---- SINGLE SCREEN MODE, pure for the tests (SingleScreen)
 
-        /** what [update] does about single screen mode ([singleStep]) */
-        enum class SingleStep { NONE, DEVICE_ON, DEVICE_OFF, RETRY }
+        /** what [update] does about single screen mode ([singleStep]); WAIT = a one-screen start's grace (looked at again) */
+        enum class SingleStep { NONE, DEVICE_ON, DEVICE_OFF, RETRY, WAIT }
 
         /**
          * the start rules (the user's picks 2026-11-25: "Two screen start however if its a single screen device then it starts in single
          * screen mode"; one-screen devices "Yes, automatically"): nothing but display 0 ([otherScreen] false, the game there, Swap screens
          * not in use) = single screen mode by itself unless the button already put it on; a second screen while it is the device's =
-         * two screens again, never in a [fight] (looked at again: RETRY). The button's own choice stays until the game ends
+         * two screens again, never in a [fight] (looked at again: RETRY). The button's own choice stays until the game ends.
+         * The review (2026-11-25): [sawSecond] = a second screen was seen in this process (a two-screen device: its loss is no single
+         * screen mode, the base way), and the one-screen state must have lasted [oneForMs] >= SingleScreen.ONE_GRACE_MS (WAIT till then)
          */
-        fun singleStep(otherScreen: Boolean, game: Int, swap: Boolean, why: SingleScreen.Why?, fight: Boolean): SingleStep {
+        fun singleStep(otherScreen: Boolean, game: Int, swap: Boolean, why: SingleScreen.Why?, fight: Boolean, sawSecond: Boolean = false,
+                       oneForMs: Long = SingleScreen.ONE_GRACE_MS): SingleStep {
             val one = !otherScreen && game == Display.DEFAULT_DISPLAY && !swap
             return when {
+                one && why == null && sawSecond -> SingleStep.NONE
+                one && why == null && oneForMs < SingleScreen.ONE_GRACE_MS -> SingleStep.WAIT
                 one && why == null -> SingleStep.DEVICE_ON
                 !one && why == SingleScreen.Why.DEVICE -> if (fight) SingleStep.RETRY else SingleStep.DEVICE_OFF
                 else -> SingleStep.NONE
             }
         }
 
+        /** single screen mode with the launcher's activity on another display than 0 (Swap screens off): its window waits for the move to
+         *  the top screen (the review, 2026-11-25) */
+        fun singleWaitsForTop(inUse: Boolean, swap: Boolean, game: Int): Boolean = inUse && !swap && game != Display.DEFAULT_DISPLAY
+        const val TOP_RETRY_MS = 500L
+        const val TOP_TRIES = 10
+
+        /** a second presentation screen was seen in this process (the review, 2026-11-25: a two-screen device never turns single screen mode
+         *  on by itself when that screen goes a moment) */
+        @Volatile var sawSecond = false
+
         /** the game's end turns the button's single screen mode off (every start is two screens); a one-screen device's stays */
-        fun singleOffAtGameEnd(why: SingleScreen.Why?): Boolean = why == SingleScreen.Why.USER
+        fun singleOffAtGameEnd(why: SingleScreen.Why?, relaunch: Boolean = false): Boolean = why == SingleScreen.Why.USER && !relaunch
 
         /** the button's switch may run: this DS Forever runs, shows and is the current one, not Streaming's (R2), and a one-screen
          *  device never turns it off (no other screen to go to) */
@@ -777,7 +846,10 @@ class DsForeverScreen(private val context: Context) {
         fun begin(activity: Activity) {
             if (current == null) current = DsForeverScreen(activity).also { it.start(); ScreenSwap.restart = it.restartHook }
         }
-        fun end(activity: Activity) { current?.takeIf { it.context === activity }?.stop(); if (current?.context === activity) current = null }
+        fun end(activity: Activity) {
+            current?.takeIf { it.context === activity }?.let { it.relaunching = activity.isChangingConfigurations; it.stop() }
+            if (current?.context === activity) current = null
+        }
         /**
          * the launcher activity's pause / stop / leave hint: only ITS OWN DS Forever hides. #384 review: after a Restart the new
          * activity (and its DS Forever) is up before Android stops the old one, whose stop hid whichever was current - the new one's

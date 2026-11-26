@@ -1,6 +1,7 @@
 package com.jrees.wowcompanion
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -50,7 +51,49 @@ class SingleTopTest {
         assertTrue("renewed well inside the add-on's 900 s lease", SingleTop.RENEW_MS + SingleTop.BATCH_MS + SingleTop.RESEND_MS < SingleTop.ADDON_TTL_MS)
         assertEquals(SingleTop.RENEW_MS, SingleTop.renewDelay(5_000L, 5_000L))
         assertEquals(1_000L, SingleTop.renewDelay(10_000_000L, 0L))
-        assertEquals(SingleTop.RENEW_MS, SingleTop.renewDelay(42L, null))
+        // the review (2026-11-25): a lease this host did not send is looked at again soon (renewed out of a fight), never trusted for 600 s
+        assertEquals(SingleTop.RESEND_MS, SingleTop.renewDelay(42L, null))
+    }
+
+    /**
+     * THE REVIEW (2026-11-25, "each new host restarts the add-on lease's renewal clock"): a new host (every switch, every launcher resume)
+     * that first sees `ss` 1 trusted it as a fresh lease and renewed 600 s later - after the add-on's 900 s lease, started at the OLD
+     * host's send, had lapsed (the next fight with no Wings and no top cast bar). A lease this host did not send is renewed at once out of
+     * a fight (within one RESEND_MS), its own after RENEW_MS
+     */
+    @Test fun aNewHostRenewsALeaseItDidNotSend() {
+        assertEquals("a new host, the add-on on: ON at once (the lease renewed)", SingleTop.Act.Send(true), SingleTop.decide(true, 1, false, null))
+        assertEquals("... in a fight: after it (the add-on keeps an expired lease to the fight's end)", SingleTop.Act.Matched,
+            SingleTop.decide(true, 1, true, null))
+        assertTrue("looked at again within one RESEND_MS", SingleTop.renewDelay(0L, null) <= SingleTop.RESEND_MS)
+        assertEquals("its own send: renewed after RENEW_MS", SingleTop.Act.Matched, SingleTop.decide(true, 1, false, SingleTop.RESEND_MS + 1))
+        assertEquals("two screens, the add-on off: nothing (a new host too)", SingleTop.Act.Matched, SingleTop.decide(false, 0, false, null))
+    }
+
+    /**
+     * THE REVIEW (2026-11-25): the host's half - no first-sighting clock (ssUpAt), a batch TapBridge did not send is neither recorded as
+     * sent nor counted as a try (a loading screen: GameInput not live), a fresh current word starts the tries over (no hard stop for the
+     * host after six), and before the host's first current word ON goes on the replayed state (idempotent: it renews or turns it on), OFF
+     * waits for a current word
+     */
+    @Test fun theHostsSendsAreCountedOnlyWhenSent() {
+        val h = File(src, "CompanionHost.kt").readText()
+        val chk = h.substringAfter("private fun singleTopCheck(d: PadMapModel.Dpad, fresh: Boolean = true) {").substringBefore("\n    }\n")
+        assertTrue("the check takes whether the word is fresh", chk.isNotEmpty() && chk.length < h.length / 2)
+        assertFalse("no first-sighting clock", h.contains("ssUpAt"))
+        assertTrue("a fresh word: the tries start over", chk.contains("if (fresh) ssTries = 0"))
+        assertTrue("not live: nothing sent, looked at again", chk.contains("if (!GameInput.live(System.currentTimeMillis())) { ui.postDelayed(ssAgain, SingleTop.RESEND_MS); return }"))
+        assertTrue("sent only: the stamp and the try", chk.contains("if (sent) { ssSentAt = now + SingleTop.BATCH_MS; ssTries++ }"))
+        assertTrue("replayed: ON only", chk.contains("if (!mirrorCurrent && !want) return"))
+        assertTrue("the replayed state is looked at in single screen mode", h.contains("else if (!mirrorCurrent && SingleScreen.inUse) singleTopCheck(d, fresh = false)"))
+        assertTrue("the renewal's re-check is not fresh", h.contains("private val ssAgain = Runnable { lastDpad?.let { singleTopCheck(it, fresh = false) } }"))
+    }
+
+    /** THE REVIEW (2026-11-25): PadMap m200 says a lapsed lease at once (soon()), so the app hears `ss` 0 and sends again */
+    @Test fun aLapsedLeaseIsSaid() {
+        val pm = File(src.parentFile.parentFile.parentFile.parentFile, "assets/companion/addons/WowCompanionSpells/PadMap.lua").readText()
+        val on = pm.substringAfter("R.singleOn = function()").substringBefore("\nend")
+        assertTrue("the lapse sends the padmap", on.contains("s.on, s.at = false, 0; soon(); return false"))
     }
 
     @Test fun theLeaseIsTheAddOnsOwn() {
@@ -71,7 +114,7 @@ class SingleTopTest {
         assertTrue("every host checks it on each current dpad state", h.contains("previewCheck(d); singleTopCheck(d)"))
         val guard = h.substringAfter("private fun page3Busy(now: Long, mine: String): Boolean =").substringBefore("\n\n")
         assertTrue("the page-3 guard counts the single batch (the same first cells)", guard.contains("\"ss\" to ssSentAt"))
-        val chk = h.substringAfter("private fun singleTopCheck(d: PadMapModel.Dpad) {").substringBefore("\n    }\n")
+        val chk = h.substringAfter("private fun singleTopCheck(d: PadMapModel.Dpad, fresh: Boolean = true) {").substringBefore("\n    }\n")
         assertTrue("the mode wanted is SingleScreen's", chk.contains("SingleScreen.inUse"))
         assertTrue("spaced taps", chk.contains("TapBridge.tapsSpaced(") && chk.contains("SingleTop.GAP_MS"))
         assertTrue("it waits for the other page-3 batches", chk.contains("page3Busy(now, \"ss\")"))

@@ -52,16 +52,23 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     private var lookNow: SingleLook.Look? = null
     private var touchNow = true
 
-    private val size: IntArray = run {
+    /** the activity's window size now (the host lays its views by the size made with: [stale] when it is no more this) */
+    private fun liveSize(): IntArray =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) activity.windowManager.currentWindowMetrics.bounds.let { intArrayOf(it.width(), it.height()) }
         else { val p = android.graphics.Point(); @Suppress("DEPRECATION") activity.windowManager.defaultDisplay.getRealSize(p); intArrayOf(p.x, p.y) }
-    }
+    private val size: IntArray = liveSize()
+    /** the display this window was made on */
+    private val madeOn: Int = activity.display?.displayId ?: Display.DEFAULT_DISPLAY
     override val screenW: Int get() = size[0]
     override val screenH: Int get() = size[1]
     override val box: IntArray = SingleScreen.panelBox(size[0], size[1])
     override val otherDisplay: Int? get() = screen.otherScreen()
 
-    override val displayId: Int get() = Display.DEFAULT_DISPLAY
+    /** the review (2026-11-25): the real display (a window made while the activity was on the bottom screen said 0) */
+    override val displayId: Int get() = activity.display?.displayId ?: Display.DEFAULT_DISPLAY
+    /** the activity moved to another display or another size since this window was made: DsForeverScreen makes it again (its host's
+     *  box, docks and strips are laid for the size it was made at) */
+    fun stale(): Boolean = displayId != madeOn || !liveSize().contentEquals(size)
     override fun close() = dismiss()
 
     /** Streaming's Battle.net keyboard over the whole screen (as the Presentation's) */
@@ -139,6 +146,9 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         // #230: timed as the bottom window's touches (MemWatch's line format: this window is ours)
         val start = android.os.SystemClock.uptimeMillis()
         try {
+            // the review (2026-11-25): a touch on our never-focused window never moves Android's keys back to display 0 - while the other
+            // screen has them, a touch here is the player's wish to play on this screen (DsForeverScreen.ourTouch: the game's task forward)
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) screen.ourTouch()
             if (!pageSlot.up) typer.touch(ev)
             return super.dispatchTouchEvent(ev)
         } finally {
@@ -201,13 +211,22 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         }
     }
 
-    override fun sub(id: String): SingleSub = subs.getOrPut(id) { SubWindow(activity, id) }
+    override fun sub(id: String): SingleSub = subs.getOrPut(id) { SubWindow(activity, id) { screen.ourTouch() } }
 
     private val hintView by lazy { HintPlate(context) }
-    private val hintOff = Runnable { hint(null) }
+    /** the review (2026-11-25): one plate, two kinds of words - pinned (ms 0, "Tap the game for the controller") and timed notes over it;
+     *  a timed note's end shows the pinned words again (SingleScreen.Plate) */
+    private val plate = SingleScreen.Plate()
+    private val hintOff = Runnable { showPlate(plate.timedEnd()) }
     override fun hint(text: String?, ms: Long) {
         if (!up) return
-        main.removeCallbacks(hintOff)
+        val now = plate.set(text, ms)
+        if (ms > 0L) { main.removeCallbacks(hintOff); if (text != null) main.postDelayed(hintOff, ms) }
+        showPlate(now)
+    }
+
+    private fun showPlate(text: String?) {
+        if (!up) return
         val s = sub("hint")
         if (text == null) { s.shown(false); return }
         hintView.text = text
@@ -219,7 +238,6 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         s.place(l, t, l + w, t + h)
         s.touchable(false)
         s.shown(true)
-        if (ms > 0L) main.postDelayed(hintOff, ms)
     }
 
     /** the hint's plate: the kit's own (UiKit.singleHint), the words Tr'd there */

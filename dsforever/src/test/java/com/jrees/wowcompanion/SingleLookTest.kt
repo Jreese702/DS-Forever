@@ -102,4 +102,37 @@ class SingleLookTest {
         // Home's glance stays while it is up (sticky), a sub-state ends with what opened it (derived): both back to PLAY when cleared
         assertEquals(SingleLook.PLAY, SingleLook.of(play.copy(glanceHub = false, homeSub = false)))
     }
+
+    /**
+     * THE REVIEW (2026-11-25, "Single mode puts DS Forever's opaque waiting page over the game's login and character select"): with the
+     * game screen up, the waiting page (a logout to character select, a disconnect to the login screen, a reload, "Loading your
+     * character") is no start page of the host's: it is [In.waiting], and its Menu opened is the start page again (the Menu needs the page)
+     */
+    @Test fun theInGameWaitingPageIsItsRowOverTheGame() {
+        val l = SingleLook.of(play.copy(waiting = true))
+        assertEquals("the game's login screen / character select stay seen and touched", Frame.HIDDEN, l.frame)
+        assertFalse(l.touchable); assertFalse("no docks over character select", l.docks); assertEquals(Root.GONE, l.root)
+        assertEquals("its row in the strip", SingleNpc.START, l.strip); assertFalse(l.play)
+        assertEquals("over a room too (it covers the rooms on two screens)", SingleNpc.START, SingleLook.of(play.copy(waiting = true, room = "BAGS")).strip)
+        assertEquals("the Menu, setup, the chooser, the sign-in form: the panel", Frame.FULL, SingleLook.of(play.copy(waiting = true, startPages = true)).frame)
+        assertEquals("the report over it: the panel", Frame.FULL, SingleLook.of(play.copy(waiting = true, report = true)).frame)
+        val c = SingleLook.of(play.copy(waiting = true, launchCover = true))
+        assertEquals("the launch swirl still covers", Frame.HIDDEN, c.frame); assertNull(c.strip)
+        assertEquals("a tap beside it is nothing", SingleNpc.Dim.KEEP, SingleNpc.dimTap(play.copy(waiting = true)))
+        // the row's strip: the box's width at the screen's foot, high enough for StartView's own px (never scaled down)
+        val r = SingleNpc.startRect(1920, 1080)
+        assertEquals(listOf(340, 1080 - SingleNpc.START_H, 1580, 1080), r.toList())
+        assertTrue("the region line over the sign-in row fits (334 px)", SingleNpc.START_H >= 334)
+        assertEquals(720 - SingleNpc.START_H, SingleNpc.startRect(1280, 720)[1])
+    }
+
+    @Test fun theHostCountsTheWaitingPageApartOnceTheGameIsUp() {
+        val h = listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt"),
+            java.io.File("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")).first { it.canRead() }.readText()
+        val w = h.substringAfter("private fun singleWaiting(): Boolean =").substringBefore("\n")
+        assertTrue("the game screen up, the page shown, its Menu shut", w.contains("startView.visibility == View.VISIBLE && LauncherHooks.gameUp() && !startView.menuOpen"))
+        val i = h.substringAfter("private fun singleIn(): SingleLook.In = singleNpcIn(SingleLook.In(").substringBefore("\n    ))")
+        assertTrue("a start page only before the game (or its Menu)", i.contains("startPages = (startView.visibility == View.VISIBLE && !singleWaiting()) ||"))
+        assertTrue(i.contains("waiting = singleWaiting(),"))
+    }
 }

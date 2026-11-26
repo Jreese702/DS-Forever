@@ -6,6 +6,7 @@ import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -18,7 +19,7 @@ import com.jrees.wowcompanion.SingleSub
  * px with ONE window update, shown / gone by its decor's visibility (gone = no surface). It hosts one view ([put]). Never a display mode
  * or a frame rate of its own (the game's panel mode is StreamRate's alone).
  */
-internal class SubWindow(activity: Activity, private val id: String) :
+internal class SubWindow(activity: Activity, private val id: String, private val onDown: () -> Unit = {}) :
     android.app.Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen), SingleSub {
     private val slot = FrameLayout(activity)
     private var bounds = intArrayOf(0, 0, 0, 0)
@@ -47,6 +48,12 @@ internal class SubWindow(activity: Activity, private val id: String) :
         }
         if (!touch) w.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
         w.decorView.visibility = if (on) View.VISIBLE else View.GONE
+    }
+
+    /** the review (2026-11-25): a touch DOWN here is the top window's too ([onDown]: DsForeverScreen.ourTouch, the keys back) */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) onDown()
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun put(v: View?) {

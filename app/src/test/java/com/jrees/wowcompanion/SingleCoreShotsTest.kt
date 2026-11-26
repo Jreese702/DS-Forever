@@ -232,7 +232,9 @@ class SingleCoreShotsTest {
 
     @Test fun theRefusalsStayOnTheWheelsRedLine() {
         SingleScreen.offered = true
-        val words = listOf(SingleScreen.SWAP_FIRST, SingleScreen.NOT_STREAMING, SingleScreen.NOT_LOADING, SingleScreen.NOT_FIGHT)
+        // the review (2026-11-25): the top screen's wheel shows only the words it can meet (Swap screens and Streaming never reach single
+        // screen mode: two screens' words); the bottom screen's window first (an activity of ours up there)
+        val words = listOf(SingleScreen.NOT_LOADING, SingleScreen.NOT_FIGHT, SingleScreen.BOTTOM_FIRST)
         val band = 270
         val sheet = Bitmap.createBitmap(TW, band * words.size, Bitmap.Config.ARGB_8888)
         val sc = Canvas(sheet)
@@ -247,6 +249,56 @@ class SingleCoreShotsTest {
             sc.drawBitmap(pic, android.graphics.Rect(0, 0, TW, band), android.graphics.Rect(0, i * band, TW, (i + 1) * band), null)
         }
         save(sheet, "core_05_refusals.png")
+    }
+
+    /** the review (2026-11-25): Edit (X) in a fight while playing - the wheel's red line says it and the wheel stays (Home's pencils, which
+     *  flash on two screens, are on a page not drawn); nothing refused = the wheel folds and Edit opens, as on two screens */
+    @Test fun editInAFightIsRefusedOnTheWheel() {
+        SingleScreen.offered = true
+        val s = topStage(); s.pause.editRefusal = { SingleScreen.NOT_FIGHT }; open(s)
+        press(s.pause, PadInput.SLOT_FACE_LEFT)
+        settle(100)
+        assertTrue("the wheel stays", s.pause.isOpen)
+        assertEquals(SingleScreen.NOT_FIGHT, field(s.pause, "line"))
+        assertTrue("no pick", s.did.isEmpty())
+        val pic = backdrop(); val c = Canvas(pic); dim(c, SingleLook.DIM_PANEL); c.drawBitmap(draw(s.root, TW, TH), 0f, 0f, null)
+        save(pic, "core_09_edit_refused_in_a_fight.png")
+        val ok = topStage(); open(ok)
+        press(ok.pause, PadInput.SLOT_FACE_LEFT)
+        settle(600)
+        assertEquals("no refusal: Edit as always", listOf("pick:${HomePauseModel.EDIT.key}"), ok.did)
+    }
+
+    /**
+     * the review (2026-11-25, "Single mode puts DS Forever's opaque waiting page over the game's login and character select"): with the
+     * game screen up the waiting page is its row alone along the top screen's foot (SingleLook row 2b, the strip SingleNpc.startRect,
+     * StartView.bare): no loading scene - the game's character select shows round it and every touch outside the row is the game's
+     */
+    @Test fun theWaitingPageIsItsRowOverTheGame() {
+        Tr.init(app)
+        val up0 = LauncherHooks.gameUp
+        try {
+            LauncherHooks.gameUp = { true }
+            val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+            val sv = StartView(act)
+            sv.bare = true
+            sv.line = "Waiting for the world."
+            sv.login = StartView.Login.SAVED
+            val r = SingleNpc.startRect(TW, TH)
+            val w = r[2] - r[0]; val h = r[3] - r[1]
+            assertEquals("the box's width", BW, w)
+            lay(sv, 0, 0, w, h)
+            val strip = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            sv.draw(Canvas(strip))
+            assertEquals("no loading scene behind the row (the game shows)", 0, Color.alpha(strip.getPixel(4, 4)))
+            assertEquals(0, Color.alpha(strip.getPixel(w - 5, 4)))
+            assertTrue("the line's panel drawn", Color.alpha(strip.getPixel(w / 2, h - 40 - 55)) > 0)
+            assertTrue("the sign-in row drawn", Color.alpha(strip.getPixel(w / 2 + 60, h - 40 - 111 - 24 - 55)) > 0)
+            val pic = backdrop("SINGLE_TOP_PLAY"); Canvas(pic).drawBitmap(strip, r[0].toFloat(), r[1].toFloat(), null)
+            save(pic, "core_08_waiting_row.png")
+            val l = SingleLook.of(SingleLook.In(waiting = true))
+            assertEquals(SingleLook.Frame.HIDDEN, l.frame); assertEquals(SingleNpc.START, l.strip)
+        } finally { LauncherHooks.gameUp = up0 }
     }
 
     // ---------------------------------------------------------------- the panel, the glance, playing, the hints

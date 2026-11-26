@@ -75,6 +75,9 @@ class HomePauseView(
     var single = false
     /** the host's: why the One screen / Two screens switch can't go now (SingleScreen.refusal), null = it can */
     var screensRefusal: () -> String? = { null }
+    /** the host's, single screen mode only (the review 2026-11-25): why Edit can't open now (a fight: Home's pencils would flash on a page
+     *  that is not drawn), said on the red line with the wheel kept; null = Edit folds the wheel as always (two screens: never set) */
+    var editRefusal: () -> String? = { null }
     private var powerPressed = -1
     /** the prompt's line, fixed when it opened (a stream ending meanwhile doesn't change the question asked) */
     private var powerStream = false
@@ -454,8 +457,9 @@ class HomePauseView(
 
     /** the corner's Edit (X or a touch): the wheel folds, then Edit Home's own entry (the host's [onPick] of [HomePauseModel.EDIT]) */
     private fun editPress(how: String) {
-        Log.i("WCLOG", "pause: Edit ($how): the wheel folds, Edit Home opens")
         editDown = false
+        editRefusal()?.let { no -> Log.i("WCLOG", "pause: Edit ($how) refused ($no)"); say(no); invalidate(); return }
+        Log.i("WCLOG", "pause: Edit ($how): the wheel folds, Edit Home opens")
         after = HomePauseModel.EDIT
         close("Edit ($how)")
     }

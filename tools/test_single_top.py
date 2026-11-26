@@ -58,7 +58,8 @@ def part_a():
     print("\n-- A the channel (Book b86 / PadMap m199)")
     pm_src = src("WowCompanionSpells", "PadMap.lua")
     bk_src = src("WowCompanionSpells", "Book.lua")
-    chk("A0. PadMap m199, Book b86 and their notes", 'local PV = "m199"' in pm_src and "m199 SINGLE SCREEN MODE" in pm_src
+    chk("A0. PadMap m200 (m199's mode, the lease said at its lapse), Book b86 and their notes", 'local PV = "m200"' in pm_src
+        and "m199 SINGLE SCREEN MODE" in pm_src and "m200 THE SINGLE SCREEN LEASE SAID" in pm_src
         and 'local BV = "b86"' in bk_src and "b86 SINGLE SCREEN MODE" in bk_src and "b86 THE FOURTH PAGE" in bk_src)
     W = tep.tct.boot()
     pm = 'WowCompanion.padMap'
@@ -121,8 +122,20 @@ def part_a():
     chk("A11. a lease of SS_TTL %s s (the app renews every 600 s)" % ttl, ttl == 900, ttl)
     W.execute('NOW = NOW + %f; runTimers(NOW + 1)' % (ttl - 5))
     still = on()
+    n1 = int(W.eval('#SENT'))
     W.execute('NOW = NOW + 10; runTimers(NOW + 1)')
     chk("A12. still on just before the lease ends, off after it (no word from the app)", still and not on() and st()[0] == 0, (still, on()))
+    # m200 (the review, 2026-11-25): the lapse is said at once - a padmap with ss 0 goes, so the app sends the mode again before a fight
+    W.execute('runTimers(NOW + 1)')
+    lapsed = []
+    for i in range(n1 + 1, int(W.eval('#SENT')) + 1):
+        try:
+            d = json.loads(W.eval('SENT[%d]' % i))
+        except Exception:      # noqa: BLE001
+            continue
+        if isinstance(d, dict) and d.get('type') == 'padmap':
+            lapsed.append(((d.get('m') or {}).get('dpad') or {}).get('ss'))
+    chk("A12b. m200: the lapse sends a padmap with ss = 0 (the app hears it at once)", 0 in lapsed, lapsed)
     # an expired lease in a fight: kept until the fight's end
     tep.tct.padtab(W, 39, 38, 0, 1)
     W.execute('runTimers(NOW + 1)')

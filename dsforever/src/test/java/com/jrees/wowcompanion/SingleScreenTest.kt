@@ -31,13 +31,27 @@ class SingleScreenTest {
         assertEquals("Not while loading", SingleScreen.refusal(ok.copy(inWorld = false)))      // not in the world yet = loading
         assertEquals("Not while loading", SingleScreen.refusal(ok.copy(loading = true, fight = true)))
         assertEquals("Not in a fight", SingleScreen.refusal(ok.copy(fight = true)))
+        // the review (2026-11-25): back to two screens with an activity of ours up on the other screen (a new bottom window would cover it)
+        assertEquals("Close the bottom screen's window first", SingleScreen.refusal(ok.copy(bottomBusy = true)))
+        assertEquals("a fight first", "Not in a fight", SingleScreen.refusal(ok.copy(bottomBusy = true, fight = true)))
+    }
+
+    /** the review (2026-11-25): the hint plate's pinned words survive a timed note over them ("Tap the game for the controller") */
+    @Test fun thePlatesPinnedWordsComeBackAfterANote() {
+        val p = SingleScreen.Plate()
+        assertEquals(SingleScreen.TAP_FOR_KEYS, p.set(SingleScreen.TAP_FOR_KEYS, 0L))
+        assertEquals("a note over it", "On the bottom screen", p.set("On the bottom screen", 2_500L))
+        assertEquals("its end: the pinned words again", SingleScreen.TAP_FOR_KEYS, p.timedEnd())
+        assertEquals("a timed note's own end with nothing pinned: none", null, SingleScreen.Plate().also { it.set("x", 100L) }.timedEnd())
+        assertEquals("cleared while a note shows: the note keeps its time", "Controller back", p.set("Controller back", 1_200L).also { p.set(null, 0L) })
+        assertEquals(null, p.timedEnd())
     }
 
     @Test fun everyRefusalHasSpanishAndFrench() {
         val i18n = listOf(File("../companion/app/src/main/assets/companion/i18n"), File("companion/app/src/main/assets/companion/i18n"))
             .first { it.isDirectory }
         val words = listOf(SingleScreen.SWAP_FIRST, SingleScreen.NOT_STREAMING, SingleScreen.NOT_LOADING, SingleScreen.NOT_FIGHT,
-            SingleScreen.CONTROLLER_BACK, SingleScreen.TAP_FOR_KEYS, GameUi.SWITCHING)
+            SingleScreen.CONTROLLER_BACK, SingleScreen.TAP_FOR_KEYS, GameUi.SWITCHING, SingleScreen.BOTTOM_FIRST)
         for (l in listOf("es", "fr")) {
             val text = File(i18n, "$l.json").readText()
             val plain = JSONObject(text).getJSONObject("plain")
@@ -108,6 +122,7 @@ class SingleScreenTest {
     @Test fun theTimingsTheSpecAsksFor() {
         assertEquals(400L, SingleScreen.KEYS_BACK_MS); assertEquals(1_500L, SingleScreen.KEYS_STUCK_MS)
         assertEquals(800L, SingleScreen.SWITCH_FREE_WAIT_MS); assertEquals(2_000L, SingleScreen.DEVICE_RETRY_MS)
+        assertEquals("a one-screen start's grace (the review)", 3_000L, SingleScreen.ONE_GRACE_MS)
         assertTrue("R1's built default: the game keeps the controller", SingleScreen.KEYS_BACK)
     }
 

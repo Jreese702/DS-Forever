@@ -78,11 +78,77 @@ class SingleScreenStartTest {
         assertTrue("GameUi's taps wait", t.contains("GameUi.holdTaps("))
         // the game's end
         val d = source().substringAfter("fun detachGame() {").substringBefore("/** back from Streaming")
-        assertTrue(d.contains("if (singleOffAtGameEnd(SingleScreen.why)) {") && d.contains("rebuild()"))
+        assertTrue(d.contains("if (singleOffAtGameEnd(SingleScreen.why, relaunching)) {") && d.contains("rebuild()"))
         // the request hook is this DS Forever's while it runs
         assertTrue(source().substringAfter("fun start() {").substringBefore("fun stop() {").contains("SingleScreen.request = singleHook"))
         assertTrue(source().substringAfter("fun stop() {").substringBefore("/** the game screen is up").contains("if (SingleScreen.request === singleHook) SingleScreen.request = null"))
         assertTrue("Streaming's own DS Forever", source().contains("current = DsForeverScreen(activity).also { it.streamOwned = true; it.start() }"))
+    }
+
+    /**
+     * THE REVIEW (2026-11-25, "coming back from the bottom launcher's icon breaks single mode"): Android brings the task back on display 4
+     * and update() ran there before moveToTop's move landed - the top window opened on the bottom screen with its size, the button hidden;
+     * and the move's relaunch turned the button's mode off as if the game had ended. Now update() opens nothing while the launcher's
+     * activity is off display 0 in single screen mode (looked at again), a top window whose size or display is no more the activity's
+     * is made again, and a configuration relaunch keeps the button's mode
+     */
+    @Test fun aReopenFromTheBottomScreenKeepsSingleScreenMode() {
+        val u = source().substringAfter("private fun update() {").substringBefore("/** our window is down")
+        val wait = u.indexOf("if (singleWaitsForTop(SingleScreen.inUse, swap, game)) {")
+        assertTrue("the wait is decided before the mode's own steps", wait in 0 until u.indexOf("when (singleStep("))
+        assertTrue("a stale top window is made again", u.contains("if (shown !is TopWindow || (shown as TopWindow).stale()) {"))
+        val e = source().substringAfter("fun end(activity: Activity) {").substringBefore("\n        }")
+        assertTrue("a configuration relaunch keeps the mode", e.contains("it.relaunching = activity.isChangingConfigurations; it.stop()"))
+        val d = source().substringAfter("fun detachGame() {").substringBefore("/** back from Streaming")
+        assertTrue(d.contains("if (singleOffAtGameEnd(SingleScreen.why, relaunching)) {"))
+        val top = source("TopWindow.kt")
+        assertTrue("the top window says its real display", top.contains("override val displayId: Int get() = activity.display?.displayId ?: Display.DEFAULT_DISPLAY"))
+        assertTrue(top.contains("fun stale(): Boolean"))
+    }
+
+    /**
+     * THE REVIEW (2026-11-25): the switch looks again where Android's keys are (one screen with the keys on the other screen: taken back)
+     * and for a fight that began while the wheel's controller was let go (refused then, never a teardown in a fight)
+     */
+    /**
+     * THE REVIEW (2026-11-25, "losing the bottom display switches single mode on by itself on a Thor"): the user ruled one-screen start
+     * for a device that HAS one screen. A second screen seen once in this process (the Thor's bottom screen) = a two-screen device: its
+     * loss closes the bottom window as before (566d3ece1), no single screen mode; and a one-screen start waits a grace (a late display)
+     */
+    @Test fun aSecondScreenSeenThenLostIsNoSingleScreenMode() {
+        assertEquals("the Thor's bottom screen gone a moment: the base way (no single screen mode)", SingleStep.NONE,
+            DsForeverScreen.singleStep(false, MAIN, false, null, false, sawSecond = true, oneForMs = 60_000L))
+        assertEquals("a one-screen start waits its grace", SingleStep.WAIT, DsForeverScreen.singleStep(false, MAIN, false, null, false, false, 0L))
+        assertEquals(SingleStep.WAIT, DsForeverScreen.singleStep(false, MAIN, false, null, false, false, SingleScreen.ONE_GRACE_MS - 1))
+        assertEquals("then on by itself", SingleStep.DEVICE_ON, DsForeverScreen.singleStep(false, MAIN, false, null, false, false, SingleScreen.ONE_GRACE_MS))
+        assertEquals("a second screen while the device's: two screens again (unchanged)", SingleStep.DEVICE_OFF,
+            DsForeverScreen.singleStep(true, MAIN, false, SingleScreen.Why.DEVICE, false, sawSecond = true, oneForMs = 0L))
+        assertEquals("the button's mode with the screen gone: unchanged", SingleStep.NONE,
+            DsForeverScreen.singleStep(false, MAIN, false, SingleScreen.Why.USER, false, sawSecond = true, oneForMs = 60_000L))
+    }
+
+    @Test fun theWindowWaitsForTheMoveToTheTopScreen() {
+        assertTrue("single, the activity on display 4", DsForeverScreen.singleWaitsForTop(inUse = true, swap = false, game = 4))
+        assertFalse("on display 0", DsForeverScreen.singleWaitsForTop(true, false, MAIN))
+        assertFalse("two screens: the base way", DsForeverScreen.singleWaitsForTop(false, false, 4))
+        assertFalse("Swap screens: the game on the second screen is its own", DsForeverScreen.singleWaitsForTop(true, true, 4))
+        assertFalse("a relaunch is no end of the game", DsForeverScreen.singleOffAtGameEnd(SingleScreen.Why.USER, relaunch = true))
+        assertTrue(DsForeverScreen.singleOffAtGameEnd(SingleScreen.Why.USER, relaunch = false))
+    }
+
+    @Test fun aLostBottomScreenIsNoSingleScreenModeOnTheThor() {
+        val u = source().substringAfter("private fun update() {").substringBefore("/** our window is down")
+        assertTrue("a second screen seen is latched", u.contains("if (pick != null) sawSecond = true"))
+        assertTrue("the step reads the latch and the grace",
+            u.contains("singleStep(pick != null, game, swap, SingleScreen.why, SingleScreen.fightNow(), sawSecond, oneForMs(pick == null, android.os.SystemClock.uptimeMillis()))"))
+        assertTrue("the grace's look again", u.contains("SingleStep.WAIT -> { main.removeCallbacks(deviceRetry); main.postDelayed(deviceRetry, SingleScreen.ONE_GRACE_MS) }"))
+    }
+
+    @Test fun theSwitchLooksAgainAtTheKeysAndTheFight() {
+        val t = source().substringAfter("internal fun toggleSingle(").substringBefore("/** one of our activities is up")
+        val post = t.substringAfter("main.post {")
+        assertTrue("a fight now: refused inside the post too", post.indexOf("if (SingleScreen.fightNow()) {") in 0 until post.indexOf("SingleScreen.set("))
+        assertTrue("one screen with the keys away: taken back", post.indexOf("if (on && !topNow) keysTop(false)") > post.indexOf("update()"))
     }
 
     private fun source(name: String = "DsForeverScreen.kt"): String =
