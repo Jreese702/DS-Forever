@@ -20,7 +20,10 @@ class SingleFadePinsTest {
     private val host get() = code("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")
 
     @Test fun theTopWindowFadesInAndOut() {
-        val show = top.substringAfter("private fun showDecor(on: Boolean) {").substringBefore("\n    }\n")
+        // the 1535 merge: int/1534's park comes first (`want`; parked = GONE at once, no fade), and the return from it shows whole
+        val show = top.substringAfter("private fun showDecor(want: Boolean) {").substringBefore("\n    }\n")
+        assertTrue("parked: GONE at once, a fade running dropped", show.indexOf("if (parkedNow) {") in 0 until show.indexOf("val fx = "))
+        assertTrue("the return from a park: whole at once", show.contains("if (on && snapIn) {"))
         assertTrue("before it is on screen: as it is", show.contains("if (!d.isAttachedToWindow)"))
         assertTrue("in: the window's alpha with the panel rising", show.contains("frame.alpha = k; hostSlot.translationY = fx.RISE"))
         assertTrue("out: the last picture", show.contains("ghostView.pic = ghostNext"))

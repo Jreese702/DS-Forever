@@ -96,7 +96,8 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         if (parkedNow) return true
         if (typing) typer.focusable(false)
         parkedNow = true
-        touchFlag(false)                                              // (the 1535 merge: through the polish's cached flag)
+        window?.setFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        touchSet = false                                              // the 1535 merge: the polish's cached flag says it too
         touchNow = false
         window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // round 2 (the review: "Parking toggles the decor's View visibility, so rooms reset as if left"): the host away FIRST, then the
@@ -119,7 +120,7 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
             try {
                 val l = lookNow
                 if (l != null) { lookNow = null; look(l) }
-                else { showDecor(true); touchFlag(true); touchNow = true }
+                else { showDecor(true); window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE); touchSet = true; touchNow = true }
             } finally { snapIn = false }
         }
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
