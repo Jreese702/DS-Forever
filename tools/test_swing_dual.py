@@ -51,8 +51,8 @@ v = re.search(r'local NB = \{ V = "nbar(\d+)"', AB)
 check(v is not None and int(v.group(1)) >= 5, "a. ActionBar's tag is nbar5 or later", v and v.group(0))
 # (the 1523 merge: nbar13-16's header notes pushed nbar5's quote to line 46 - the header is the file's first 60 lines now; nbar18 and
 # the integrations after it: 80; nbar24's ruling A note: 90; nbar25's hold to cast visuals note: 102; nbar26, the 1533 merge, with
-# single screen mode's nbar25 note: 110)
-check(QUOTE in "\n".join(AB.split("\n")[:110]) and QUOTE in BLOCK, "a. the header note and the block quote the user")
+# single screen mode's nbar25 note: 110; nbar28, a form's own set on every layer: 114)
+check(QUOTE in "\n".join(AB.split("\n")[:114]) and QUOTE in BLOCK, "a. the header note and the block quote the user")
 check('\ndo\n' in BLOCK and BLOCK.rstrip().endswith('end'), "a. the block is one do ... end (its locals scoped)")
 check(AB.count('elseif event == "PLAYER_SWING" then\n        WC.swingNote(a1, a2)') == 1, "a. PLAYER_SWING -> WC.swingNote")
 check('RegisterUnitEvent("UNIT_ATTACK_SPEED", "player")' in AB and 'elseif event == "UNIT_ATTACK_SPEED" then' in AB,
