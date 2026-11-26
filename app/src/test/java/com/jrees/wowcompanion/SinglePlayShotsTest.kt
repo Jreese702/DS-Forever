@@ -78,7 +78,7 @@ class SinglePlayShotsTest {
         val bo = save(s, "dock_out", o, party = true)
         assertTrue("the map, the party list and the chat drawn", painted(bo, o.map) && painted(bo, o.party) && painted(bo, o.chat))
         // the 1535 polish: the focused quest's card under the map, the room row at the bottom centre, the chat on the right
-        assertTrue("the quest card and the room row drawn", painted(bo, o.quest) && painted(bo, o.row))
+        assertTrue("the quest card drawn; Party mode on: no room row (Hub's rows keep the HUD's place)", painted(bo, o.quest) && o.row == null)
         assertTrue("the chat on the right", o.chat.l > 960)
         assertTrue("nothing of ours outside them", clearOutside(bo, listOf(o.map, o.party, o.chat, o.quest, o.row)))
         // the docks see-through (the user: "way more see through"): a pixel inside the chat's well, away from its words, lets the game through
@@ -123,6 +123,16 @@ class SinglePlayShotsTest {
         warm(s)
         val bo = save(s, "dock_out_solo", o, party = false)
         assertTrue(painted(bo, o.map) && painted(bo, o.chat))
+        assertTrue("the room row drawn at the bottom centre (the Strip, ROW_K)", painted(bo, o.row) && painted(bo, o.quest))
+        // the row's slide into the fight: half way down under the edge (the frame SingleDocks lays), then gone
+        s.fight(true)
+        val i0 = s.plan(Arr.IN)
+        s.docks.arrange(i0, animate = true)                       // (the windows grown to the unions; the paused looper holds the glide)
+        frame.invoke(s.docks, Piece.ROW, o.row, SinglePlayLayout.below(o.row!!), Motion.curve().getInterpolation(0.5f))
+        save(s, "dock_row_half", i0, party = false)
+        s.settle(20)
+        s.fight(false)
+        s.docks.arrange(o, animate = false)
         s.fight(true)
         val i = s.plan(Arr.IN)
         s.docks.arrange(i, animate = false)

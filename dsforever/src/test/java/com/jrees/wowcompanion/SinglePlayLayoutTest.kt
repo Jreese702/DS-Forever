@@ -117,14 +117,15 @@ class SinglePlayLayoutTest {
 
     @Test fun theRoomRowOutOfAFightOnly() {
         // the 1535 polish (the user: "recreate our home screen row buttons. These hide in combat ... slides up the home row from the bottom")
-        val out = SinglePlayLayout.plan(Arr.OUT, true)
+        val out = SinglePlayLayout.plan(Arr.OUT, false)
+        assertNull("Party mode on: Hub's party rows keep the HUD's place (no row)", SinglePlayLayout.plan(Arr.OUT, true).row)
         val rw = Math.round(1240 * SinglePlayLayout.ROW_K); val rh = Math.round(145 * SinglePlayLayout.ROW_K)
         assertEquals("centred at the bottom, the Strip at ROW_K", Box((1920 - rw) / 2, 1076 - rh, (1920 - rw) / 2 + rw, 1076), out.row)
         assertTrue("under the Wings at rest", out.row!!.t >= SinglePlayLayout.K3.b + SinglePlayLayout.GAP)
-        assertNull("hidden in a fight", SinglePlayLayout.plan(Arr.IN, true).row)
+        assertNull("hidden in a fight", SinglePlayLayout.plan(Arr.IN, false).row)
         assertEquals(145, Strip.HEIGHT)
         // the slide: up from under the bottom edge out of the fight, back down into one; whole (no fade: never a null end)
-        val inn = SinglePlayLayout.plan(Arr.IN, true)
+        val inn = SinglePlayLayout.plan(Arr.IN, false)
         val up = SinglePlayLayout.steps(inn.boxes(), out.boxes(), Arr.OUT).filter { it.piece == Piece.ROW }
         val g = up[1] as Step.Glide
         assertEquals(SinglePlayLayout.below(out.row!!), g.from)
@@ -190,7 +191,9 @@ class SinglePlayLayoutTest {
             assertEquals("into the fight: COMBAT_GROW", Motion.COMBAT_GROW, glide.ms)
             assertEquals(out.box(p), glide.from); assertEquals(inn.box(p), glide.to)
         }
-        assertEquals("two window updates a piece a fight edge (the map, the list, the chat, the room row)", 8, st.count { it is Step.Place })
+        assertEquals("two window updates a piece a fight edge (the map, the list, the chat)", 6, st.count { it is Step.Place })
+        val solo = SinglePlayLayout.steps(SinglePlayLayout.plan(Arr.OUT, false).boxes(), SinglePlayLayout.plan(Arr.IN, false).boxes(), Arr.IN)
+        assertEquals("solo: the map, the chat and the room row", 6, solo.count { it is Step.Place })
         val back = SinglePlayLayout.steps(inn.boxes(), out.boxes(), Arr.OUT)
         assertEquals("out of it: COMBAT_SHRINK", Motion.COMBAT_SHRINK, (back.first { it is Step.Glide } as Step.Glide).ms)
         assertTrue("nothing moves: no step", SinglePlayLayout.steps(out.boxes(), out.boxes(), Arr.OUT).isEmpty())

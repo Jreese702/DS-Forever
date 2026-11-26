@@ -194,7 +194,7 @@ def part_b():
     import test_top_castbar as ttc
     import test_wings_match as twm
     src = open(os.path.join(ADDONS, "WowCompanion", "ActionBar.lua"), encoding="utf-8").read()
-    chk("B0. ActionBar nbar23 and its note", 'local NB = { V = "nbar27"' in src and "nbar23 EDIT HOME'S TOP-SCREEN PREVIEW" in src)
+    chk("B0. ActionBar nbar23 and its note", 'local NB = { V = "nbar28"' in src and "nbar23 EDIT HOME'S TOP-SCREEN PREVIEW" in src)
     L = ttc.boot()
     G = L.globals()
     # the saved flags all off, no fight: whatever shows is the preview's

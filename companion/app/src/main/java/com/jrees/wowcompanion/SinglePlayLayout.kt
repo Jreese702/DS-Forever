@@ -29,7 +29,7 @@ package com.jrees.wowcompanion
  * map is) under the map (folded to its title row in a fight); "We need to hide the top screen xp bar so that we can recreate our home
  * screen row buttons. These hide in combat and out of combat it just shifts up the controller buttons a bit and moves them closer
  * together and makes them smaller when the Healthbars hide and slides up the home row from the bottom" - the room row ([Piece.ROW], the
- * host's own Strip lent at [ROW_K]) at the bottom centre OUT of combat only, sliding up from under the screen's edge as the fight ends
+ * host's own Strip lent at [ROW_K]) at the bottom centre OUT of combat only (and not in Party mode: Hub's rows), sliding up from under the screen's edge as the fight ends
  * and back down as one starts ([steps]: [SLIDES]); our Nintendo bar is gone (SingleUi: the controller UI off), so K3 is now the WINGS AT
  * REST (ActionBar nbar28: the fight spot x [WINGS_REST_K], [WINGS_REST_IN] closer, [WINGS_REST_UP] up, never under the row's top).
  *
@@ -245,8 +245,9 @@ object SinglePlayLayout {
             }
         }
         if (talk.t < 0) talk = talk.shift(0, -talk.t)
-        // the room row: out of a fight, centred at the bottom (the HUD's place - the bars hide out of combat - under the Wings at rest)
-        val row = if (arr == Arr.OUT) {
+        // the room row: out of a fight, centred at the bottom (the HUD's place - the bars hide out of combat - under the Wings at rest);
+        // not while Party mode is on (Hub's party rows stand under the HUD there out of combat too: the open question's default)
+        val row = if (arr == Arr.OUT && !partyMode) {
             val rw = Math.round(ROW_SRC_W * ROW_K); val rh = Math.round(ROW_SRC_H * ROW_K)
             val l = (BASE_W - rw) / 2
             sc.place(Box(l, BASE_H - ROW_FOOT - rh, l + rw, BASE_H - ROW_FOOT), Anchor.CENTRE)
