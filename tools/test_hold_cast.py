@@ -62,6 +62,12 @@ C_GamePad.ButtonBindingToIndex = function(n) return PADNUM[n] end
 C_GamePad.ButtonIndexToBinding = function(i) for n, v in pairs(PADNUM) do if v == i then return n end end end
 C_GamePad.GetActiveDeviceID = function() return 1 end
 C_GamePad.GetDeviceMappedState = function() return { buttons = PADSTATE } end
+-- m204 THE FIRE'S MARK: the mapped state's axes (the triggers' analog values) as the router reads them, the client's axis names (0-based:
+-- LTrigger 4, RTrigger 5 -> GetGamePadState's axes 5 / 6), and the restricted environment's floor (the game's has it)
+PADAXES = {}
+C_GamePad.AxisIndexToConfigName = function(i) return ({ [0] = "LStickX", [1] = "LStickY", [2] = "RStickX", [3] = "RStickY", [4] = "LTrigger", [5] = "RTrigger" })[i] end
+RESTRICTED.GetGamePadState = function() return { buttons = PADSTATE, axes = PADAXES } end
+RESTRICTED.floor = math.floor
 C_SpellBook = { GetSpellBookItemInfo = function(slot) local id = BOOK[slot]; return id and { spellID = id } or nil end }
 CVARS = {}
 C_CVar = { GetCVar = function(k) return CVARS[k] end }
@@ -194,20 +200,20 @@ def tapped(u, btn):
 pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
-check('local PV = "m204"' in pm and 'm199 HOLD TO CAST ROUND 1533, THE FIRE AT THE THRESHOLD' in pm and 'm198 EDIT HOME' in pm
+check('local PV = "m205"' in pm and 'm204 THE RING AND THE CAST AGREE' in pm and 'm203 THE int/1533 REVIEW, ROUND 2' in pm and 'm199 HOLD TO CAST ROUND 1533, THE FIRE AT THE THRESHOLD' in pm and 'm198 EDIT HOME' in pm
       and 'm197 THE 1531 MERGE OF feat/hold-cast' in pm and 'm196 THE 1530 MERGE OF TEST 1529' in pm
       and 'm195 THE HOLD SPELL TAKES THE BUTTON' in pm and 'm194 HOLD TO CAST IN THE GAME' in pm and 'm193 THE 1528b MERGE OF feat/hold-cast' in pm
       and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m199 (m198, m197, m196, m195 / m194, m193, m190, m189 kept)')
 check('local CV = "p64"' in ptc and 'p63 THE 1531 MERGE OF feat/hold-cast' in ptc and 'p62 HOLD TO CAST IN THE GAME' in ptc
       and 'p61 THE 1528b MERGE OF feat/hold-cast' in ptc and 'p60 THE HOLD SPELL BUTTON' in ptc and 'p59 HOLD TO CAST' in ptc,
       '0. PadTabCtl p63 (p62, p61, p60, p59 kept)')
-check('local BV = "b89"' in bk and 'b84 THE 1531 MERGE OF feat/hold-cast' in bk and 'b83 THE 1530 MERGE OF TEST 1529' in bk
+check('local BV = "b90"' in bk and 'b84 THE 1531 MERGE OF feat/hold-cast' in bk and 'b83 THE 1530 MERGE OF TEST 1529' in bk
       and 'b82 HOLD TO CAST IN THE GAME' in bk and 'b81 THE 1528b MERGE OF feat/hold-cast' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk
       and 'P3[28] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end' in bk
       and 'for k = 0, 1 do P3[26 + k]' in bk
       and 'for k = 0, 2 do P3[29 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdTicks) == "function" then pcall(pm.holdTicks, 2 + k) end end end' in bk,
       '0. Book b84 (b83, b82, b81 kept): the swing 26 / 27, the hold chooser 28, the hold time 29 / 30 / 31')
-check('local NB = { V = "nbar28"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
+check('local NB = { V = "nbar29"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
       and 'nbar20 THE 1528b MERGE OF feat/hold-cast' in ab and 'nbar18 HOLD TO CAST' in ab,
       '0. ActionBar nbar25 (nbar22, nbar21, nbar20, nbar18 kept): tools/test_hold_wings.py tests it')
 
@@ -488,13 +494,28 @@ mb = last(LB, 'holdmap', n0)
 check(mb.get('why') == 'box' and 'ltrt:6' in (mb.get('b') or '') and 'bare:7' not in (mb.get('b') or ''),
       '8. the Bind box waiting: every place may be held (the plain B is its way out)', mb)
 # LT + X held 0.75 s (more than Normal's fire point: 0.71 s with the game's frame unknown, m199), its release brings it to the box
-check(abs(a(LB, 'WowCompanion.padMap.holdSecs()') - 0.71) < 1e-9, "8. (m199: the box's hold time is the fire point F, 0.71 s)", a(LB, 'WowCompanion.padMap.holdSecs()'))
+check(abs(a(LB, 'WowCompanion.padMap.holdSecs()') - 0.365) < 1e-9, "8. (m204: the box's hold time is the ring's full point R, (3 - 1) x 0.2 - 0.025 - 0.010 = 0.365 s; m199's F 0.71)", a(LB, 'WowCompanion.padMap.holdSecs()'))
 LB.execute('PADSTATE = { [LT_I] = true, [3] = true }; BOXRUN(0.75, 0.05); PADSTATE = { [LT_I] = true }; BK.press("PAD3"); PADSTATE = {}')
 acks = [x for x in docs(LB, n0, 'spellsack') if x.get('op') == 'bind']
 x = acks[-1] if acks else {}
 check(x.get('ok') is True and (x.get('pad') or {}).get('hold') is True and (x.get('pad') or {}).get('b') == 2 and (x.get('pad') or {}).get('p') == 5,
       '8. LT + X HELD past the hold time: placed as LT + X\'s hold spell (the ack\'s pad says hold)', x)
 check(a(LB, 'HDB()[17].n') == 'Lightning Bolt' and not any(v == 'PlaceAction' for v in lst(LB, 'SPY')), '8. ... stored as the hold, the bar untouched')
+# Book b89 (fix/hold-tweaks; the user: "it doesn't have a confirmation on the hold spell"): the same Keep / Undo question as a tap bind
+check(a(LB, 'BK.ctl.mode') == 'confirm' and a(LB, 'BK.ctl.undo and BK.ctl.undo.hold') is True and a(LB, 'BK.ctl.undo.prev') is None,
+      '8. b89: a hold placed by a long press asks Keep / Undo (mode confirm; nothing was there before)', (a(LB, 'BK.ctl.mode'),))
+LB.execute('BK.press("PAD2")')
+check(a(LB, 'BK.ctl.mode') == 'bind' and a(LB, 'HDB()[17]') is None,
+      '8. b89: B undoes it - the hold gone, the box waiting for a button again', (a(LB, 'BK.ctl.mode'), a(LB, 'HDB()[17] ~= nil')))
+LB.execute('WowCompanion.padMap.putHold(1, 2, 5, "spell", 2); BOXRUN(0.1, 0.05)')
+LB.execute('PADSTATE = { [LT_I] = true, [3] = true }; BOXRUN(0.75, 0.05); PADSTATE = { [LT_I] = true }; BK.press("PAD3"); PADSTATE = {}')
+check(a(LB, 'BK.ctl.mode') == 'confirm' and a(LB, 'HDB()[17].n') == 'Lightning Bolt' and a(LB, 'BK.ctl.undo.prev.n') == 'Healing Wave',
+      '8. b89: over a hold that was there (Healing Wave): asked again, the old one kept for an undo', a(LB, 'BK.ctl.mode'))
+LB.execute('BK.press("PAD2")')
+check(a(LB, 'HDB()[17].n') == 'Healing Wave', '8. b89: B puts the old hold back (PadMap m204 holdRestore)', a(LB, 'HDB()[17] and HDB()[17].n'))
+LB.execute('BOXRUN(0.1, 0.05); PADSTATE = { [LT_I] = true, [3] = true }; BOXRUN(0.75, 0.05); PADSTATE = { [LT_I] = true }; BK.press("PAD3"); PADSTATE = {}; BK.press("PAD1")')
+check(a(LB, 'BK.ctl.mode') == 'book' and a(LB, 'HDB()[17].n') == 'Lightning Bolt', '8. b89: A keeps the new hold (the box closes to the book)',
+      (a(LB, 'BK.ctl.mode'), a(LB, 'HDB()[17] and HDB()[17].n')))
 # a short press of LT + Y: the normal bind's road (never a hold)
 LB.execute('BK.ctl.mode = "book"; BK.ctl.bind = nil; BOXRUN(0.1, 0.05); BK.startBind({ t = 1, slot = 1, id = 403 })')
 n1 = nsent(LB)
@@ -610,7 +631,7 @@ check(fc and not [x for x in fc if x.get('hk') == 'keep'] and fc[0].get('down') 
 K.execute('WowCompanion.padMap.emit(true)')
 hd = (last(K, 'padmap').get('m') or {}).get('hold') or {}
 check(hd.get('cn') == 3 and hd.get('n') == 3 and hd.get('ft') is None, "12. the padmap's hold: cn (the clock's looks) 3; ft none measured yet", hd)
-check(abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.710) < 1e-9, '12. holdSecs with ft unknown: F(3, 25) = 0.710 s', a(K, 'WowCompanion.padMap.holdSecs()'))
+check(abs(a(K, 'WowCompanion.padMap.fireSecs()') - 0.710) < 1e-9, '12. holdSecs with ft unknown: F(3, 25) = 0.710 s', a(K, 'WowCompanion.padMap.fireSecs()'))
 K.execute('WowCompanion.padMapHold().tick(true)')
 ftf = 'WowCompanion.padMapHold().ftf'
 check(a(K, ftf + ' ~= nil') and a(K, ftf + ':IsShown()') is True, '12. the frame meter: our own plain frame, shown while the holdmap says on', a(K, ftf + ' ~= nil'))
@@ -624,7 +645,8 @@ def frames(L, ms, secs):
 
 frames(K, 16, 2.5)
 check(a(K, 'WowCompanion.padMapHold().ft') == 17, '12. 60 fps (16 ms frames): ft 17', a(K, 'WowCompanion.padMapHold().ft'))
-check(abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.678) < 1e-9, '12. holdSecs = F(3, 17) = 0.678 s (60 fps)', a(K, 'WowCompanion.padMap.holdSecs()'))
+check(abs(a(K, 'WowCompanion.padMap.fireSecs()') - 0.678) < 1e-9, '12. fireSecs = F(3, 17) = 0.678 s (60 fps)', a(K, 'WowCompanion.padMap.fireSecs()'))
+check(abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.373) < 1e-9, '12. m204: holdSecs = the ring full point R(3, 17) = 0.373 s (60 fps)', a(K, 'WowCompanion.padMap.holdSecs()'))
 frames(K, 40, 0.04)
 check(a(K, 'WowCompanion.padMapHold().ft') == 50, '12. one 40 ms frame: raised AT ONCE (the next bucket up: 50)', a(K, 'WowCompanion.padMapHold().ft'))
 frames(K, 16, 3)
@@ -638,14 +660,14 @@ hm = last(K, 'holdmap', n0) or last(K, 'holdmap')
 K.execute('WowCompanion.padMapHold().tick(true)')
 hm = last(K, 'holdmap')
 check(hm.get('cn') == 3 and hm.get('ft') == 17 and hm.get('why') == 'on', '12. the holdmap says cn 3 and ft 17', hm)
-check(a(K, 'WowCompanion.padMap.holdTicks(2)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.461) < 1e-9
-      and a(K, 'WowCompanion.padMap.holdTicks(4)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.895) < 1e-9,
-      '12. Short / Long at 60 fps: 0.461 / 0.895 s', a(K, 'WowCompanion.padMap.holdSecs()'))
+check(a(K, 'WowCompanion.padMap.holdTicks(2)') is True and abs(a(K, 'WowCompanion.padMap.fireSecs()') - 0.461) < 1e-9
+      and a(K, 'WowCompanion.padMap.holdTicks(4)') is True and abs(a(K, 'WowCompanion.padMap.fireSecs()') - 0.895) < 1e-9,
+      '12. Short / Long at 60 fps: 0.461 / 0.895 s', a(K, 'WowCompanion.padMap.fireSecs()'))
 K.execute('WowCompanion.padMap.holdTicks(3)')
 # a fight with the hold time changed: cn stays the clock's (the wish waits for the fight's end)
 K.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; driveStates(); advance(1); WowCompanion.padMap.holdTicks(2); WowCompanion.padMapHold().tick(true)')
 hm = last(K, 'holdmap')
-check(hm.get('cn') == 3 and a(K, 'WowCompanion.padMap.holdTicksNow()') == 2 and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.678) < 1e-9,
+check(hm.get('cn') == 3 and a(K, 'WowCompanion.padMap.holdTicksNow()') == 2 and abs(a(K, 'WowCompanion.padMap.fireSecs()') - 0.678) < 1e-9,
       "12. in a fight a new hold time is the wish only: cn (the clock's) stays 3, holdSecs F(3)", (hm, a(K, 'WowCompanion.padMap.holdTicksNow()')))
 K.execute('COMBAT = false; driveStates(); fire("PLAYER_REGEN_ENABLED"); advance(1); WowCompanion.padMapHold().tick(true)')
 check(last(K, 'holdmap').get('cn') == 2, "12. ... the fight's end: the clock takes it, cn 2", last(K, 'holdmap'))
@@ -654,19 +676,19 @@ K.execute('WowCompanion.padMap.holdTicks(3); WowCompanion.padMapHold().tick(true
 # the top screen's ring fills when the launcher lets the press go; in memory only, the padmap's hold.hb says it
 K.execute('WowCompanion.padMap.emit(true)')
 hd = (last(K, 'padmap').get('m') or {}).get('hold') or {}
-check(hd.get('hb') == 0 and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.678) < 1e-9, "12b. m202: the padmap's hold says hb 0, F 0.678 s", hd)
+check(hd.get('hb') == 0 and abs(a(K, 'WowCompanion.padMap.fireSecs()') - 0.678) < 1e-9, "12b. m202: the padmap's hold says hb 0, F 0.678 s", hd)
 db0 = a(K, 'WowCompanionSpellsDB.holdBump')
-check(a(K, 'WowCompanion.padMap.holdBump(2)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - (0.678 + 0.068)) < 1e-9,
-      '12b. holdBump(2): F + 2 x 34 ms = 0.746 s', a(K, 'WowCompanion.padMap.holdSecs()'))
+check(a(K, 'WowCompanion.padMap.holdBump(2)') is True and abs(a(K, 'WowCompanion.padMap.fireSecs()') - (0.678 + 0.068)) < 1e-9,
+      '12b. holdBump(2): F + 2 x 34 ms = 0.746 s', a(K, 'WowCompanion.padMap.fireSecs()'))
 K.execute('WowCompanion.padMap.emit(true)')
 check(((last(K, 'padmap').get('m') or {}).get('hold') or {}).get('hb') == 2, "12b. ... the padmap's hold says hb 2 (the app stops sending)",
       (last(K, 'padmap').get('m') or {}).get('hold'))
 check(a(K, '(WowCompanion.padMap.holdBump(4))') is False and a(K, '(WowCompanion.padMap.holdBump(-1))') is False
       and a(K, 'WowCompanion.padMapHold().bump') == 2, '12b. only 0-3 steps (4, -1 refused)')
-check(a(K, 'WowCompanion.padMap.holdTicks(4)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - (0.895 + 0.068)) < 1e-9,
-      '12b. ... on every hold time (Long: 0.963 s)', a(K, 'WowCompanion.padMap.holdSecs()'))
+check(a(K, 'WowCompanion.padMap.holdTicks(4)') is True and abs(a(K, 'WowCompanion.padMap.fireSecs()') - (0.895 + 0.068)) < 1e-9,
+      '12b. ... on every hold time (Long: 0.963 s)', a(K, 'WowCompanion.padMap.fireSecs()'))
 K.execute('WowCompanion.padMap.holdTicks(3)')
-check(a(K, 'WowCompanion.padMap.holdBump(0)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.678) < 1e-9 and db0 is None
+check(a(K, 'WowCompanion.padMap.holdBump(0)') is True and abs(a(K, 'WowCompanion.padMap.fireSecs()') - 0.678) < 1e-9 and db0 is None
       and a(K, 'WowCompanionSpellsDB.holdBump') is None, '12b. holdBump(0): F again; nothing saved')
 # 23c. m203 (the int/1533 review, round 2): THE BUMP IN A FIGHT TOO. The app sends its steps only out of a fight (Book b88's page-4
 # codes), so a SHORT fire in a fight left our F - the ring, the only one in single screen mode - up to 0.1 s ahead of the cast until the
@@ -677,7 +699,7 @@ SB = world()
 SB.execute('WowCompanion.padMap.putHold(1, 2, 6, "spell", 2); WowCompanion.padMap.putHold(1, 2, 6, "spell", 3, "combat"); advance(1)')
 SB.execute('WowCompanion.padMapHold().tick(true)')
 frames(SB, 16, 2.5)
-f0 = a(SB, 'WowCompanion.padMap.holdSecs()')
+f0 = a(SB, 'WowCompanion.padMap.fireSecs()')
 check(a(SB, 'WowCompanion.padMapHold().ft') == 17 and abs(f0 - 0.678) < 1e-9 and a(SB, 'WowCompanion.padMapHold().bump or 0') == 0,
       '12c. (60 fps: F(3, 17) = 0.678 s, no bump)', (a(SB, 'WowCompanion.padMapHold().ft'), f0))
 
@@ -704,8 +726,8 @@ check(d['kind'] == 'holdkeep' and rw.get('hn') == 2 and rw.get('need') == 3 and 
 # the launcher's fire at F (0.678 s) beat a late third look: the tap ran, one look short -> one step, F + 34 ms
 d, u, rw = kept(SB, 2, 0.278)
 check(rw.get('hn') == 2 and rw.get('kind') != 'slothold' and steps(SB) == 1
-      and abs(a(SB, 'WowCompanion.padMap.holdSecs()') - (f0 + 0.034)) < 1e-9,
-      '12c. a release at F (0.678 s) with 2 looks (the clock late): a SHORT - one step, F 0.712 s', (rw, steps(SB), a(SB, 'WowCompanion.padMap.holdSecs()')))
+      and abs(a(SB, 'WowCompanion.padMap.fireSecs()') - (f0 + 0.034)) < 1e-9,
+      '12c. a release at F (0.678 s) with 2 looks (the clock late): a SHORT - one step, F 0.712 s', (rw, steps(SB), a(SB, 'WowCompanion.padMap.fireSecs()')))
 # a frame inside F (0.660 s >= 0.651 s): still the launcher's fire (its up read a frame early)
 d, u, rw = kept(SB, 2, 0.26 + 0.034)
 check(steps(SB) == 2, '12c. ... read a frame before the new F (0.694 s >= 0.685 s): a SHORT too (two steps)', steps(SB))
@@ -722,7 +744,7 @@ SB.execute('fire("PLAYER_REGEN_DISABLED"); COMBAT = true; driveStates(); advance
 v0 = len(lst(SB, 'VIOL'))
 d, u, rw = kept(SB, 2, 0.346, fight=True)                          # F(3, 17) + 2 steps = 0.746 s
 check(d['kind'] == 'holdkeep' and rw.get('hn') == 2 and rw.get('fight') is True and steps(SB) == 3
-      and abs(a(SB, 'WowCompanion.padMap.holdSecs()') - (f0 + 0.102)) < 1e-9,
+      and abs(a(SB, 'WowCompanion.padMap.fireSecs()') - (f0 + 0.102)) < 1e-9,
       '12c. in a fight: a SHORT steps the bump at once (3 steps, F 0.780 s) - no app send needed', (d['kind'], rw, steps(SB)))
 d, u, rw = kept(SB, 2, 0.6, fight=True)
 check(steps(SB) == 3, '12c. ... capped at 3 steps (102 ms), as the app', steps(SB))
@@ -730,7 +752,7 @@ check(len(lst(SB, 'VIOL')) == v0 and not lst(SB, 'SNIPERR') and not lst(SB, 'HAN
       '12c. nothing blocked, no error, nothing spied in the fight', clean(SB))
 SB.execute('COMBAT = false; driveStates(); fire("PLAYER_REGEN_ENABLED"); advance(1)')
 # the app's own steps win (out of a fight it sends them while hold.hb differs): 1 = 1
-check(a(SB, 'WowCompanion.padMap.holdBump(1)') is True and steps(SB) == 1 and abs(a(SB, 'WowCompanion.padMap.holdSecs()') - (f0 + 0.034)) < 1e-9
+check(a(SB, 'WowCompanion.padMap.holdBump(1)') is True and steps(SB) == 1 and abs(a(SB, 'WowCompanion.padMap.fireSecs()') - (f0 + 0.034)) < 1e-9
       and a(SB, 'WowCompanionSpellsDB.holdBump') is None, "12c. the app's send (1 step) wins; nothing saved", steps(SB))
 blk = pm[pm.index('-- m203 THE BUMP IN A FIGHT TOO'):pm.index('function OV.hold.relSafe(pos, b)')]
 code = '\n'.join(l.split('--', 1)[0] for l in blk.splitlines())
@@ -877,9 +899,9 @@ check([x.get('st') for x in docs(K, n0, 'holdcast')] == ['q', 'none'],
 K.execute('WowCompanion.gcdRun = nil; advance(0.3)')
 # (d) THE GAME'S FRAME: no cap at 50 ms (a sustained 12 fps took the tap: F(3, 50) 810 ms < the 3rd look's 849 ms)
 frames(K, 83, 2.5)
-check(a(K, 'WowCompanion.padMapHold().ft') == 84 and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.946) < 1e-9,
+check(a(K, 'WowCompanion.padMapHold().ft') == 84 and abs(a(K, 'WowCompanion.padMap.fireSecs()') - 0.946) < 1e-9,
       '26. a sustained 12 fps (83 ms frames): ft 84, F(3, 84) = 0.946 s (past the 3rd look\'s 3 x 283 = 0.849 s)',
-      (a(K, 'WowCompanion.padMapHold().ft'), a(K, 'WowCompanion.padMap.holdSecs()')))
+      (a(K, 'WowCompanion.padMapHold().ft'), a(K, 'WowCompanion.padMap.fireSecs()')))
 frames(K, 300, 0.3)
 check(a(K, 'WowCompanion.padMapHold().ft') == 134, '26. ... a 300 ms frame: the last bucket, 134', a(K, 'WowCompanion.padMapHold().ft'))
 frames(K, 16, 7)
@@ -911,6 +933,79 @@ check(hooked == 7, "12. OnAttributeChanged hooked on our own router buttons only
 check('HookScript("OnAttributeChanged"' in pm and pm.count('HookScript("OnAttributeChanged"') == 2
       and 'if pos ~= 7 then pcall(function() b:HookScript("OnAttributeChanged"' in pm,
       '12. ... added where the buttons are made (out of combat), never on B')
+
+# ---------------------------------------------------------------- (27) THE RING AND THE CAST AGREE (fix/hold-tweaks, 1535)
+# The user on test 1533, 2026-11-26: "The hold to cast is triggering when releasing before the hold completes". The router decides at the
+# release by the clock's looks, and the game's state driver may look in the very frame of the keep (its throttle is the game's, never
+# reset by the press: SecureStateDriver's timer <= 0 then 0.2 again) - so the need-th look can come (need - 1) x 0.2 s after the press,
+# well before F. The ring (holdSecs: ActionBar's fill point, the Bind box's hold time) must be full no later than the earliest moment
+# the router can pick the hold: a release before it is ALWAYS the tap.
+R27 = world()
+R27.execute('WowCompanion.padMap.putHold(1, 1, 8, "spell", 1); advance(1)')
+R27.execute('''function EARLY(rel)
+    local t0 = NOW
+    driveStates()                                   -- the keep's own frame: the throttle ran out there (the earliest look)
+    local t = 0.2
+    while t < rel - 1e-9 do NOW = t0 + t; driveStates(); t = t + 0.2 end
+    NOW = t0 + rel
+end''')
+ring27 = a(R27, 'WowCompanion.padMap.holdSecs()')
+d = edge(R27, 'PAD1', True)
+R27.eval('EARLY')(0.417)
+u = edge(R27, 'PAD1', False)
+check(d['kind'] == 'holdkeep' and (u['kind'] != 'slothold' or 0.417 >= ring27 - 1e-9),
+      '27. RED BEFORE THE FIX: the third look came 0.4 s after the press (the first in the keep\'s own frame), a release at 0.417 s '
+      'ran the hold - the ring (holdSecs) must be full by then', (u['kind'], ring27))
+d = edge(R27, 'PAD1', True)
+R27.eval('EARLY')(ring27 - 0.001)
+u = edge(R27, 'PAD1', False)
+check(u['kind'] != 'slothold', '27. a release 1 ms before the ring is full, the looks as early as the game can make them: the TAP',
+      (u['kind'], ring27))
+check(ring27 <= (3 - 1) * 0.2 - 0.025 - 0.010 + 1e-9,
+      '27. the ring\'s full point (Normal, 3 looks, ft unknown 25): (3 - 1) x 0.2 s - one frame - 10 ms = 0.365 s at most', ring27)
+
+# ---------------------------------------------------------------- (28) THE FIRE'S MARK (fix/hold-tweaks; the user's pick "Cast at the fill")
+# the app's launcher writes a code on a free trigger's analog axis: 3 while a press is held (armed), 6 + the control in the write that lets a
+# kept press go at the ring's full point R - the router runs the hold on its own fire code (one look is all the clock has there)
+M28 = world()
+M28.execute('WowCompanion.padMap.putHold(1, 1, 8, "spell", 1); advance(1)')
+nA = 'HB("WowCompanionCombatFace8")'
+check(a(M28, nA + '.a["wc-axl"]') == 5 and a(M28, nA + '.a["wc-axr"]') == 6 and a(M28, nA + '.a["wc-hmc"]') == 6
+      and a(M28, '(function() local x = HB("WowCompanionCombatFace5"); return x and x.a["wc-hmc"] end)()') in (7, None)
+      and a(M28, '(function() local x = HB("WowCompanionCombatFace7"); return x and x.a["wc-hmc"] end)()') is None,
+      '28. the router knows the triggers axes (5 / 6) and each button its fire code (A 6, X 7; never B)',
+      (a(M28, nA + '.a["wc-axl"]'), a(M28, nA + '.a["wc-axr"]'), a(M28, nA + '.a["wc-hmc"]')))
+def mark(L, l=None, r=None):
+    L.execute('PADAXES = {}' + ('; PADAXES[5] = %d / 255' % l if l is not None else '') + ('; PADAXES[6] = %d / 255' % r if r is not None else ''))
+n0 = nsent(M28)
+mark(M28, l=3)
+d = edge(M28, 'PAD1', True)
+kw = [x for x in docs(M28, n0, 'facecast') if x.get('hk') == 'keep']
+check(d['kind'] == 'holdkeep' and kw and kw[-1].get('mk') == 1 and a(M28, nA + '.a["wc-hm"]') is True,
+      '28. the armed code (3) with the key-down: kept, the keep word says mk 1', (d['kind'], kw[-1:] if kw else None))
+M28.execute('driveStates()')                                    # one look: the ring's full point comes before the third
+mark(M28, l=6)
+u = edge(M28, 'PAD1', False)
+check(u['kind'] == 'slothold', "28. RED BEFORE: the launcher's up at R with A's fire code (6), one look: the HOLD at the fill", u['kind'])
+mark(M28, l=3)
+edge(M28, 'PAD1', True); M28.execute('driveStates()'); mark(M28, l=3)
+u = edge(M28, 'PAD1', False)
+check(u['kind'] != 'slothold', '28. the player let go before the fill (only the armed code): the TAP', u['kind'])
+edge(M28, 'PAD1', True); M28.execute('driveStates()'); mark(M28, r=7)
+u = edge(M28, 'PAD1', False)
+check(u['kind'] != 'slothold', "28. another button's fire code (X's 7) on A's up: the TAP", u['kind'])
+edge(M28, 'PAD1', True); M28.execute('driveStates(); PADAXES = { [5] = 6.6 / 255 }')
+u = edge(M28, 'PAD1', False)
+check(u['kind'] != 'slothold', '28. an inexact value (6.6 / 255: a trigger brushed) is no code: the TAP', u['kind'])
+n1 = nsent(M28)
+mark(M28)
+edge(M28, 'PAD1', True)
+kw = [x for x in docs(M28, n1, 'facecast') if x.get('hk') == 'keep']
+check(kw and kw[-1].get('mk') is None and a(M28, nA + '.a["wc-hm"]') is None, '28. no code with the key-down: no mk (the app fires at F)', kw[-1:] if kw else None)
+M28.execute('LOOK(3)')
+u = edge(M28, 'PAD1', False)
+check(u['kind'] == 'slothold', '28. ... and the clock still decides without a code (3 looks: the hold at F)', u['kind'])
+check(not lst(M28, 'SNIPERR') and not lst(M28, 'VIOL') and not lst(M28, 'SPY'), '28. no snippet error, nothing blocked, no trace', clean(M28))
 
 # ---------------------------------------------------------------- (9) no trace
 check(not lst(L, 'SPY'), '9. no SetBinding / SetCVar / macro write / game window call', lst(L, 'SPY'))

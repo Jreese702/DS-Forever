@@ -323,9 +323,9 @@ class HoldCastShotsTest {
             val ready = bars("h1_${tag}_both_ready", lt = false, layout = lay)
             bars("h2_${tag}_tap_cooling", lt = false, layout = lay, tapCd = true)
             val hc = bars("h3_${tag}_hold_cooling", lt = false, layout = lay, holdCd = true)
-            val early = bars("h4a_${tag}_held_200ms_no_ring_yet", lt = false, layout = lay, prog = 200L)
-            val held = bars("h4_${tag}_held_500ms_charge_ring_on_the_badge", lt = false, layout = lay, prog = 500L)
-            val charged = bars("h4c_${tag}_held_800ms_charged_no_keep_word", lt = false, layout = lay, prog = 800L)
+            val early = bars("h4a_${tag}_held_80ms_no_ring_yet", lt = false, layout = lay, prog = 80L)       // fix/hold-tweaks: the ring from 0.1 s
+            val held = bars("h4_${tag}_held_250ms_charge_ring_on_the_badge", lt = false, layout = lay, prog = 250L)
+            val charged = bars("h4c_${tag}_held_450ms_charged_the_hold_is_sure", lt = false, layout = lay, prog = 450L)
             val fired = bars("h5_${tag}_fired_at_the_fill_hold_takes_the_face", lt = false, layout = lay, fire = true)
             bars("t1_${tag}_takeover_mid_cast", lt = false, layout = lay, fire = true, take = "cast")
             bars("t2_${tag}_takeover_during_gcd", lt = false, layout = lay, fire = true, take = "gcd")
@@ -333,7 +333,11 @@ class HoldCastShotsTest {
             val mana = bars("s1_${tag}_badge_low_mana", lt = false, layout = lay, states = "mana")
             val range = bars("s2_${tag}_badge_out_of_range", lt = false, layout = lay, states = "range")
             bars("s3_${tag}_badge_low_mana_and_out_of_range", lt = false, layout = lay, states = "both")
-            assertTrue("$tag: no ring before 0.25 s (the press's own pressed look only: no gold)", gold(early, RectF(0f, 0f, early.width.toFloat(), early.height.toFloat())) <= gold(ready, RectF(0f, 0f, ready.width.toFloat(), ready.height.toFloat())) + 10)
+            // (fix/hold-tweaks: at 80 ms the press's own pressed look is still easing in on the big face - the ring's place is the badge's)
+            val ringAt = diffBox(early, held)?.let { RectF(it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat()) }
+                ?: error("$tag: the ring drew nothing at 250 ms")
+            assertTrue("$tag: no ring before 0.1 s (far less gold where the ring draws than at 0.25 s; the model: HoldCastTest)",
+                gold(early, ringAt) + 40 < gold(held, ringAt))
             assertTrue("$tag: the badge's states change it (mana blue, range red)", differs(ready, mana) && differs(ready, range))
             assertFalse("$tag: the takeover over: the ready picture again", differs(ready, back))
             assertTrue("$tag: charged differs from filling", differs(held, charged))
@@ -447,15 +451,18 @@ class HoldCastShotsTest {
         val manaRange = shots[4]; val unusableRange = shots[5]
         assertTrue("mana + range: red like range (red is range)", !differs(range, manaRange))
         assertTrue("unusable + range: grey like unusable", !differs(shots[2], unusableRange))
-        // 2. THE GLOWING RING: 0 % (just shown, 0.25 s), 50 %, 100 % (the fire point: full, no keep word)
-        val f = HoldCast.fireMs(3, 17)
-        val r0 = bars("home_ring_000", lt = false, layout = lay, prog = 250L)
-        val r50 = bars("home_ring_050", lt = false, layout = lay, prog = 250L + (f - 250L) / 2)
+        // 2. THE GLOWING RING: 0 % (just shown), 50 %, 100 % - fix/hold-tweaks: from 0.1 s to the ring's full point R (373 ms at 60 fps:
+        // a release before it is the tap, from it the hold), in the game's checked gold, its glow running straight out of it
+        val d0 = HoldCast.RING_DELAY_MS
+        val f = HoldRelease.ringMs(3, 17)
+        val r0 = bars("home_ring_000", lt = false, layout = lay, prog = d0)
+        val r50 = bars("home_ring_050", lt = false, layout = lay, prog = d0 + (f - d0) / 2)
         val r100 = bars("home_ring_100", lt = false, layout = lay, prog = f)
         val ringBox = android.graphics.Rect(cx - 60, cy - 60, cx + 60, cy + 60)
         fun count(b: Bitmap, p: (Int) -> Boolean): Int { var k = 0; for (x in ringBox.left until ringBox.right) for (y in ringBox.top until ringBox.bottom)
             if (x in 0 until b.width && y in 0 until b.height && p(b.getPixel(x, y))) k++; return k }
-        val glowish = { c: Int -> Color.red(c) in 70..235 && Color.green(c) in 40..200 && Color.blue(c) < 110 && Color.red(c) > Color.blue(c) + 40 }
+        // (fix/hold-tweaks: the glow is the game's checked gold now, yellower - its soft pixels reach green 230)
+        val glowish = { c: Int -> Color.red(c) in 70..250 && Color.green(c) in 50..230 && Color.blue(c) < 120 && Color.red(c) > Color.blue(c) + 40 }
         assertTrue("50 %: the ring's GLOW pixels round the badge (soft gold under the fill)", count(r50, glowish) > count(ready, glowish) + 30)
         assertTrue("50 % fills more than 0 %, 100 % more than 50 %", count(r50, ::isGold) > count(r0, ::isGold) && count(r100, ::isGold) > count(r50, ::isGold))
         // 3. RAPTOR STRIKE'S NORMAL LOOK: queued for the next swing - the face in the game's gold checked ring at the fire, still there at
@@ -537,6 +544,10 @@ class HoldCastShotsTest {
         val without = Bitmap.createBitmap(w, hh, Bitmap.Config.ARGB_8888).also { Canvas(it).apply { drawColor(Theme.ink); o.draw(this) } }
         save(without, "b2_bindbox_addon_says_off_no_hold_line")
         assertTrue("the foot's hold line shows while the add-on has hold to cast", differs(withHint, without))
+        // fix/hold-tweaks (the user on test 1533: "I also cant see the current hold spells in each menu and it doesn't have a confirmation
+        // on the hold spell"; "Instead I want select to cycle to the tap to cast"): the box drawn with the band's own drawing (as Home
+        // wires it), each button's HOLD spell as its badge, Select's glyph at the bar's heading, a long press's Keep / Undo
+        bindBoxHolds()
         // Settings > Controller: the Hold time picture, each choice
         for (t in CastSettings.HoldTime.values()) {
             CastSettings.holdTime = t
@@ -546,5 +557,91 @@ class HoldCastShotsTest {
             save(b, "s1_settings_hold_time_${t.name.lowercase()}")
         }
         CastSettings.holdTime = CastSettings.HoldTime.NORMAL
+    }
+
+    /** fix/hold-tweaks: the Bind box with the band's drawing (CompanionHost's wiring): the holds' badges, Select's hint, the hold's
+     *  Keep / Undo */
+    private fun bindBoxHolds() {
+        val cast = CastView(app) { }
+        cast.layout = CastView.Layout.DIAMONDS
+        cast.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(354, View.MeasureSpec.EXACTLY))
+        cast.layout(0, 0, 1240, 354)
+        val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, 136075)
+        fun layer() = JSONArray().apply { for (p in 1..8) put(JSONObject().put("p", p).put("k", "spell").put("id", 400 + p).put("i", icons[p - 1])) }
+        val hud = JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1).put("pages", JSONArray().put(true).put(true).put(true))
+            .put("L", JSONObject().put("n", layer()).put("lt", layer()).put("rt", layer()).put("lr", layer())))
+        cast.update(hud)
+        for (i in 0 until 20) { Thread.sleep(25); org.robolectric.shadows.ShadowLooper.idleMainLooper() }
+        cast.update(hud)
+        CastStripModel.Live.set(CastStripModel.parse(JSONObject(ControllerSituationsShotsTest.BAR))!!)
+        val o = SpellsOverlay(app, drawSet = { c, set, dpad, face, lit, icon, fight, hold, holdLit -> cast.drawSet(c, set, dpad, face, lit, icon, fight, hold, holdLit) },
+            otherReader = { true })
+        o.onBook(SpellsModel.parse(JSONObject(ControllerSituationsShotsTest.BOOK))!!)
+        o.onPadMap(PadMapModel.parse(padmap())!!)
+        val hh = 1080 - Strip.HEIGHT
+        o.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(hh, View.MeasureSpec.EXACTLY))
+        o.layout(0, 0, w, hh)
+        fun doc(extra: String, mode: String = "bind") = o.onCtl(SpellsModel.parseCtl(JSONObject(
+            """{"type":"spellsctl","v":"b90","ctl":{"on":true,"mode":"$mode","bind":8017,"bsel":0$extra}}"""))!!)
+        // (fix/hold-tweaks: the device ease - a frame, the clock on by [ease] ms, the frame saved)
+        fun shot(name: String, ease: Long = 400L): Bitmap {
+            val bm = Bitmap.createBitmap(w, hh, Bitmap.Config.ARGB_8888)
+            Canvas(bm).apply { drawColor(Theme.ink); o.draw(this) }
+            var left = ease
+            while (left > 0L) {                                         // frames of 30 ms, as the screen draws them
+                val st = minOf(30L, left); left -= st
+                ShadowSystemClock.advanceBy(Duration.ofMillis(st))
+                Canvas(bm).apply { drawColor(Theme.ink); o.draw(this) }
+            }
+            save(bm, name); return bm
+        }
+        doc("")
+        val out = shot("b3_bindbox_out_of_combat_hold_badges_select_hint")
+        // the same box without the holds: the badges are what changed
+        o.onPadMap(PadMapModel.parse(padmapNoHolds())!!)
+        val none = shot("b3n_bindbox_no_holds")
+        o.onPadMap(PadMapModel.parse(padmap())!!)
+        val diff = diffBox(none, out) ?: error("the hold badges drew nothing")
+        assertTrue("the badges sit on the controller's picture (its middle third): $diff", diff.top > 300 && diff.bottom < 760)
+        doc(""","bf":true""")
+        shot("b4_bindbox_in_combat_holds_of_in_combat")
+        doc(""","bcb":1""")
+        val mid = shot("b5m_bindbox_select_easing_to_the_bar_90ms", ease = 90L)
+        val onBar = shot("b5_bindbox_on_the_bar_select_above_the_controller")
+        // the user: "when its selected move the glyph with the controller swap back above the controller and fade out slightly the one
+        // thats not currently selected": on the bar, Select's glyph sits on the Controller heading's line, the controller faded
+        doc("")
+        val onCtl = shot("b3s_bindbox_controller_selected_select_on_the_bar")
+        val selRow = { b: Bitmap, y: Int -> var n = 0; for (yy in y - 30 until y + 30) for (x in w - 420 until w - 80) { val c = b.getPixel(x, yy)
+            if (Color.red(c) > 180 && Color.green(c) > 170 && Color.blue(c) > 140) n++ }; n }
+        val ctlHead = 378; val barHead = 698
+        assertTrue("controller selected: the glyph and word at the bar's heading", selRow(onCtl, barHead) > 150 && selRow(onCtl, ctlHead) < 40)
+        assertTrue("bar selected: the glyph back above the controller", selRow(onBar, ctlHead) > 150 && selRow(onBar, barHead) < 40)
+        assertTrue("easing: a frame between the two (the glyph on neither heading line yet)", differs(mid, onBar) && differs(mid, onCtl))
+        val lum = { b: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int -> var t = 0L; for (y in y0 until y1 step 2) for (x in x0 until x1 step 2) { val c = b.getPixel(x, y); t += Color.red(c) + Color.green(c) + Color.blue(c) }; t }
+        val ctlL = lum(onCtl, 300, 400, 940, 600); val ctlF = lum(onBar, 300, 400, 940, 600)
+        assertTrue("the controller faded to about 60-70 % on the bar ($ctlF / $ctlL)", ctlF < ctlL * 0.75 && ctlF > ctlL * 0.5)
+        // a long press placed the hold: the box asks Keep / Undo (Book b89), the answer's line says "Hold spell on"
+        o.onBind(SpellsModel.parseBind(JSONObject().put("type", "spellsack").put("op", "bind").put("id", 8017).put("ok", true)
+            .put("pad", JSONObject().put("pg", 1).put("b", 1).put("p", 8).put("hold", true)))!!)
+        doc("", mode = "confirm")
+        val conf = shot("b6_bindbox_hold_placed_keep_or_undo")
+        // the confirm lights the HOLD BADGE, not the A face (pre-fix: 5442 px of the A face changed, a 104 px wide box)
+        var changed = 0; var l = Int.MAX_VALUE; var rr = -1
+        for (y in 400 until 600) for (x in 80 until 1160) {
+            val p = out.getPixel(x, y); val q = conf.getPixel(x, y)
+            if (maxOf(Math.abs(Color.red(p) - Color.red(q)), Math.abs(Color.green(p) - Color.green(q)), Math.abs(Color.blue(p) - Color.blue(q))) > 40) {
+                changed++; l = minOf(l, x); rr = maxOf(rr, x)
+            }
+        }
+        assertTrue("the hold confirm changes the badge only ($changed px, x $l..$rr)", changed in 50..2500 && rr - l < 75)
+    }
+
+    /** [padmap] with no hold anywhere */
+    private fun padmapNoHolds(): JSONObject {
+        val m = padmap()
+        val sets = m.getJSONObject("m").getJSONArray("sets")
+        for (i in 0 until sets.length()) { val sl = sets.getJSONObject(i).getJSONArray("slots"); for (j in 0 until sl.length()) { sl.getJSONObject(j).remove("h"); sl.getJSONObject(j).remove("hc") } }
+        return m
     }
 }

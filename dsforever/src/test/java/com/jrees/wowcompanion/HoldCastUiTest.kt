@@ -215,7 +215,13 @@ class HoldCastUiTest {
         val ring = art.substringAfter("fun chargeRing(").substringBefore("\n    }\n")
         assertTrue("the charge ring GLOWS: a blurred gold arc under the fill, then the fill, a bright head",
             ring.indexOf("pGlow.maskFilter = blur(") in 0 until ring.indexOf("pStroke.color = CHARGE; pStroke.strokeWidth = w")
-                && ring.contains("Color.argb((90 + 130 * f).toInt(), 255, 200, 80)") && ring.contains("CHARGE_HEAD"))
+                && ring.contains("Color.argb((100 + 130 * f).toInt(), GLOW_R, GLOW_G, GLOW_B)") && ring.contains("CHARGE_HEAD"))
+        // fix/hold-tweaks (the user: "the charge up ring has like space between the ring and the glow effect. It also looks orange instead
+        // of yellow like the golden casting glow"): the ring on the badge's edge, the glow out of its outer half, the game's checked gold
+        assertTrue("the ring hugs the badge, the glow hugs the ring", ring.contains("val rm = r + w * 0.5f") && ring.contains("val rg = rm + w * 0.5f")
+            && ring.contains("c.drawArc(glowRect, -90f, sweep, false, pGlow)"))
+        assertTrue("the checked gold, not orange", art.contains("private val CHARGE = Color.rgb(246, 214, 56)")
+            && art.contains("private const val GLOW_R = 246; private const val GLOW_G = 214; private const val GLOW_B = 56") && !art.contains("255, 196, 80)"))
         val cast = kt("CastView.kt")
         val take = cast.substringAfter("private fun drawTakeover(").substringBefore("\n    }\n")
         assertTrue("the takeover's face drawn checked (the game's gold ring, 4 units beyond)", take.contains("takeSt.copyFrom(hst); takeSt.chk = 1")

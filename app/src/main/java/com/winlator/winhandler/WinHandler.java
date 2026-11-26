@@ -109,6 +109,7 @@ public class WinHandler {
     private void holdFeed(GamepadState s, boolean virtual) {
         if (s == null) return;
         try {
+            com.jrees.wowcompanion.HoldCast.trigIn(s.triggerL, s.triggerR);   // fix/hold-tweaks: the fire's mark needs a free trigger
             com.jrees.wowcompanion.HoldCast.padIn(s.buttons, s.dpad[0], s.dpad[1], s.dpad[2], s.dpad[3], SystemClock.uptimeMillis());
         } catch (Throwable t) {
             // never in the way of the pad
@@ -121,17 +122,29 @@ public class WinHandler {
     // (every other bit, the L2 / R2 bits, the axes and the sticks as they are). The int/1533 review (single screen mode): and with the
     // KEPT controls down - a kept press whose up Android cancelled (the keys moved to the other screen while it was held) stays down
     // for the game to its fire point (HoldRelease.cancelUp), same bits as the forced mask
+    // fix/hold-tweaks (THE FIRE'S MARK, PadMap m204; the user's pick "Cast at the fill"): the code for the add-on's router on each FREE
+    // trigger (its analog value under HoldCast.TRIG_FREE, far below the game's trigger button): 3 while an A / X / Y / D-pad press is
+    // held, 6 + the control in the write that lets a kept press go at its ring's full point; a free trigger's own small value is 0 when no
+    // code is written (only the launcher's codes ever sit in that band)
     private static GamepadState holdOut(GamepadState s) {
-        int m, k;
+        int m, k, mk;
+        float free;
         try {
             m = com.jrees.wowcompanion.HoldCast.forcedMask();
             k = com.jrees.wowcompanion.HoldCast.keptMask();
+            mk = com.jrees.wowcompanion.HoldCast.markCode();
+            free = com.jrees.wowcompanion.HoldCast.TRIG_FREE;
         } catch (Throwable t) {
             return s;
         }
-        if ((m == 0 && k == 0) || s == null) return s;
+        if (s == null) return s;
+        boolean band = (s.triggerL > 0f && s.triggerL < free) || (s.triggerR > 0f && s.triggerR < free);
+        if (m == 0 && k == 0 && mk == 0 && !band) return s;
         GamepadState o = new GamepadState();
         o.copy(s);
+        float mv = com.jrees.wowcompanion.HoldCast.markValue(mk);
+        if (s.triggerL < free) o.triggerL = mv;
+        if (s.triggerR < free) o.triggerR = mv;
         o.buttons = (short) ((s.buttons | (k & 0x0D)) & ~(m & 0x0D));
         for (int i = 0; i < 4; i++) {
             if ((k & (1 << (4 + i))) != 0) o.dpad[i] = true;

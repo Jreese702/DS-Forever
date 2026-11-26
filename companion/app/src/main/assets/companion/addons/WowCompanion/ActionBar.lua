@@ -2,9 +2,20 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar29 THE 1535 MERGE (test build 1535, 2026-11-26; PadMap m205): fix/druid-combat-forms' and fix/hold-tweaks' nbar28s
+-- together, their notes below as each wrote them (the Druid's first): a form's own trigger-layer entry drawn in a fight, and the
+-- hold ring's gold glow on the ring, timed to the ring's full point R. Nothing else changed.
 -- nbar28 A FORM'S OWN IN-COMBAT SET ON EVERY LAYER (PadMap m204; a Druid's field report, 2026-11-26): in a fight in a form, ZL /
 -- ZR / ZL + ZR show that form's own In-combat entry for the place (PadMap formFight with the set), as the router casts it; the bare
 -- set as before. Nothing else changed.
+-- nbar28 THE HOLD RING'S LOOK AND TIME (fix/hold-tweaks, 1535; PadMap m204; the user on test 1533, 2026-11-26: "the charge up ring
+-- has like space between the ring and the glow effect. It also looks orange instead of yellow like the golden casting glow. ... The
+-- normal hold time to cast should be about half what it currently is"): (1) the glow HUGS the ring - the game's circglw atlas (whose
+-- glow sat beyond the ring, a dark gap between) is replaced by three soft gold discs of the circle mask right under the ring's track
+-- (+3 / +6 / +10 units), so the gold runs out of the ring itself; (2) the ring, its glow and its full look are the game's own checked
+-- gold (the casting ring's yellow, frame_*_selected: about 0.965, 0.84, 0.22), not orange; (3) holdSecs is now PadMap m204's ring
+-- full point R (Normal 0.37 s at 60 fps, was F 0.68: a release before it is always the tap; after it the app holds the release down
+-- for the game to F, so the button reads held and the ring stays full until the hold casts) and the ring shows from 0.1 s (was 0.25).
 -- nbar27 THE int/1533 REVIEW, THE RING FILLS WHEN THE HOLD CASTS (PadMap m202; the user: "I also want this to cast right when the
 -- hold bar is filled"): the glowing ring's fill point is taken ONCE, at the press (b.hdSure), as the app's launcher freezes its fire
 -- point at the press - a frame time that changed mid-hold no more moved the fill off the cast; holdSecs holds the app's session bump
@@ -2594,7 +2605,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar28", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar29", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -2636,10 +2647,13 @@ WC.nbarOn = false
 --     the tap spell on the badge until the hold's cast and the GCD after it end (WC.holdCast's "cast" / "ok" from PadMap's cast events,
 --     WC.gcdRun), at once on "fail", NB.HOLD_FALLBACK s after the last word if nothing more comes (never stuck); it eases back over
 --     NB.HOLD_EASE s.
-NB.HOLD_R, NB.HOLD_FALLBACK, NB.HOLD_EASE, NB.HOLD_DELAY = 17, 2.0, 0.2, 0.25
+NB.HOLD_R, NB.HOLD_FALLBACK, NB.HOLD_EASE, NB.HOLD_DELAY = 17, 2.0, 0.2, 0.1      -- nbar28: the ring from 0.1 s (was 0.25)
 -- nbar25: a queued next-swing hold keeps the face at most this long; the glowing ring's gold (Home's CHARGE / CHARGED / glow)
 NB.HOLD_QCAP = 30
-NB.HOLD_GOLD, NB.HOLD_FULL, NB.HOLD_GLOW = { 1, 0.78, 0.3 }, { 1, 0.94, 0.62 }, { 1, 0.78, 0.3 }
+-- nbar28: the game's checked gold (the casting ring's yellow), not nbar25's orange { 1, 0.78, 0.3 }
+NB.HOLD_GOLD, NB.HOLD_FULL, NB.HOLD_GLOW = { 0.965, 0.84, 0.22 }, { 1, 0.93, 0.5 }, { 0.965, 0.84, 0.22 }
+-- nbar28: the glow's three discs beyond the ring's track (units added to its size) and their share of the glow's alpha
+NB.HOLD_GLOW_ADD, NB.HOLD_GLOW_A = { 3, 6, 10 }, { 1, 0.55, 0.25 }
 NB.HOLD_OUT = { [0] = { -1, -1 }, [1] = { -1, 1 }, [2] = { 1, 1 } }          -- by the drawn spot: up, left / down, right (y down)
 function NB.holdSpot(b, lay)
     local a = (lay == "swap" and NB.AT_SWAP[b.p]) or NB.AT[b.p]
@@ -2689,18 +2703,18 @@ function NB.holdBadge(b)
             if pcall(m.SetTexture, m, NB.MASK_FILE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE") then pcall(t.AddMaskTexture, t, m) end
         end
     end
-    rg.glow = rg:CreateTexture(nil, "BACKGROUND", nil, 0)
-    rg.glow:SetPoint("CENTER", rg, "CENTER", 0, 0)
-    rg.glow:SetSize((NB.HOLD_R + 8) * 1.7, (NB.HOLD_R + 8) * 1.7)
-    if NB.atlasOn(rg.glow, "gamepad-actionbar-fx-circglw") then
-        pcall(rg.glow.SetVertexColor, rg.glow, NB.HOLD_GLOW[1], NB.HOLD_GLOW[2], NB.HOLD_GLOW[3])
-        rg.glowAtlas = true
-    else
-        -- no atlas: a soft gold disc of the circle mask under the ring
-        rg.glow:SetSize(NB.HOLD_R + 14, NB.HOLD_R + 14)
-        pcall(rg.glow.SetColorTexture, rg.glow, NB.HOLD_GLOW[1], NB.HOLD_GLOW[2], NB.HOLD_GLOW[3], 1)
-        circled(rg.glow)
+    -- nbar28: the glow HUGS the ring - three gold discs of the circle mask just beyond the track (the inner one brightest), under it, so
+    -- the gold runs straight out of the ring (the circglw atlas's glow sat beyond it, a dark gap between)
+    rg.glows = {}
+    for i, add in ipairs(NB.HOLD_GLOW_ADD) do
+        local g = rg:CreateTexture(nil, "BACKGROUND", nil, 1 - i)
+        g:SetPoint("CENTER", rg, "CENTER", 0, 0)
+        g:SetSize(NB.HOLD_R + 7 + add, NB.HOLD_R + 7 + add)
+        pcall(g.SetColorTexture, g, NB.HOLD_GLOW[1], NB.HOLD_GLOW[2], NB.HOLD_GLOW[3], 1)
+        circled(g)
+        rg.glows[i] = g
     end
+    rg.glow = rg.glows[1]
     rg.trk = rg:CreateTexture(nil, "ARTWORK", nil, 0)
     rg.trk:SetPoint("CENTER", rg, "CENTER", 0, 0)
     rg.trk:SetSize(NB.HOLD_R + 7, NB.HOLD_R + 7)
@@ -2976,8 +2990,9 @@ function NB.holdCharge(b, now, sure)
         rg.full:Show()
     end
     local ga = charged and 0.95 or (0.25 + 0.55 * frac)
-    if not rg.glowAtlas then ga = charged and 0.5 or (0.3 * frac) end
-    pcall(rg.glow.SetAlpha, rg.glow, ga)
+    -- nbar28: the glow's discs, the inner one at ga, the outer ones fainter (a soft edge)
+    for i, g in ipairs(rg.glows or { rg.glow }) do pcall(g.SetAlpha, g, ga * (NB.HOLD_GLOW_A[i] or 1) * 0.6) end
+    if rg.glow then rg.glow.ga = ga end
     b.hcharge = charged and "charged" or frac
 end
 -- [held] the tick's own read (nbar22, the 1531 audit: 0 while a window owns the pad - NB.held keeps its last read then, and the

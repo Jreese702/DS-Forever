@@ -59,7 +59,7 @@ C_GamePad.GetDeviceMappedState = function() local b = { [11] = LT, [12] = RT }; 
 -- Lightning Bolt (ready); the router keeps the presses in KEPT
 HOLDS = { [8] = { n = "Purge", id = 370, i = 136075 }, [6] = { n = "Flame Shock", id = 8050, i = 135813 },
           [5] = { n = "Searing Totem", id = 3599, i = 135825 }, [2] = { n = "Lightning Bolt", id = 403, i = 136048 } }
-KEPT, SECS = {}, 0.678
+KEPT, SECS = {}, 0.373          -- nbar28: PadMap m204's holdSecs is the ring's full point R (Normal at 60 fps)
 -- nbar25: the glowing ring's Cooldown as the client takes it, and the game's "current" read (a queued next-swing spell)
 local FM = getmetatable(UIParent)
 FM.SetCooldown = function(self, st, d) self.cdStart, self.cdDur = st, d; self.cdN = (self.cdN or 0) + 1 end
@@ -98,7 +98,7 @@ def boot(pre=""):
 
 def main():
     ab = open(tnb.AB, encoding="utf-8").read()
-    chk("0. ActionBar nbar25 and its note (nbar21, nbar18 kept)", 'local NB = { V = "nbar28"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab
+    chk("0. ActionBar nbar25 and its note (nbar21, nbar18 kept)", 'local NB = { V = "nbar29"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab
         and "nbar21 THE HOLD SPELL ON THE TOP SCREEN" in ab and "nbar18 HOLD TO CAST" in ab)
     chk("0. no beads any more", "HOLD_BEADS" not in ab and "hb.beads" not in ab)
     L, G = boot()
@@ -151,53 +151,69 @@ def main():
         rg = b[p].hb.ring
         return rg is not None and rg.shown is True
     rg2 = b[2].hb.ring
-    chk("2. no beads: the glowing ring's own frame (the game's circle glow, a track, a Cooldown, full)", b[2].hb.beads is None and rg2 is not None
-        and rg2.glow is not None and rg2.trk is not None and rg2.cd is not None and rg2.full is not None and rg2.glow.atlas == "gamepad-actionbar-fx-circglw",
-        (b[2].hb.beads, rg2 and rg2.glow and rg2.glow.atlas))
-    chk("2. ... its Cooldown reversed (the gold grows clockwise from 12 o'clock), gold, round", rg2.cd.reverse is True
-        and [round(float(v), 2) for v in rg2.cd.swipeColor.values()][:3] == [1.0, 0.78, 0.3] and rg2.cd.circEdge is True, (rg2.cd.reverse,))
+    # nbar28 (fix/hold-tweaks, 1535; the user: "the charge up ring has like space between the ring and the glow effect. It also looks
+    # orange instead of yellow like the golden casting glow"): the glow is three gold discs of the circle mask right beyond the track
+    # (+3 / +6 / +10), under it - no circglw atlas (its glow sat beyond the ring, a dark gap between); all of it the game's checked gold
+    gl = [rg2.glows[i] for i in (1, 2, 3)] if rg2 is not None and rg2.glows is not None else []
+    chk("2. no beads: the glowing ring's own frame (its glow, a track, a Cooldown, full)", b[2].hb.beads is None and rg2 is not None
+        and rg2.glow is not None and rg2.trk is not None and rg2.cd is not None and rg2.full is not None,
+        (b[2].hb.beads, rg2 and rg2.glow))
+    chk("2. nbar28: the glow HUGS the ring - three discs just beyond the track (+3 / +6 / +10 units), under it, no circglw atlas",
+        len(gl) == 3 and L.eval("(function() local r = WowCompanion.nbar.f.btn[2].hb.ring; return r.glow == r.glows[1] end)()") and [float(g.w) for g in gl] == [float(rg2.trk.w) + d for d in (3, 6, 10)]
+        and all(g.atlas is None for g in gl) and all(g.layer == "BACKGROUND" for g in gl)
+        and [int(g.sub) for g in gl] == [0, -1, -2] and rg2.trk.layer == "ARTWORK", [(g.w, g.atlas, g.layer, g.sub) for g in gl])
+    gold = [0.965, 0.84, 0.22]
+    chk("2. nbar28: the ring, its glow and its full look the game's checked gold (the casting ring's yellow), not orange",
+        [round(float(v), 3) for v in rg2.cd.swipeColor.values()][:3] == gold
+        and all([round(float(v), 3) for v in g.color.values()][:3] == gold for g in gl)
+        and [round(float(v), 3) for v in rg2.full.color.values()][:3] == [1.0, 0.93, 0.5],
+        ([v for v in rg2.cd.swipeColor.values()], [list(g.color.values()) for g in gl]))
+    chk("2. ... its Cooldown reversed (the gold grows clockwise from 12 o'clock), round", rg2.cd.reverse is True and rg2.cd.circEdge is True,
+        (rg2.cd.reverse,))
     chk("2. ... under the badge (the badge over its middle leaves a ring)", (rg2.level or 0) < (b[2].hb.level or 0), (rg2.level, b[2].hb.level))
     L.execute('KEPT[2] = true; HELD.PADDUP = true')
-    L.execute('TICK(0.2)')
-    chk("2. held 0.2 s: no ring yet (quick taps show nothing)", not lit(2) and b[2].hcharge == 0, (lit(2), b[2].hcharge))
+    L.execute('TICK(0.05)')
+    chk("2. held 0.05 s: no ring yet (quick taps show nothing)", not lit(2) and b[2].hcharge == 0, (lit(2), b[2].hcharge))
     L.execute('TICK(0.1)')
     hd_at = float(b[2].hdAt)
-    c1, f1, g1 = rg2.cd.cdN, float(b[2].hcharge), float(rg2.glow.alpha)
-    chk("2. from 0.25 s the ring shows: its Cooldown started ONCE, from 0.25 s after the press to the fire point",
-        lit(2) and c1 == 1 and abs(float(rg2.cd.cdStart) - (hd_at + 0.25)) < 1e-9 and abs(float(rg2.cd.cdDur) - (0.678 - 0.25)) < 1e-9,
+    c1, f1, g1 = rg2.cd.cdN, float(b[2].hcharge), float(rg2.glow.ga)
+    chk("2. nbar28: from 0.1 s (was 0.25) the ring shows: its Cooldown started ONCE, from 0.1 s after the press to the ring's full point",
+        lit(2) and c1 == 1 and abs(float(rg2.cd.cdStart) - (hd_at + 0.1)) < 1e-9 and abs(float(rg2.cd.cdDur) - (0.373 - 0.1)) < 1e-9,
         (lit(2), c1, rg2.cd.cdStart, hd_at, rg2.cd.cdDur))
-    L.execute('TICK(0.2)')
-    f2, g2 = float(b[2].hcharge), float(rg2.glow.alpha)
+    L.execute('TICK(0.1)')
+    f2, g2 = float(b[2].hcharge), float(rg2.glow.ga)
     chk("2. ... filling (0..1 of the way) and its glow brightening, the Cooldown never restarted", 0 <= f1 < f2 < 1 and g1 < g2 and rg2.cd.cdN == 1,
         (f1, f2, g1, g2, rg2.cd.cdN))
-    exp = (0.5 - 0.25 + 0.025) / (0.678 - 0.25)
-    chk("2. ... at the fire point's pace (Normal at 60 fps: 0.678 s; 0.5 s held = %.2f)" % exp, abs(f2 - exp) < 0.13, f2)
-    L.execute('TICK(0.25)')
-    chk("2. past the fire point (no fire yet: a late keep word): CHARGED - full and bright, the glow 0.95", b[2].hcharge == "charged"
-        and rg2.full.shown is True and abs(float(rg2.glow.alpha) - 0.95) < 1e-9, (b[2].hcharge, rg2.full.shown, rg2.glow.alpha))
+    chk("2. ... the outer discs fainter (a soft edge)", float(rg2.glows[1].alpha) > float(rg2.glows[2].alpha) > float(rg2.glows[3].alpha) > 0,
+        [float(rg2.glows[i].alpha) for i in (1, 2, 3)])
+    exp = (0.25 - 0.1 - 0.025) / (0.373 - 0.1)
+    chk("2. ... at the ring's pace (PadMap m204's R, Normal at 60 fps: 0.373 s; 0.25 s held = %.2f)" % exp, abs(f2 - exp) < 0.13, f2)
+    L.execute('TICK(0.2)')
+    chk("2. past the ring's full point: CHARGED - full and bright, the glow 0.95 (the hold is sure; the app holds a release down to F)",
+        b[2].hcharge == "charged" and rg2.full.shown is True and abs(float(rg2.glow.ga) - 0.95) < 1e-9, (b[2].hcharge, rg2.full.shown, rg2.glow.ga))
     L.execute('HELD.PADDUP = nil; TICK(0.1)')
-    chk("2. let go: gone (the Cooldown cleared, full hidden)", not lit(2) and rg2.full.shown is False and (rg2.cd.cleared or 0) >= 1)
-    L.execute('HELD.PADDUP = true; TICK(0.35); HELD.PADDUP = nil; TICK(0.1)')
-    chk("2. an early release (0.35 s): the ring vanishes (a tap)", not lit(2) and b[2].hcharge == 0)
+    chk("2. let go (the game read it up): gone (the Cooldown cleared, full hidden)", not lit(2) and rg2.full.shown is False and (rg2.cd.cleared or 0) >= 1)
+    L.execute('HELD.PADDUP = true; TICK(0.2); HELD.PADDUP = nil; TICK(0.1)')
+    chk("2. an early release (0.2 s): the ring vanishes (a tap)", not lit(2) and b[2].hcharge == 0)
     L.execute('KEPT[2] = nil; HELD.PADDUP = true; TICK(0.8)')
     chk("2. a press the router does not keep (no hold for it now): no ring", not lit(2), lit(2))
-    L.execute('HELD.PADDUP = nil; TICK(0.1); KEPT[2] = true; SECS = 0.461; HELD.PADDUP = true; TICK(0.5)')
-    chk("2. Short (0.46 s): charged by 0.5 s held", b[2].hcharge == "charged", b[2].hcharge)
-    L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.895; HELD.PADDUP = true; TICK(0.7)')
-    chk("2. Long (0.90 s): still filling at 0.7 s", isinstance(b[2].hcharge, (int, float)) and 0 < b[2].hcharge < 1, b[2].hcharge)
-    L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.678')
-    # nbar27 (the int/1533 review): the fill point is taken ONCE at the press (b.hdSure), as the app's launcher freezes its fire point
-    # there - a frame time (ft) or a bump that changes mid-hold no more moves the fill off the cast
-    L.execute('KEPT[2] = true; HELD.PADDUP = true; TICK(0.3)')
+    L.execute('HELD.PADDUP = nil; TICK(0.1); KEPT[2] = true; SECS = 0.173; HELD.PADDUP = true; TICK(0.25)')
+    chk("2. Short (0.17 s): charged by 0.25 s held", b[2].hcharge == "charged", b[2].hcharge)
+    L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.573; HELD.PADDUP = true; TICK(0.4)')
+    chk("2. Long (0.57 s): still filling at 0.4 s", isinstance(b[2].hcharge, (int, float)) and 0 < b[2].hcharge < 1, b[2].hcharge)
+    L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.373')
+    # nbar27 (the int/1533 review): the fill point is taken ONCE at the press (b.hdSure) - a frame time (ft) that changes mid-hold no
+    # more moves the fill
+    L.execute('KEPT[2] = true; HELD.PADDUP = true; TICK(0.2)')
     sure0 = float(b[2].hdSure)
-    L.execute('SECS = 0.95; TICK(0.45)')
-    chk("2. nbar27: the fill point frozen at the press (0.678 s): charged by 0.75 s held although holdSecs now says 0.95",
-        abs(sure0 - 0.678) < 1e-9 and b[2].hcharge == "charged" and abs(float(rg2.cd.cdDur) - (0.678 - 0.25)) < 1e-9,
+    L.execute('SECS = 0.6; TICK(0.25)')
+    chk("2. nbar27: the fill point frozen at the press (0.373 s): charged by 0.45 s held although holdSecs now says 0.6",
+        abs(sure0 - 0.373) < 1e-9 and b[2].hcharge == "charged" and abs(float(rg2.cd.cdDur) - (0.373 - 0.1)) < 1e-9,
         (sure0, b[2].hcharge, rg2.cd.cdDur))
-    L.execute('HELD.PADDUP = nil; TICK(0.1); HELD.PADDUP = true; TICK(0.75)')
-    chk("2. ... the next press takes the new point (0.95 s): still filling at 0.75 s", abs(float(b[2].hdSure) - 0.95) < 1e-9
+    L.execute('HELD.PADDUP = nil; TICK(0.1); HELD.PADDUP = true; TICK(0.45)')
+    chk("2. ... the next press takes the new point (0.6 s): still filling at 0.45 s", abs(float(b[2].hdSure) - 0.6) < 1e-9
         and isinstance(b[2].hcharge, (int, float)) and 0 < b[2].hcharge < 1, (b[2].hdSure, b[2].hcharge))
-    L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.678')
+    L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.373')
     # the 1531 audit: a WINDOW taking the pad (the bars unusable: the bar reads no buttons then) mid-press: the ring goes, it never
     # keeps filling on the last read (the router's kept flag can stay up while the window has the release)
     L.execute('KEPT[2] = true; HELD.PADDUP = true; TICK(0.4)')
@@ -567,13 +583,14 @@ def shots(out):
                 from PIL import ImageFilter
                 rr = (17 + 7) / 2 * SC["S"]
                 frac = 1.0 if bt.hcharge == "charged" else float(bt.hcharge or 0)
-                ga = float(rg.glow.alpha)
+                # nbar28: the glow's three gold discs of the circle mask beyond the track, under it (hard-edged textures, stacked)
                 gl = Image.new("RGBA", img.size, (0, 0, 0, 0))
                 gd = ImageDraw.Draw(gl)
-                gr = rr + 2.5 * SC["S"]
-                gd.ellipse((bx - gr, by - gr, bx + gr, by + gr), outline=(255, 199, 77, int(255 * ga)), width=int(3.2 * SC["S"]))
-                gl = gl.filter(ImageFilter.GaussianBlur(2.2 * SC["S"]))
-                img.alpha_composite(gl)
+                for gi in (3, 2, 1):
+                    g = rg.glows[gi]
+                    gr = float(g.w) / 2 * SC["S"]
+                    gd.ellipse((bx - gr, by - gr, bx + gr, by + gr), fill=(246, 214, 56, int(255 * float(g.alpha))))
+                    img.alpha_composite(gl); gl = Image.new("RGBA", img.size, (0, 0, 0, 0)); gd = ImageDraw.Draw(gl)
                 ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
                 od = ImageDraw.Draw(ov)
                 od.ellipse((bx - rr, by - rr, bx + rr, by + rr), fill=(30, 22, 12, 115))
@@ -581,9 +598,9 @@ def shots(out):
                 ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
                 od = ImageDraw.Draw(ov)
                 if rg.full.shown:
-                    od.ellipse((bx - rr, by - rr, bx + rr, by + rr), fill=(255, 240, 158, 255))
+                    od.ellipse((bx - rr, by - rr, bx + rr, by + rr), fill=(255, 237, 128, 255))
                 elif frac > 0:
-                    od.pieslice((bx - rr, by - rr, bx + rr, by + rr), -90, -90 + 360 * frac, fill=(255, 199, 77, 242))
+                    od.pieslice((bx - rr, by - rr, bx + rr, by + rr), -90, -90 + 360 * frac, fill=(246, 214, 56, 242))
                 img.alpha_composite(ov)
                 dr = ImageDraw.Draw(img)
             col = tuple(int(float(v) * 255) for v in list(hb.disc.color.values())[:3])

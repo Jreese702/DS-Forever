@@ -15,7 +15,7 @@ class FormFightSetsTest {
     private val cat = 768
     private val bear = 5487
 
-    private fun map(): PadMapModel.Map = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m204","m":{"page":1,"pages":3,
+    private fun map(): PadMapModel.Map = PadMapModel.parse(JSONObject("""{"type":"padmap","v":"m205","m":{"page":1,"pages":3,
         "sets":[{"set":1,"slots":[{"pos":5,"kind":"fixed","n":"Interact"}]},{"set":3,"slots":[{"pos":5,"s":29,"kind":"spell","id":5176,"n":"Wrath","i":136006}]}],
         "forms":[{"x":1,"id":$bear,"n":"Bear Form","i":132276},{"x":2,"id":$cat,"n":"Cat Form","i":132115,"on":true}],
         "ff":[{"f":$cat,"p":5,"id":1082,"n":"Claw","i":132140},

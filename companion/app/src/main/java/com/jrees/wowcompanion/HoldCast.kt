@@ -25,6 +25,13 @@ import org.json.JSONObject
  * looks (Short 2, Normal 3, Long 4; the add-on's clock's own `cn`) come no later than N x (0.2 s + a frame) after the keep; the fire point
  * is F = N x (200 + f) + f + 10 ms (f = the game's longest recent frame, the add-on's `ft`; 25 when unknown): Normal 678 ms at 60 fps,
  * 710 ms at 40. Always the tap below [tapBelowMs].
+ *
+ * fix/hold-tweaks (1535; the user on test 1533, 2026-11-26: "the hold to cast is triggering when releasing before the hold completes.
+ * The normal hold time to cast should be about half what it currently is"): the n-th look may come as early as (n - 1) x 0.2 s after
+ * the keep (the game's throttle may run out in the keep's own frame), so THE RING is full at [HoldRelease.ringMs] R = (n - 1) x 200 -
+ * f - 10 ms (Normal 373 ms at 60 fps, was F = 678): a release before it is always the tap; a release from it on is held down for the
+ * game to F and the hold casts there ([HoldRelease.WITHHELD]); held on, it casts at F as before. The ring shows from [RING_DELAY_MS]
+ * (100 ms, was 250: the fill is shorter) and stays full until the fire.
  */
 object HoldCast {
     const val TAG = "WCHOLD"
@@ -34,7 +41,7 @@ object HoldCast {
     /** the add-on's word that a release ran the hold, waited for this long after it */
     const val CONFIRM_MS = 1_500L
     /** the charge ring shows from this long held (quick taps show nothing) */
-    const val RING_DELAY_MS = 250L
+    const val RING_DELAY_MS = 100L
 
     /** held less than this: always the tap (the N-th look cannot have come) */
     fun tapBelowMs(n: Int): Long = (n - 1) * TICK_MS
@@ -105,7 +112,11 @@ object HoldCast {
      * pace mid-press): [ticksOf] the clock's looks (the add-on's `cn`, else Settings), [ftOf] the game's frame (the add-on's `ft`).
      */
     class Watch(private val ticksOf: () -> Int = { need() }, private val ftOf: () -> Int? = { release.ft },
-                private val bumpOf: () -> Long = { release.bump }) {
+                private val bumpOf: () -> Long = { release.bump },
+                /** fix/hold-tweaks: the launcher's early fire is on (the add-on says its clock's looks): the ring fills to R, not F */
+                private val earlyOf: () -> Boolean = { release.cn != null },
+                /** fix/hold-tweaks: the press at a position was let go after its ring filled and waits for its fire point */
+                private val waitsOf: (Int) -> Boolean = { release.waitsPos(it) }) {
         /** the places the add-on keeps now (the `holdmap`) */
         var map: Set<Int> = emptySet()
         /** the hold time's looks (read each time, so Settings and a reset are followed at once) */
@@ -113,6 +124,10 @@ object HoldCast {
         private val t0 = LongArray(9) { -1L }
         private val lay = IntArray(9) { -1 }
         private val full = LongArray(9) { HoldRelease.fireMs(3, null) }
+        /** fix/hold-tweaks: the ring's full point of each press (R with the early fire, else F), frozen at the press */
+        private val ring = LongArray(9) { HoldRelease.fireMs(3, null) }
+        /** fix/hold-tweaks: let go after the ring filled (the launcher holds it down for the game to F): when, -1 none */
+        private val pendAt = LongArray(9) { -1L }
         private val firedAt = LongArray(9) { -1L }
         private val relAt = LongArray(9) { -1L }
         private val relLay = IntArray(9) { -1 }
@@ -137,12 +152,31 @@ object HoldCast {
         fun press(pos: Int, layer: Int, now: Long) {
             if (pos !in 1..8 || pos == 7) return
             firedAt[pos] = -1L
-            if (key(layer, pos) in map) { t0[pos] = now; lay[pos] = layer; full[pos] = HoldRelease.fireMs(ticks, ftOf()) + bumpOf().coerceAtLeast(0L) }
+            pendAt[pos] = -1L
+            if (key(layer, pos) in map) {
+                t0[pos] = now; lay[pos] = layer
+                val n = ticks; val f = ftOf()
+                full[pos] = HoldRelease.fireMs(n, f) + bumpOf().coerceAtLeast(0L)
+                ring[pos] = if (earlyOf()) HoldRelease.ringMs(n, f) else full[pos]
+            }
             else { t0[pos] = -1L; lay[pos] = -1 }
         }
 
         /** the fire point of the press held at [pos] (ms after its press, the bump in it), frozen at the press */
         fun fullMs(pos: Int): Long = full.getOrElse(pos) { HoldRelease.fireMs(3, null) }
+        /** fix/hold-tweaks: the ring's full point of the press held at [pos] (ms after its press), frozen at the press */
+        fun ringMs(pos: Int): Long = ring.getOrElse(pos) { HoldRelease.fireMs(3, null) }
+        /** fix/hold-tweaks: the press at [pos] was let go after its ring filled and its fire has not come yet (the ring stays full) */
+        fun waiting(pos: Int, now: Long): Boolean {
+            if (pos !in 1..8) return false
+            val p = pendAt[pos]
+            if (p < 0L || t0[pos] < 0L) return false
+            if (firedNow(pos) || (now - p > PEND_GRACE_MS && !waitsOf(pos)) || now - t0[pos] > full[pos] + HoldRelease.KEEP_LATE_MS + 200L) {
+                t0[pos] = -1L; lay[pos] = -1; pendAt[pos] = -1L
+                return false
+            }
+            return true
+        }
 
         /** round 1533: the launcher let the press at [pos] go for the game at its fire point (the takeover is HoldCast's): its release
          *  starts nothing, the add-on's word for it starts nothing, the ring hands over */
@@ -150,6 +184,7 @@ object HoldCast {
             if (pos !in 1..8 || pos == 7) return
             firedAt[pos] = now
             lastFire = pos to now
+            if (pendAt[pos] >= 0L) { t0[pos] = -1L; lay[pos] = -1; pendAt[pos] = -1L }      // let go before: the takeover has it now
         }
         private fun firedNow(pos: Int): Boolean { val f = firedAt.getOrElse(pos) { -1L }; return f >= 0L && f >= t0[pos] }
 
@@ -159,6 +194,13 @@ object HoldCast {
             val s = t0[pos]
             val l = lay[pos]
             val was = firedAt[pos] >= 0L && s >= 0L && firedAt[pos] >= s
+            // fix/hold-tweaks: let go after the ring filled (the early fire on, not the Bind box): the launcher holds it down for the
+            // game to its fire point - the ring stays full until then ([waiting]), the fire starts the takeover
+            if (s >= 0L && !was && pendAt[pos] < 0L && !box && ring[pos] < full[pos] && now - s >= ring[pos]) {
+                pendAt[pos] = now; relSure[pos] = false; relAt[pos] = -1L
+                return false
+            }
+            if (pendAt[pos] >= 0L) return false                                   // (its second release report: nothing new)
             t0[pos] = -1L; lay[pos] = -1
             relSure[pos] = false
             if (s < 0L) return false
@@ -194,7 +236,8 @@ object HoldCast {
         fun progress(pos: Int, now: Long): Float {
             val s = t0.getOrElse(pos) { -1L }
             if (s < 0L) return -1f
-            return ((now - s).toFloat() / full[pos]).coerceIn(0f, 1f)
+            if (pendAt[pos] >= 0L && !waiting(pos, now)) return -1f
+            return ((now - s).toFloat() / ring[pos]).coerceIn(0f, 1f)
         }
 
         /**
@@ -205,19 +248,21 @@ object HoldCast {
         fun charge(pos: Int, now: Long): Float {
             val s = t0.getOrElse(pos) { -1L }
             if (s < 0L || firedNow(pos)) return -1f
+            if (pendAt[pos] >= 0L) return if (waiting(pos, now)) 1f else -1f
             val held = now - s
             if (held < RING_DELAY_MS) return -1f
-            return ((held - RING_DELAY_MS).toFloat() / (full[pos] - RING_DELAY_MS).coerceAtLeast(1L)).coerceIn(0f, 1f)
+            return ((held - RING_DELAY_MS).toFloat() / (ring[pos] - RING_DELAY_MS).coerceAtLeast(1L)).coerceIn(0f, 1f)
         }
-        /** held past the fire point and not fired (the ring's "charged" look) */
+        /** held past the ring's full point and not fired (the ring's "charged" look: the hold is sure) */
         fun charged(pos: Int, now: Long): Boolean =
-            t0.getOrElse(pos) { -1L }.let { it >= 0L && now - it >= full[pos] } && !firedNow(pos)
+            t0.getOrElse(pos) { -1L }.let { it >= 0L && now - it >= ring[pos] } && !firedNow(pos) &&
+                (pendAt.getOrElse(pos) { -1L } < 0L || waiting(pos, now))
 
         /** the layer the held button at [pos] was pressed on, -1 when none */
         fun layerOf(pos: Int): Int = if (t0.getOrElse(pos) { -1L } >= 0L) lay[pos] else -1
 
         /** nothing held any more, nothing just released (the pad went away; tests) */
-        fun reset() { t0.fill(-1L); lay.fill(-1); relAt.fill(-1L); relLay.fill(-1); relSure.fill(false); firedAt.fill(-1L); lastFire = null; box = false }
+        fun reset() { t0.fill(-1L); lay.fill(-1); pendAt.fill(-1L); relAt.fill(-1L); relLay.fill(-1); relSure.fill(false); firedAt.fill(-1L); lastFire = null; box = false }
     }
 
     val watch = Watch()
@@ -322,6 +367,8 @@ object HoldCast {
         fun gcdLeft(now: Long, durMs: Long): Float = if (gcdEnd < 0L || durMs <= 0L || now >= gcdEnd) -1f else ((gcdEnd - now).toFloat() / durMs).coerceIn(0f, 1f)
     }
     const val FALLBACK_MS = 2_000L
+    /** fix/hold-tweaks: a release after the ring filled that the launcher did not hold (a gate) shows the full ring no longer than this */
+    const val PEND_GRACE_MS = 80L
     const val EASE_MS = 200L
     /** the fix pass: a GCD that started up to this long before the hold's cast could have is still its own (a game frame, the clocks) */
     const val GCD_BACK_MS = 100L
@@ -394,7 +441,10 @@ object HoldCast {
         if (hk == "keep") {
             val lay = layerOf(msg.optString("lay")) ?: 0
             val need = msg.optInt("need", 0).takeIf { it in 2..4 }
-            if (release.keep(msg.optString("key").ifEmpty { null }, pos, lay, need, now)) fireNow(now)   // a late word fires at once
+            // fix/hold-tweaks: mk = the router saw the launcher's armed code with the key-down: the fire goes at the ring's full point
+            val mk = msg.optInt("mk", 0) == 1
+            if (release.keep(msg.optString("key").ifEmpty { null }, pos, lay, need, now, mk)) fireNow(now)   // a late word fires at once
+            else schedule(release.nextAt())
             return
         }
         if (release.closed(pos, now)) resend?.run()                    // a KEPT press there: its up for the game now
@@ -409,7 +459,8 @@ object HoldCast {
             } else {
                 // the up beat the N-th look: the TAP ran. The takeover goes at once; later fires wait longer
                 if (takeover.pos == pos) takeover.cancel(bandClock())
-                release.short()
+                // fix/hold-tweaks: a fire that carried the code and still ran the tap - the code does not reach the router: R fires end
+                if (fp.marked) { release.markOff = true; log("mark off: a marked fire ran the tap") } else release.short()
                 log("fire SHORT hn=${msg.optInt("hn", -1)} need=${msg.optInt("need", -1)} ft=${fp.ft ?: "?"} bump=${release.bump}ms")
                 onChange?.invoke()
                 onBumpWanted?.invoke()                                  // the add-on's ring fills to the new point too (m202)
@@ -450,7 +501,7 @@ object HoldCast {
     @Volatile private var resend: Runnable? = null
     @JvmStatic fun setResend(r: Runnable?) { resend = r }
 
-    private class FiredPress(val pos: Int, val at: Long, val n: Int?, val ft: Int?)
+    private class FiredPress(val pos: Int, val at: Long, val n: Int?, val ft: Int?, val marked: Boolean = false)
     @Volatile private var firedPress: FiredPress? = null
 
     private var lastButtons = 0
@@ -464,10 +515,26 @@ object HoldCast {
     init {
         release.gatesOpen = { gates() }
         release.onFire = { pos, layer -> fired(pos, layer) }
+        // fix/hold-tweaks: a press let go after its ring filled before its keep word waits for it only where the add-on keeps now
+        release.mayKeep = { ctl -> val p = HoldRelease.posOfCtl(ctl); p > 0 && watch.map.any { it % 8 == p - 1 } }
+        release.trigFree = { trigL < TRIG_FREE || trigR < TRIG_FREE }
     }
 
     /** the clock's looks the picture and the fire use: the add-on's `cn` when known, else Settings' */
     fun need(): Int = release.cn ?: CastSettings.holdTime.ticks
+
+    // ---------------------------------------------------------------- fix/hold-tweaks: THE FIRE'S MARK (PadMap m204)
+    /** a trigger under this analog value is FREE for the code (the game's trigger button is far above it) */
+    const val TRIG_FREE = 0.1f
+    /** player 1's triggers as the launcher last wrote them (WinHandler.holdFeed) */
+    @Volatile private var trigL = 0f
+    @Volatile private var trigR = 0f
+    /** WinHandler (main thread, player 1): the triggers' analog values about to be written */
+    @JvmStatic fun trigIn(l: Float, r: Float) { trigL = l; trigR = r }
+    /** WinHandler.holdOut: the code for the free triggers now (0 none; [HoldRelease.markCode]); one call per write */
+    @JvmStatic fun markCode(): Int = if (PlayModes.current == PlayMode.STREAM) 0 else release.markCode(clock())
+    /** the analog value WinHandler writes for code [code] on a free trigger (0 = none): (code + 0.5) / 255, so the byte is the code */
+    @JvmStatic fun markValue(code: Int): Float = if (code <= 0) 0f else (code + 0.5f) / 255f
 
     /** XServerScreen: the event handed to the launcher's handlers now is Android's cancel ([on]), until it says false */
     @JvmStatic fun canceling(on: Boolean) { cancelIn = on }
@@ -557,7 +624,7 @@ object HoldCast {
     }
     private fun fired(pos: Int, layer: Int) {
         val now = clock()
-        firedPress = FiredPress(pos, now, release.cn, release.ft)
+        firedPress = FiredPress(pos, now, release.cn, release.ft, release.lastMarked)
         watch.fired(pos, now)
         if (!watch.box) takeover.start(pos, layer, bandClock())
         onChange?.invoke()
@@ -629,8 +696,9 @@ object HoldCast {
     fun bumpTriesAgain(newWish: Boolean, lk: Int?, lastLk: Int?, sinceSendMs: Long?): Boolean =
         newWish || (lk != null && lastLk != null && lk < lastLk) || (sinceSendMs != null && sinceSendMs >= BUMP_REFRESH_MS)
 
-    /** the Controller room's hint and Settings' tile: the fire point as the room writes it (F at 60 fps, rounded: 0.5 / 0.7 / 0.9 s) */
+    /** the Controller room's hint and Settings' tile: the hold time as the room writes it - fix/hold-tweaks: the ring's full point R
+     *  at 60 fps, rounded (0.2 / 0.4 / 0.6 s; was F: 0.5 / 0.7 / 0.9) */
     fun holdWord(): String = when (CastSettings.holdTime) {
-        CastSettings.HoldTime.SHORT -> "0.5 s"; CastSettings.HoldTime.NORMAL -> "0.7 s"; CastSettings.HoldTime.LONG -> "0.9 s"
+        CastSettings.HoldTime.SHORT -> "0.2 s"; CastSettings.HoldTime.NORMAL -> "0.4 s"; CastSettings.HoldTime.LONG -> "0.6 s"
     }
 }

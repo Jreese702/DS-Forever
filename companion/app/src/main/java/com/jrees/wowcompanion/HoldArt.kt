@@ -36,9 +36,12 @@ object HoldArt {
     private val BADGE_FILL = Color.rgb(40, 34, 26)
     private val BADGE_RING = Color.rgb(110, 89, 66)
     private val SWEEP = Color.argb(200, 0, 0, 0)
-    private val CHARGE = Color.rgb(255, 196, 80)
-    private val CHARGED = Color.rgb(255, 240, 170)
-    private val CHARGE_HEAD = Color.rgb(255, 236, 170)
+    // fix/hold-tweaks (the user on test 1533: "It also looks orange instead of yellow like the golden casting glow"): the game's own
+    // checked gold (frame_*_selected's glow, about 246, 214, 56 - the casting ring the takeover wears), not 1533's orange (255 196 80)
+    private val CHARGE = Color.rgb(246, 214, 56)
+    private val CHARGED = Color.rgb(255, 237, 128)
+    private val CHARGE_HEAD = Color.rgb(255, 244, 176)
+    private const val GLOW_R = 246; private const val GLOW_G = 214; private const val GLOW_B = 56
 
     /** round 1533: the badge icon's shades - the game's own unusable (0.4) and not enough power (0.5, 0.5, 1) (CastView's own values),
      *  and out of range RED (1.0, 0.32, 0.30: the icon still readable; the glyph's red on the big buttons) */
@@ -60,6 +63,7 @@ object HoldArt {
     private val pShadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = Color.argb(150, 0, 0, 0) }
     private val pBmp = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val rect = RectF()
+    private val glowRect = RectF()
     private val clip = Path()
 
     /**
@@ -171,14 +175,19 @@ object HoldArt {
     fun chargeRing(c: Canvas, cx: Float, cy: Float, r: Float, frac: Float, charged: Boolean) {
         if (frac < 0f) return
         val w = r * 0.26f
-        val rm = r + w * 0.9f
+        // fix/hold-tweaks (the user on test 1533: "the charge up ring has like space between the ring and the glow effect"): the ring
+        // sits ON the badge's edge (was 0.9 w out: a dark band between the lit badge and the ring) and its glow runs straight out of
+        // the ring's outer half (centred at its outer edge, not round its middle)
+        val rm = r + w * 0.5f
+        val rg = rm + w * 0.5f
         rect.set(cx - rm, cy - rm, cx + rm, cy + rm)
+        glowRect.set(cx - rg, cy - rg, cx + rg, cy + rg)
         pStroke.color = Color.argb(115, 30, 22, 12); pStroke.strokeWidth = w
         c.drawCircle(cx, cy, rm, pStroke)
         if (charged) {
-            pGlow.color = Color.argb(220, 255, 200, 80); pGlow.strokeWidth = w * 2.4f
-            pGlow.maskFilter = blur(w * 1.1f)
-            c.drawCircle(cx, cy, rm, pGlow)
+            pGlow.color = Color.argb(230, GLOW_R, GLOW_G, GLOW_B); pGlow.strokeWidth = w * 1.8f
+            pGlow.maskFilter = blur(w * 0.9f)
+            c.drawCircle(cx, cy, rg, pGlow)
             pGlow.maskFilter = null
             pStroke.color = CHARGED; pStroke.strokeWidth = w
             c.drawCircle(cx, cy, rm, pStroke)
@@ -187,9 +196,9 @@ object HoldArt {
         val f = frac.coerceIn(0f, 1f)
         val sweep = 360f * f
         if (f > 0f) {
-            pGlow.color = Color.argb((90 + 130 * f).toInt(), 255, 200, 80); pGlow.strokeWidth = w * 2.2f
-            pGlow.maskFilter = blur(w * 1.1f)
-            c.drawArc(rect, -90f, sweep, false, pGlow)
+            pGlow.color = Color.argb((100 + 130 * f).toInt(), GLOW_R, GLOW_G, GLOW_B); pGlow.strokeWidth = w * 1.8f
+            pGlow.maskFilter = blur(w * 0.9f)
+            c.drawArc(glowRect, -90f, sweep, false, pGlow)
             pGlow.maskFilter = null
             pStroke.color = CHARGE; pStroke.strokeWidth = w
             c.drawArc(rect, -90f, sweep, false, pStroke)
