@@ -543,6 +543,23 @@ object CastStripModel {
         val i = list.indexOf(from).let { if (it < 0) 0 else it }
         return list[(i + dir).coerceIn(0, list.size - 1)]
     }
+    /** fix/hold-tweaks (the user on test 1533, 2026-11-26: "The L and R in the bind menu is really confusing when it cycles to the tap
+     *  to cast bar. Instead I want select to cycle to the tap to cast and l and r to keep swapping tabs"): LB ([dir] -1) / RB (+1) step
+     *  the SITUATIONS only, keeping the device [from] is on (its bar when that situation has one now, else its controller); no wrap */
+    fun stepSituation(from: BindTab, dir: Int, tap: Boolean, fightTap: Boolean = tap, party: Boolean = false, partyTap: Boolean = false): BindTab {
+        val sits = if (party) 3 else 2
+        val to = (from.situation + dir).coerceIn(0, sits - 1)
+        if (to == from.situation) return from
+        val hasBar = tap && when (to) { 1 -> fightTap; 2 -> partyTap; else -> true }
+        return BindTab(fight = to == 1, tap = from.tap && hasBar, party = to == 2)
+    }
+    /** fix/hold-tweaks: Select (the add-on's counted `bsel`, Book b89) - the situation's controller <-> its tap-to-cast bar; a situation
+     *  with no bar now stays on its controller */
+    fun toggleDevice(from: BindTab, tap: Boolean, fightTap: Boolean = tap, partyTap: Boolean = false): BindTab {
+        if (from.tap) return from.copy(tap = false)
+        val hasBar = tap && when (from.situation) { 1 -> fightTap; 2 -> partyTap; else -> true }
+        return if (hasBar) from.copy(tap = true) else from
+    }
     /** the taps that put the box on [t]: Out of combat / In combat + Controller = the spells row's bf-off / bf-on ([cols]: on, off);
      *  Tap to cast = padtab 39 then 26 / 4; cb15: Party mode = padtab 39, 38 then 4 (its controller) / 5 (its bar) */
     fun bindTabCells(t: BindTab, cols: Pair<Int, Int>?): List<Pair<String, Int>>? = when {

@@ -1226,7 +1226,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             // ONE controller reader at a time (home's finding): the Bind box reads the triggers only while the Cast view's is off
             otherReader = { castView.isShown },
             // the Bind box's controller picture, drawn by the Cast room as it draws its own sets (false = no layout yet: stand-ins)
-            drawSet = { c, set, dpad, face, lit, icon, fight -> castView.drawSet(c, set, dpad, face, lit, icon, fight) },
+            drawSet = { c, set, dpad, face, lit, icon, fight, hold -> castView.drawSet(c, set, dpad, face, lit, icon, fight, hold) },
             onTap = { col -> spellsTap(col) },                    // b37: the Bind box's Normal / In combat
             onCastBarTaps = { cells -> castBarTaps(cells) },        // GitHub #43 cb3: the box's Cast bar tab and its slots
             // Book b59 / bags-bindbox1: a finger's Keep / Undo / Back in the box the Bags room hosts (a bag item's): Bags' own A / B

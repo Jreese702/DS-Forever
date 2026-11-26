@@ -83,7 +83,7 @@ class HoldCastTest {
         assertEquals("Long at 60 fps", 895L, HoldCast.fireMs(4, 17))
         assertEquals("Normal at 40 fps (and unknown)", 710L, HoldCast.fireMs(3, 25)); assertEquals(710L, HoldCast.fireMs(3))
         assertEquals("Long at 30 fps", 980L, HoldCast.fireMs(4, 34))
-        assertEquals("the hint: F at 60 fps, rounded", "0.7 s", HoldCast.holdWord())
+        assertEquals("the hint: the ring's full point R at 60 fps, rounded (fix/hold-tweaks; was F, 0.7 s)", "0.4 s", HoldCast.holdWord())
         assertEquals(listOf(2, 3, 4), CastSettings.HoldTime.values().map { it.ticks })
         assertEquals("test 1528's stored names keep their places", listOf("SHORT", "NORMAL", "LONG"), CastSettings.HoldTime.values().map { it.name })
     }
@@ -163,10 +163,11 @@ class HoldCastTest {
         for ((n, full) in listOf(2 to full(2), 3 to full(3), 4 to full(4))) {
             val w = watch(n, bareA)
             w.press(8, 0, 1000)
-            assertEquals("$n: hidden at 0.2 s (quick taps show nothing)", -1f, w.charge(8, 1200), 0f)
-            assertEquals("$n: hidden just before 0.25 s", -1f, w.charge(8, 1249), 0f)
-            assertEquals("$n: appears at 0.25 s, empty", 0f, w.charge(8, 1250), 0f)
-            assertEquals("$n: half way to the hold point", 0.5f, w.charge(8, 1000 + 250 + (full - 250) / 2), 0.01f)
+            // fix/hold-tweaks: the ring shows from 0.1 s (was 0.25: its fill is shorter now)
+            assertEquals("$n: hidden at 0.05 s (quick taps show nothing)", -1f, w.charge(8, 1050), 0f)
+            assertEquals("$n: hidden just before 0.1 s", -1f, w.charge(8, 1099), 0f)
+            assertEquals("$n: appears at 0.1 s, empty", 0f, w.charge(8, 1100), 0f)
+            assertEquals("$n: half way to the hold point", 0.5f, w.charge(8, 1000 + 100 + (full - 100) / 2), 0.01f)
             assertFalse("$n: not charged before the hold point", w.charged(8, 1000 + full - 1))
             assertEquals("$n: full at the hold point", 1f, w.charge(8, 1000 + full), 0f)
             assertTrue("$n: charged from it", w.charged(8, 1000 + full))
@@ -340,7 +341,7 @@ class HoldCastTest {
         val f = HoldCast.fireMs(3, 17)
         w.press(8, 0, 1000)
         assertEquals(f, w.fullMs(8))
-        assertEquals("half way from 0.25 s to F", 0.5f, w.charge(8, 1000 + (250 + f) / 2), 0.01f)
+        assertEquals("half way from 0.1 s to F (no early fire known: the old ring)", 0.5f, w.charge(8, 1000 + (100 + f) / 2), 0.01f)
         assertEquals(1f, w.charge(8, 1000 + f), 0f)
         var starts = 0
         w.onFire = { _, _ -> starts++ }
@@ -352,7 +353,7 @@ class HoldCastTest {
         assertEquals(0, starts)
         // the next press is a press of its own
         w.press(8, 0, 5000)
-        assertEquals(0f, w.charge(8, 5250), 0f)
+        assertEquals(0f, w.charge(8, 5100), 0f)
         // the fire point frozen at the press: a new frame time mid-press changes nothing
         var ft: Int? = 17
         val v = HoldCast.Watch({ 3 }, { ft }).apply { map = setOf(bareA) }
@@ -484,10 +485,13 @@ class HoldCastTest {
         assertEquals("the fire point: F(3, 17) + 34", f, HoldCast.watch.fullMs(8))
         HoldCast.release.short()
         assertEquals("frozen at the press", f, HoldCast.watch.fullMs(8))
-        assertTrue("not full at F", HoldCast.watch.charge(8, 1_000 + HoldCast.fireMs(3, 17)) < 1f)
-        assertFalse("... not charged at F", HoldCast.watch.charged(8, 1_000 + HoldCast.fireMs(3, 17)))
-        assertEquals("full at F + the bump", 1f, HoldCast.watch.charge(8, 1_000 + f), 0f)
-        assertTrue(HoldCast.watch.charged(8, 1_000 + f))
+        // fix/hold-tweaks: the RING is full at R - the earliest look does not move with the bump (it holds late looks back) - and a
+        // release from R on is held down for the game to F + the bump, where the hold casts
+        val r = HoldRelease.ringMs(3, 17)
+        assertEquals(r, HoldCast.watch.ringMs(8))
+        assertTrue("not full just before R", HoldCast.watch.charge(8, 1_000 + r - 1) < 1f)
+        assertEquals("full at R", 1f, HoldCast.watch.charge(8, 1_000 + r), 0f)
+        assertTrue(HoldCast.watch.charged(8, 1_000 + r))
         HoldCast.release.reset(); HoldCast.release.cn = null; HoldCast.release.ft = null
         HoldCast.watch.reset(); HoldCast.watch.map = emptySet()
     }

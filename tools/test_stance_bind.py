@@ -148,7 +148,7 @@ comp = lupa.LuaRuntime().eval('function(s, n) local f, e = loadstring(s, n); ret
 for k in ("book", "padmap", "padtabctl"):
     e = comp(SRC[k], k)
     check(e is None, "Lua 5.1 compiles %s" % os.path.basename(F[k]), e or '')
-check('local BV = "b88"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p63"' in SRC["padtabctl"],
+check('local BV = "b89"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172 and 'local CV = "p63"' in SRC["padtabctl"],
       "the versions: Book b61 (b49 + the toolbar D-pad + rank up; Smart Range gone), PadMap m160, PadTabCtl p54 (issue #179)")
 for k in ("book", "padmap", "padtabctl"):
     check("buttons do not stay mapped on ZR +FACE buttons" in SRC[k], "%s's header quotes the user's report" % os.path.basename(F[k]))
@@ -186,7 +186,10 @@ W.execute('BK.press("PADBACK")')
 c1 = W.eval('BK.ctl.bindForm')
 W.execute('BK.press("PADBACK")')
 c2 = W.eval('BK.ctl.bindForm')
-check(c1 == 71 and c2 == 0, "Select cycles from the default: Defensive Stance next, then the caster", (c1, c2))
+# Book b89 (fix/hold-tweaks; the user: "Instead I want select to cycle to the tap to cast"): Select in the box is the device toggle,
+# counted for the app (bsel) - it no longer cycles the form row (a finger on the row still picks)
+check(c1 is None and c2 is None and W.eval('BK.ctl.bsel') == 2 and docs(W, 'spellsctl')[-1]['ctl'].get('bsel') == 2,
+      "b89: Select in the box counts bsel for the app (controller <-> bar), the form pick untouched", (c1, c2, W.eval('BK.ctl.bsel')))
 W.execute('BK.ctl.mode = "book"; BK.ctl.bind = nil')
 check(errs(W) == [], "a: no Lua error", errs(W)[:2])
 
@@ -196,7 +199,7 @@ why, ack, placed = bind(B, "RT", form='0')
 check(why is None and placed == [199] and ack.get('probe', {}).get('slotSrc') == 'formula',
       "b. caster picked (bindForm 0): the plain RT slot 199 (slotSrc formula)", (why, placed, ack.get('probe', {}).get('slotSrc')))
 B.execute('BK.startBind({ t = 1, slot = 1, id = 100 }); BK.ctl.bindForm = 0')
-B.execute('BK.ctl.bindForm = nil; hold(nil); BK.press("PADBACK"); BK.press("PADBACK")')   # Select: Defensive, then the caster
+B.execute('BK.ctl.bindForm = 0; hold(nil); BK.press("PADBACK")')   # the caster picked (b89: Select reports, it no longer cycles)
 check(docs(B, 'spellsctl')[-1]['ctl'].get('bform') is None, "b. the box with the caster picked reports no bform (the class icon lit)",
       docs(B, 'spellsctl')[-1]['ctl'].get('bform'))
 

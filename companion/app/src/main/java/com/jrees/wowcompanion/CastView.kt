@@ -4319,7 +4319,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      * on it; a slot without one is an empty slot. Same frame, glyphs and size as the bar's own picture: only the spells change.
      */
     fun drawSet(c: Canvas, set: Int, dpad: RectF, face: RectF, lit: Int? = null, litIcon: Bitmap? = null,
-                fight: ((Int) -> Int?)? = null): Boolean {
+                fight: ((Int) -> Int?)? = null, hold: ((Int) -> Int?)? = null): Boolean {
         val h = hud ?: return false
         if (k <= 0f) rebuildScale(BAND_K)
         val li = when (set) { 2 -> LT; 3 -> RT; 4 -> LR; else -> N }
@@ -4348,6 +4348,9 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
                 if (b != null && fight != null) UiKit.tex("combat_swords")?.let { sw ->
                     rect.set(-19f * k, 3f * k, -3f * k, 18f * k); c.drawBitmap(sw, null, rect, pArt)
                 }
+                // fix/hold-tweaks (the Bind box: "I also cant see the current hold spells in each menu"): the slot's HOLD spell as Home's
+                // badge, on the cluster's outer side ([drawHold]'s place and size)
+                hold?.invoke(src + 1)?.let { hi -> drawSetHold(c, pos, pos >= 4, hi) }
                 c.restore()
                 if (lit != null && src == lit - 1) {
                     c.save(); c.translate(px, py); c.scale(s / k, s / k)
@@ -4360,6 +4363,17 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         }
         drawCollapsed = savedCollapsed
         return true
+    }
+
+    /** fix/hold-tweaks: [drawSet]'s hold badge for the slot drawn at [drawn] (the canvas at its centre, the band's scale) */
+    private fun drawSetHold(c: Canvas, drawn: Int, circle: Boolean, icon: Int) {
+        val half = (if (circle) 38f else 40f) * k / 2f
+        val iconHalf = half - 3f * k
+        val (ox, oy) = HoldArt.outer(drawn)
+        val bx = ox * (if (circle) 0.703f else 0.662f) * iconHalf
+        val by = oy * (if (circle) 0.581f else 0.727f) * iconHalf
+        val r = (if (circle) 0.486f else 0.468f) * iconHalf
+        HoldArt.badge(c, bx, by, r, Icons.get(icon) ?: UiKit.icon(icon), -1f, lit = false)
     }
 
     /** drawSet's In combat slots: a fight spell as a Btn (fightOverride's road), kept per position and icon */

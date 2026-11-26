@@ -39,13 +39,21 @@ import android.view.View
  * set slots with the crossed swords, an empty one blank, as on Out of combat: 2026-11-23). Macros and Bags get Tap to cast too (D8). Show in
  * combat off: In combat + Tap to cast is dimmed with a lock, its slots grey, "Hidden in fights" (the add-on refuses with one red pulse).
  * The bar Off in Settings: both Tap to cast tabs dimmed, "Bar is off" and "Turn on" (a finger, or the add-on's `cbon` for A: D2).
+ *
+ * fix/hold-tweaks (1535; the user on test 1533, 2026-11-26: "The L and R in the bind menu is really confusing when it cycles to the tap
+ * to cast bar. Instead I want select to cycle to the tap to cast and l and r to keep swapping tabs. I also cant see the current hold
+ * spells in each menu and it doesn't have a confirmation on the hold spell"): LB / RB step the SITUATIONS only, the device kept
+ * ([CastStripModel.stepSituation]); Select (Book b89's counted `bsel`) moves between the situation's controller and its bar
+ * ([CastStripModel.toggleDevice]), its glyph at the bar's heading; the controller wears each button's HOLD spell as the bottom
+ * screen's badge (Out of combat's holds, In combat's on In combat; [holdIcon]); a hold placed by a long press asks Keep / Undo as a tap
+ * bind does (Book b89: mode "confirm").
  */
 class SpellsOverlay(
     context: Context,
     /** the Cast room's own drawing of one trigger set (CastView.drawSet, read-only); false = it has no layout yet */
     private val drawSet: (c: Canvas, set: Int, dpad: RectF, face: RectF, lit: Int?, litIcon: android.graphics.Bitmap?,
-                          fight: ((Int) -> Int?)?) -> Boolean =
-        { _, _, _, _, _, _, _ -> false },
+                          fight: ((Int) -> Int?)?, hold: ((Int) -> Int?)?) -> Boolean =
+        { _, _, _, _, _, _, _, _ -> false },
     /** another controller reader is running (the Cast view's): then this box does not start a second one (home's finding) */
     private val otherReader: () -> Boolean = { false },
     /** b37: one tap on the `spells` row's column (the Bind box's Normal / In combat) */
@@ -151,11 +159,20 @@ class SpellsOverlay(
         lbWas = lb; rbWas = rb
         if (!lbNew && !rbNew) return
         if (ctl?.mode != "bind") return
-        // b70 (D9) / b71: LB = one stop back, RB = one on, in reading order - each situation's controller, then its bar; no wrap
+        // fix/hold-tweaks: LB = the situation before, RB = the one after, the device kept (Select moves between them); no wrap
         val from = tabShown()
-        val to = CastStripModel.stepBind(from, if (rbNew) 1 else -1, three(), fightTap(), GameUi.partyModeOn(), partyTap())
+        val to = CastStripModel.stepSituation(from, if (rbNew) 1 else -1, three(), fightTap(), GameUi.partyModeOn(), partyTap())
         if (to != from) goTab(to)
     }
+    /** fix/hold-tweaks: Select (the add-on's counted `bsel`): the situation's controller <-> its tap-to-cast bar */
+    private fun selectToggle() {
+        if (ctl?.mode != "bind") return
+        val from = tabShown()
+        val to = CastStripModel.toggleDevice(from, three(), fightTap(), partyTap())
+        if (to != from) goTab(to)
+    }
+    /** the add-on's `bsel` last seen */
+    private var lastBsel: Int? = null
     /** the addon can take the pair by touch (its columns are on the row) */
     private fun fightCols(): Pair<Int, Int>? {
         val win = book?.win ?: return null
@@ -184,7 +201,10 @@ class SpellsOverlay(
     fun onCtl(c: SpellsModel.Ctl) {
         val was = boxOpen()
         c.cbOn?.let { n -> val w0 = lastCbOn; if (w0 != null && n > w0) turnOn(); lastCbOn = n }
+        val bs = c.bindSel; val bs0 = lastBsel
+        lastBsel = bs
         ctl = c
+        if (bs != null && bs0 != null && bs > bs0) repeat(bs - bs0) { selectToggle() }      // fix/hold-tweaks: Select, once per count
         if (c.on && c.bindOpen) {
             // a box that opens afresh forgets the last answer
             if (boxSpell != c.binding || c.note == "bind-wait") { boxSpell = c.binding; result = null }
@@ -396,7 +416,9 @@ class SpellsOverlay(
         else null
         c.save()
         c.translate(w / 2f, CTL_CY); c.scale(CTL_K, CTL_K); c.translate(-(w / 2f + 10f), -(cy0 + 406f))
-        val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it in 1..8 }, icon, fight) } catch (_: Throwable) { false }
+        // fix/hold-tweaks (the user: "I also cant see the current hold spells in each menu"): each button's hold spell, as Home's badge
+        val holdOf: ((Int) -> Int?)? = if (party || m == null) null else { p -> holdIcon(m, set, p, f) }
+        val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it in 1..8 }, icon, fight, holdOf) } catch (_: Throwable) { false }
         if (!drawn) standIns(c, dpad, face, lit, icon, st)
         if (party) {                                                    // b71: the D-pad moves the pick: locked
             c.drawRoundRect(RectF(dpad.left + 40f, dpad.top + 10f, dpad.right - 40f, dpad.bottom - 10f), 24f, 24f, pRecede)
@@ -417,7 +439,10 @@ class SpellsOverlay(
         // it would go, the slot it is on already glowing green (picking that one takes it off); locked: veiled with ONE word
         val older = olderTab()                                          // issue 453: dimmed with the note, never gone
         if (three() || older) {
-            darkSection(c, "Tap-to-cast bar", SituationPage.Icon.TAP, BAR_HEAD, box.left + 70f, box.right - 70f, lit = cbOn)
+            // fix/hold-tweaks: Select moves the box between the controller and the bar - its glyph and where it goes, at the heading's end
+            val selOn = (r == null || !r.ok) && !confirming && three() && CastStripModel.toggleDevice(tabNow, true, fightTap(), partyTap()) != tabNow
+            val selX = if (selOn) UiKit.hints(c, box.right - 80f, BAR_HEAD, selectGlyph(st) to (if (cbOn) "Controller" else "Tap-to-cast bar")) else null
+            darkSection(c, "Tap-to-cast bar", SituationPage.Icon.TAP, BAR_HEAD, box.left + 70f, (selX?.minus(24f)) ?: (box.right - 70f), lit = cbOn)
             val bar = CastStripModel.Live.bar
             val at = (ctl?.bindCb ?: 1) - 1
             val layer = when (sit) { 1 -> bar?.fslots; 2 -> bar?.pslots; else -> bar?.slots }
@@ -487,6 +512,11 @@ class SpellsOverlay(
         if (hx != null && ctl?.hosted == true) hostHits.add(RectF(hx - 24f, HINT_Y - 48f, box.right - 40f, HINT_Y + 48f) to "b")
     }
 
+    /** fix/hold-tweaks: the hold spell's icon on game position [p] of trigger set [set] - the In combat tab's ([fight]) or Out of
+     *  combat's (the padmap's per-tab holds), never B; null = none */
+    private fun holdIcon(m: PadMapModel.Map, set: Int, p: Int, fight: Boolean): Int? =
+        if (p == 7 || p !in 1..8) null else PadMapModel.slot(m, set, p)?.holdOf(fight)?.icon?.takeIf { it > 0 }
+
     /** Book b78: "Hold a button: place as hold" with the hold mark (the room's), at the foot's left */
     private fun holdHint(c: Canvas, x: Float, cy: Float) {
         HoldArt.mark(c, x + 16f, cy, 16f, Theme.gold)
@@ -525,7 +555,7 @@ class SpellsOverlay(
         var x = box.right - 70f - total                                 // b71: on the Controller heading's line, at its right end
         val start = x
         val cy = CTL_HEAD
-        UiKit.pad(c, selectGlyph(st), x + 22f, cy, 40f)
+        // (fix/hold-tweaks: Select is the device toggle now - the row is a finger's: no Select glyph before it)
         x += 56f
         val classBmp = b?.lines?.firstOrNull { it.index == 1 }?.let { Icons.get(it.icon) }
         for (fo in list) {
