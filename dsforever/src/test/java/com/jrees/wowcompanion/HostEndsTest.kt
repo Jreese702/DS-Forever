@@ -95,6 +95,39 @@ class HostEndsTest {
         assertTrue("after the game detached", stop.indexOf("detachGame()") in 0 until stop.indexOf("LauncherHooks.gameUp === gameUpHook"))
     }
 
+    /**
+     * int/1534 (HostEnds over test 1533's code; HostsReleasedTest's fight and waiting-row tests drive each one): hold to cast's two hooks
+     * owned; every sender's retry off the main looper at the host's end, hold to cast's two at a park as well; the waiting row's height
+     * hook let go at the end and never run for a host that went; a top window that went makes no window again, one made while parked
+     * starts parked
+     */
+    @Test fun test1533sRegistrationsEndWithTheirHost() {
+        val host = File(srcDir(), "CompanionHost.kt").readText()
+        assertTrue(host.contains("ends.own(HoldCast::onTicksWanted, null)"))
+        assertTrue(host.contains("ends.own(HoldCast::onBumpWanted, null)"))
+        assertTrue(host.contains("ends.add { for (r in sendRetries()) ui.removeCallbacks(r) }"))
+        val retries = host.substringAfter("private fun sendRetries(): List<Runnable> =").substringBefore("\n\n")
+        // every self-reposting sender of the host: "private val <name>Again = Runnable"
+        for (m in Regex("private val (\\w+Again) = Runnable").findAll(host)) {
+            val n = m.groupValues[1]
+            assertTrue("$n off at the host's end", retries.contains(n) || n in listOf("holdAgain", "bumpAgain"))
+        }
+        assertTrue(host.substringAfter("private fun holdSends(): List<Runnable> =").substringBefore("\n").contains("listOf(holdAgain, bumpAgain)"))
+        assertTrue(retries.contains("+ holdSends()"))
+        assertTrue("a park stops them", host.substringAfter("    fun park(why: String) {").substringBefore("\n    }\n")
+            .contains("for (r in holdSends()) ui.removeCallbacks(r)"))
+        assertTrue(host.contains("startView.onBareNeed = { if (!ends.ended && !shell.hostGone() && stripKind == SingleNpc.START) stripPlace() }"))
+        assertTrue(host.contains("ends.add { startView.onBareNeed = null }"))
+        assertTrue("the prompts' hold ask stops with its host", host.substringAfter("    private fun setupAskHold() {").substringBefore("\n    }\n")
+            .contains("if (ends.ended) return"))
+        val home = File(srcDir(), "HomeView.kt").readText()
+        assertTrue(home.contains("context.hostOwn(HoldCast::onChange, null)"))
+        val top = fork("TopWindow.kt")
+        val sub = top.substringAfter("override fun sub(id: String): SingleSub {").substringBefore("\n    }\n")
+        assertTrue("a window that went", sub.contains("if (!up) return NoSub"))
+        assertTrue("made while parked: parked", sub.contains(".also { if (parkedNow) it.park(true) }"))
+    }
+
     private fun srcDir(): File = listOf(File("../companion/app/src/main/java/com/jrees/wowcompanion"), File("companion/app/src/main/java/com/jrees/wowcompanion"))
         .first { it.isDirectory }
     private fun fork(name: String): String =

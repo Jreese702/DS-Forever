@@ -285,7 +285,19 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         }
     }
 
-    override fun sub(id: String): SingleSub = subs.getOrPut(id) { SubWindow(activity, id) { screen.ourTouch() } }
+    /** int/1534: a top window that went (or whose show failed) never makes a window again - a late call of its dead host (a post that ran
+     *  after the end) gets one that does nothing, else a window over the game nobody closes would hold this window and its host; and one
+     *  made while parked starts parked (GONE until the return, as the others) */
+    override fun sub(id: String): SingleSub {
+        if (!up) return NoSub
+        return subs.getOrPut(id) { SubWindow(activity, id) { screen.ourTouch() }.also { if (parkedNow) it.park(true) } }
+    }
+    private object NoSub : SingleSub {
+        override fun put(v: View?) {}
+        override fun place(l: Int, t: Int, r: Int, b: Int) {}
+        override fun shown(on: Boolean) {}
+        override fun touchable(on: Boolean) {}
+    }
 
     private val hintView by lazy { HintPlate(context) }
     /** the review (2026-11-25): one plate, two kinds of words - pinned (ms 0, "Tap the game for the controller") and timed notes over it;

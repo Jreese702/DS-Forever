@@ -3,6 +3,7 @@ package com.jrees.wowcompanion
 import android.content.ComponentCallbacks2
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.SystemClock
 import android.view.Display
 import android.view.View
 import com.jrees.wowcompanion.BottomParkLifecycleTest.LauncherHooksActivity
@@ -231,19 +232,71 @@ class HostsReleasedTest {
         val holders = HostHolders.all({ o -> o in held })
         val threads = Thread.getAllStackTraces().keys.filter { it.isAlive }.map { it.name }.sorted()
         assertEquals("$what: still reachable (${kept.size}): ${kept.take(12)}${if (kept.size > 12) " ..." else ""}\n" +
-            "held by (${holders.size}, ${HostHolders.walked} objects walked from ${HostHolders.roots} roots):\n" + holders.joinToString("\n") { "  ${it.path}" } + "\n  live threads: $threads",
+            "held by (${holders.size}, ${HostHolders.walked} objects walked from ${HostHolders.roots} roots):\n" + holders.joinToString("\n") { "  ${it.path}" } +
+            "\n  queued on the main looper for them: ${queuedFor(held)}\n  live threads: $threads",
             emptyList<String>(), kept)
     }
+
+    /** (int/1534, a failure's words) every main-looper message whose callback holds one of [held] directly: the host's own field it is
+     *  (a Runnable kept in a field), else its class, and how long until it runs */
+    private fun queuedFor(held: Set<Any>): List<String> = runCatching {
+        val q = android.os.Looper.getMainLooper().queue
+        val head = android.os.MessageQueue::class.java.getDeclaredField("mMessages").apply { isAccessible = true }
+        val next = android.os.Message::class.java.getDeclaredField("next").apply { isAccessible = true }
+        val now = SystemClock.uptimeMillis()
+        val out = ArrayList<String>()
+        var m = head.get(q) as android.os.Message?
+        var n = 0
+        while (m != null && n++ < 100_000) {
+            val cb = m.callback
+            if (cb != null) {
+                val args = cb.javaClass.declaredFields.mapNotNull { f -> runCatching { f.isAccessible = true; f.get(cb) }.getOrNull() }
+                val owner = args.firstOrNull { it in held }
+                if (owner != null) {
+                    var name: String? = null
+                    var k: Class<*>? = owner.javaClass
+                    while (name == null && k != null && k != Any::class.java) {
+                        name = k.declaredFields.firstOrNull { f -> !Modifier.isStatic(f.modifiers) && runCatching { f.isAccessible = true; f.get(owner) === cb }.getOrDefault(false) }?.name
+                        k = k.superclass
+                    }
+                    out += "${owner.javaClass.simpleName}.${name ?: cb.javaClass.name} in ${m.`when` - now} ms"
+                }
+            }
+            m = next.get(m) as android.os.Message?
+        }
+        out
+    }.getOrElse { listOf("(${it.message})") }
 
     // Every step that touches a host runs in a function of its own and hands back WEAK references only: a host left in a local of the
     // test's own frame is a GC root the heap walk cannot see (the interpreter keeps a finished loop's locals in their slots)
 
-    /** the host on show now: every room on it, then its references (weakly) */
+    /** the host on show now: every room on it, the rooms' tab rows stepped with L / R, then its references (weakly) */
     private fun shownRefs(tag: String): List<Pair<String, WeakReference<Any>>> {
         val h = host()
         everyRoom(h)
         previews(h)
+        tabSteps(h)
         return refsOf(h, tag)
+    }
+
+    /**
+     * THE ROOMS' TAB ROW ON TOP (test 1533; int/1534): L / R through the host's own step (the one its RoomTabsPad reader runs:
+     * roomTabsShoulder) on every room with a tab row along the top, then Home again; Social's page must move (R the next tab, L back)
+     */
+    private fun tabSteps(h: CompanionHost) {
+        val step = h.javaClass.getDeclaredMethod("roomTabsShoulder", Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+        val pages = listOf("FRIENDS", "GUILD", "RAID")
+        fun social() = field(field(h, "socialView")!!, "page").toString()
+        for (r in listOf(Room.SOCIAL, Room.GROUPFINDER, Room.PROFESSIONS, Room.CHARACTER, Room.SPELLBOOK, Room.TALENTS, Room.MACROS)) {
+            runCatching { showRoom(h, r) }; settle(100)
+            val before = if (r == Room.SOCIAL) social() else null
+            step.invoke(h, true); settle(60)
+            if (before != null) assertEquals("Social: R opens the next tab", pages.getOrElse(pages.indexOf(before) + 1) { before }, social())
+            val after = if (r == Room.SOCIAL) social() else null
+            step.invoke(h, false); settle(60)
+            if (before != null && after != before) assertEquals("Social: L the one before", before, social())
+        }
+        showRoom(h, Room.HOME); settle(200)
     }
 
     /** the host on show (every room on it), then Android's own close of its window (a display change): the next host up */
@@ -379,4 +432,169 @@ class HostsReleasedTest {
         return listOf("the host whose start threw" to made!!)
     }
     private companion object { const val FAIL = "the test: a throw part way through the host's start" }
+
+    // ---------------------------------------------------------------- int/1534: TEST 1533'S OWN PATHS (the leak fix over the code 1533 added)
+
+    /** hold to cast's launcher side for one test: its fire timer and its later checks on the main looper, as the launcher's own (an earlier
+     *  class in the same run may have set its own: HoldCastShotsTest), and everything of it clean before and after */
+    private fun <T> withHoldCast(body: () -> T): T {
+        val sched0 = HoldCast.schedule; val later0 = HoldCast.later
+        val h = android.os.Handler(android.os.Looper.getMainLooper())
+        val fire = Runnable { HoldCast.fireNow() }
+        HoldCast.schedule = { at -> h.removeCallbacks(fire); if (at != HoldRelease.NEVER) h.postAtTime(fire, at) }
+        HoldCast.later = { ms, f -> h.postDelayed({ f() }, ms) }
+        HoldCast.padReset(true)
+        try { return body() } finally {
+            HoldCast.padReset(true)
+            HoldCast.onMap(JSONObject().put("type", "holdmap").put("on", false).put("why", "none"))
+            HoldCast.schedule = sched0; HoldCast.later = later0
+        }
+    }
+
+    /** the host's two senders to the add-on that wait out a fight on the main looper (test 1533's hold bump, PadMap m202 / Book b88; the
+     *  hold time, m194 / b82): which of them is queued now */
+    private fun sendersQueued(h: CompanionHost): List<String> {
+        val ui = field(h, "ui") as android.os.Handler
+        return listOf("holdAgain", "bumpAgain").filter { ui.hasCallbacks(field(h, it) as Runnable) }
+    }
+
+    /** a current padmap in a fight whose hold time (`hold.n`) and bump (`hold.hb`) are not the app's: both senders wait the fight out */
+    private fun fightPadmap() {
+        val n = if (CastSettings.holdTime.ticks == 4) 3 else 4
+        val hb = if (HoldCast.release.bumpSteps == 1) 2 else 1
+        write(JSONObject().put("type", "padmap").put("v", "m203").put("m", JSONObject().put("combat", true)
+            .put("hold", JSONObject().put("n", n).put("hb", hb).put("lk", 5))).toString())
+    }
+
+    /** hold to cast (test 1533): the add-on's holdmap (its fire point far off: 3 s frames), X held (the launcher's write), the add-on's keep
+     *  word through the host (facecast) - CONFIRMED; then Android's cancelled up (the keys moved to the other screen's window): KEPT */
+    private fun keptX() {
+        write(JSONObject().put("type", "holdmap").put("on", true).put("b", "bare:5").put("why", "on").put("cn", 3).put("ft", 3000).toString())
+        settle(3_000) { HoldCast.mapWhy == "on" && HoldCast.release.cn == 3 }
+        assertEquals("the host gave hold to cast the add-on's holdmap", 3, HoldCast.release.cn)
+        HoldCast.padIn(1 shl 2, false, false, false, false, SystemClock.uptimeMillis())
+        write(JSONObject().put("type", "facecast").put("pos", 5).put("hk", "keep").put("kind", "holdkeep").put("lay", "bare").put("key", "PAD3")
+            .put("need", 3).toString())
+        settle(3_000) { HoldCast.release.state(HoldRelease.X) == HoldRelease.CONFIRMED }
+        assertEquals("the add-on kept X's press", HoldRelease.CONFIRMED, HoldCast.release.state(HoldRelease.X))
+        HoldCast.canceling(true)
+        try { HoldCast.padIn(0, false, false, false, false, SystemClock.uptimeMillis()) } finally { HoldCast.canceling(false) }
+        assertEquals("KEPT: down for the game to its fire point", HoldRelease.KEPT, HoldCast.release.state(HoldRelease.X))
+        assertEquals(HoldRelease.bitOf(HoldRelease.X), HoldCast.keptMask())
+    }
+
+    /** a press KEPT goes for the game at its fire point by the launcher's own timer, with or without a host: never a down left in the game */
+    private fun keptLetGo(what: String) {
+        settle(18_000) { HoldCast.keptMask() == 0 }
+        assertEquals("$what: X let go for the game at its fire point", 0, HoldCast.keptMask())
+        assertEquals(0, HoldCast.forcedMask())
+        assertEquals(HoldRelease.IDLE, HoldCast.release.state(HoldRelease.X))
+    }
+
+    /**
+     * HOLD TO CAST IN A FIGHT (test 1533): the host's padmap says the add-on's hold time and bump are not the app's, so its two senders
+     * wait out the fight on the main looper (holdAgain / bumpAgain, every TopCombatBar.RESEND_MS), and X is KEPT. Android's own close of
+     * the window then: the old host must go at ITS end while the next is up (never kept by its senders' reposting, never one of them
+     * running for it) and the kept press goes at its fire point with no host. Then a minimize (the park) with the same on the next host:
+     * nothing of the parked host runs while away, the press goes while away. Back, then the launcher's end: none may stay
+     */
+    @Test fun aHostEndedOrParkedInAFightWithAPressKeptIsLetGo() = withHoldCast { assertAllGone("hosts in a fight with a press kept", keptInAFight()) }
+    private fun keptInAFight(): List<Pair<String, WeakReference<Any>>> {
+        bottomDisplay()
+        write("""{"type":"quests","q":{"n":1}}""")
+        val c = Robolectric.buildActivity(LauncherHooksActivity::class.java).setup()
+        settle(6_000) { shown() != null && tail(host()) != null }
+        screen().attachGame(sink)
+        val refs = ArrayList<Pair<String, WeakReference<Any>>>()
+        refs += keptThenClosed("the host closed with X kept")
+        assertAllGone("the host closed by Android in a fight with X kept, while the next is up", refs)
+        keptLetGo("its host gone")
+        refs += keptThenParked(c)
+        refs += launcherRefs(c.get())
+        c.pause().stop().destroy()
+        settle(500)
+        return refs
+    }
+    private fun fightAndKept(tag: String): List<Pair<String, WeakReference<Any>>> {
+        val refs = shownRefs(tag)
+        val h = WeakReference(host())
+        fightPadmap()
+        settle(3_000) { h.get()?.let { sendersQueued(it).size == 2 } == true }
+        assertEquals("$tag: its senders wait out the fight", listOf("holdAgain", "bumpAgain"), h.get()?.let { sendersQueued(it) })
+        keptX()
+        return refs
+    }
+    private fun keptThenClosed(tag: String): List<Pair<String, WeakReference<Any>>> {
+        val refs = fightAndKept(tag)
+        val w = WeakReference(shown()!!)
+        (w.get() as android.app.Dialog).cancel()
+        settle(4_000) { shown() != null && shown() !== w.get() && tail(host()) != null }
+        assertNotNull("the next host up", shown())
+        assertEquals("X still KEPT for the game (its fire point not come yet)", HoldRelease.KEPT, HoldCast.release.state(HoldRelease.X))
+        return refs + ("$tag's window" to WeakReference<Any>(w.get()))
+    }
+    private fun keptThenParked(c: org.robolectric.android.controller.ActivityController<LauncherHooksActivity>): List<Pair<String, WeakReference<Any>>> {
+        val refs = fightAndKept("the host parked with X kept")
+        val h = WeakReference(host())
+        c.get().onUserLeaveHint(); c.pause().stop(); settle(300)
+        assertTrue("parked", parkedNow())
+        assertEquals("parked: neither sender runs while away", emptyList<String>(), h.get()?.let { sendersQueued(it) })
+        keptLetGo("parked")
+        assertTrue("still parked", parkedNow())
+        assertEquals("parked: neither sender came back while away", emptyList<String>(), h.get()?.let { sendersQueued(it) })
+        c.start().resume()
+        settle(1_000) { !parkedNow() }
+        assertTrue("back: the same host", h.get() === host() && !parkedNow())
+        return refs
+    }
+
+    /**
+     * SINGLE SCREEN MODE'S WAITING ROW AT THE TOP (test 1533, the user's ruling "Top of the screen"): the add-on's logout word brings the
+     * waiting page, which single screen mode shows as its row alone over the game (the strip "start", as high as the row: StartView's
+     * onBareNeed, asked for after its draw, posted). The row grows (the region line comes) and Android closes the top window before that
+     * post runs: the dead host must never place a strip window for its dead top window (a window over the game's top nobody closes),
+     * and it must go while the window made again is up; then the launcher's end - none may stay
+     */
+    @Test fun singleScreensWaitingRowLetsItsHostGo() = assertAllGone("single screen mode's waiting row", waitingRow())
+    private fun waitingRow(): List<Pair<String, WeakReference<Any>>> {
+        bottomDisplay()
+        write("""{"type":"quests","q":{"n":1}}""")
+        val c = Robolectric.buildActivity(LauncherHooksActivity::class.java).setup()
+        settle(6_000) { shown() != null && tail(host()) != null }
+        screen().attachGame(sink)
+        val refs = ArrayList<Pair<String, WeakReference<Any>>>()
+        refs += singleSwitch(true, "two screens")
+        refs += rowThenClosed("the waiting row's host")
+        val oldTop = refs.last().second
+        assertEquals("a top window that went never gets a window again", 0, oldTop.get()?.let { (field(it, "subs") as Map<*, *>).size } ?: 0)
+        assertAllGone("the waiting row's host and its top window, while the one made again is up", refs)
+        refs += shownRefs("the top window made again")
+        refs += launcherRefs(c.get())
+        c.pause().stop().destroy()
+        settle(500)
+        return refs
+    }
+    private fun rowThenClosed(tag: String): List<Pair<String, WeakReference<Any>>> {
+        val refs = shownRefs(tag)
+        val h = WeakReference(host())
+        write("""{"type":"bye"}""")
+        settle(3_000) { h.get()?.let { field(it, "stripKind") == SingleNpc.START } == true }
+        assertEquals("the waiting row shown", SingleNpc.START, h.get()?.let { field(it, "stripKind") })
+        rowGrows(h)
+        val w = WeakReference(shown()!!)
+        (w.get() as android.app.Dialog).cancel()
+        settle(4_000) { shown() != null && shown() !== w.get() && tail(host()) != null }
+        assertNotNull("the top window made again", shown())
+        return refs + ("$tag's window" to WeakReference<Any>(w.get()))
+    }
+    /** the row drawn, then the region line comes and it is drawn again: its new height is asked for (posted, not run yet) */
+    private fun rowGrows(h: WeakReference<CompanionHost>) {
+        val sv = field(h.get()!!, "startView") as StartView
+        assertTrue("the row alone over the game", sv.bare)
+        assertTrue("the row in its strip window", sv.isAttachedToWindow)
+        val bmp = Bitmap.createBitmap(maxOf(1, sv.width), maxOf(1, sv.height), Bitmap.Config.ARGB_8888)
+        sv.draw(Canvas(bmp))
+        sv.region = if (sv.region == null) GameRegion.Note("EU", "US") else null
+        sv.draw(Canvas(bmp))
+    }
 }

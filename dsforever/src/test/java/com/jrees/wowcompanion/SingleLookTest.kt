@@ -151,7 +151,9 @@ class SingleLookTest {
             java.io.File("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")).first { it.canRead() }.readText()
         val place = h.substringAfter("private fun stripPlace() {").substringBefore("\n    }")
         assertTrue("the rect fits the row", place.contains("SingleNpc.START -> SingleNpc.startRect(w, h, startView.bareNeed())"))
-        assertTrue("a change of the row places it again", h.contains("startView.onBareNeed = { if (stripKind == SingleNpc.START) stripPlace() }"))
+        // (int/1534: never for a host that went - HostsReleasedTest.singleScreensWaitingRowLetsItsHostGo)
+        assertTrue("a change of the row places it again",
+            h.contains("startView.onBareNeed = { if (!ends.ended && !shell.hostGone() && stripKind == SingleNpc.START) stripPlace() }"))
     }
 
     /**

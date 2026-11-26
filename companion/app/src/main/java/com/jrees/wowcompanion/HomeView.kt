@@ -133,6 +133,7 @@ class HomeView(
         flow.setRest(HomeSettings.rest)
         // every static listener here holds this Home WEAKLY ([weakly], the 1528 blocker): a Home made again never keeps the old one
         HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }   // m194: the hold's flash on the add-on's word (its release)
+        context.hostOwn(HoldCast::onChange, null)           // int/1534: none again at its host's end (test 1533's KEPT press fires it with no host)
         context.atHostEnd(HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } }))  // GitHub #43: the tap-to-cast bar's own choices
         // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
         context.atHostEnd(HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } }))

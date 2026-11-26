@@ -683,6 +683,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // m194: Settings' Hold time to the add-on (Book b82's codes 29-31); the host held weakly (a replaced host is never kept by it)
         run { val me = java.lang.ref.WeakReference(this); HoldCast.onTicksWanted = { me.get()?.let { h -> h.ui.post { h.lastPadMap?.let { m -> h.holdTicksCheck(m) } } } } }
         run { val me = java.lang.ref.WeakReference(this); HoldCast.onBumpWanted = { me.get()?.let { h -> h.ui.post { h.lastPadMap?.let { m -> h.holdBumpCheck(m) } } } } }
+        // int/1534 (HostEnds over test 1533's code): both hooks back to none at this host's end while still its own, and every one of its
+        // senders to the add-on off the main looper then - in a fight each waits it out every TopCombatBar.RESEND_MS for ever, so a host
+        // that went stayed queued whole and went on tapping its page-3 / page-4 codes for nobody (HostsReleasedTest's fight test)
+        ends.own(HoldCast::onTicksWanted, null)
+        ends.own(HoldCast::onBumpWanted, null)
+        ends.add { for (r in sendRetries()) ui.removeCallbacks(r) }
         bagsView = BagsView(this)
         // bags controller mode (bags session, AGENT_LOG 2026-09-28): the Bags room while the addon holds the controller
         bagsView.onController = { on, why -> onBagsController(on, why) }
@@ -1126,7 +1132,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ends.own(StartMenu::regionPreview, null)
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
         // single screen mode's waiting row at the top (the user's ruling 2026-11-25, "Top of the screen"): its strip as high as the row
-        startView.onBareNeed = { if (stripKind == SingleNpc.START) stripPlace() }
+        // (int/1534: the row's height is asked for after its draw, posted - a host that went meanwhile never places a strip window for its
+        // dead top window: a window over the top of the game nobody would close, holding the whole host; HostsReleasedTest)
+        startView.onBareNeed = { if (!ends.ended && !shell.hostGone() && stripKind == SingleNpc.START) stripPlace() }
+        ends.add { startView.onBareNeed = null }
         // the BLZ51914400 offer (the user, 2026-11-18): Browser login on, then the launcher's restart (the game's own Exit Game first)
         startView.onBrowserLogin = {
             Settings.browserLogin = true
@@ -1794,6 +1803,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         listOf(secondTick, guardTick, silenceTick, padOwnerTick, castAskTick, castTabTick, keyAskTick, signInTick, rootCheck, recTick,
             psStepTick, talkTick, playTick, singlePoll)
 
+    /** int/1534: this host's senders to the add-on, each tried again on the main looper until the add-on says the wish (a fight: waited
+     *  out every TopCombatBar.RESEND_MS). All off at the host's end (HostEnds); hold to cast's two ([holdSends]) off at a park too */
+    private fun sendRetries(): List<Runnable> =
+        listOf(mirrorAgain, mirrorGiveUp, topAgain, castAgain, swingAgain, pvAgain, ssAgain) + holdSends()
+    /** hold to cast's senders (the hold time, m194; test 1533's bump, m202): every current padmap runs both checks again, so a park
+     *  stops them and the return needs no restart of its own */
+    private fun holdSends(): List<Runnable> = listOf(holdAgain, bumpAgain)
+
     /**
      * AWAY (the launcher's minimize, Recents, another app over it, the screen off): onStop's body without the game's UI (the wheels and the
      * sign-in prompt close, voice off, the pad's reader shut, Select the game's), the reader paused (its place kept), every repeating
@@ -1807,6 +1824,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         tail?.pause()
         parkTicks = repeatingTicks().filter { ui.hasCallbacks(it) }
         for (r in parkTicks) ui.removeCallbacks(r)
+        // int/1534: hold to cast's senders too (in a fight they waited it out every 5 s for the whole park; out of one each burned its
+        // tries on taps the park refuses); the first current padmap after the return runs both again
+        for (r in holdSends()) ui.removeCallbacks(r)
         guardOff()
         tapHoldBefore = GameUi.tapHold(); GameUi.holdTaps(Long.MAX_VALUE)
         GameInput.away = true
@@ -6686,6 +6706,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         return true
     }
     private fun setupAskHold() {
+        // int/1534 (found by HostsReleasedTest's fight test: the cast bar question open as the host went): a host that went never asks
+        // again - this asks every 2 s for as long as the prompt is open, so a dead host stayed queued whole and tapped the game's guest
+        // "home" hold for nobody, for good
+        if (ends.ended) return
         if (!setupPad || setupHeld || (setupWaiting == null && setupView.visibility != View.VISIBLE)) return
         // b137: never take the controller from a room the player opened meanwhile (or a module of Home's): skip, ask again later
         if (room != Room.HOME || homeView.homeGuestWanted()) { ui.postDelayed({ setupAskHold() }, 2_000L); return }
