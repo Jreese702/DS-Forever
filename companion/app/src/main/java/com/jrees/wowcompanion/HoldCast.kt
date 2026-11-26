@@ -441,7 +441,10 @@ object HoldCast {
         if (hk == "keep") {
             val lay = layerOf(msg.optString("lay")) ?: 0
             val need = msg.optInt("need", 0).takeIf { it in 2..4 }
-            if (release.keep(msg.optString("key").ifEmpty { null }, pos, lay, need, now)) fireNow(now)   // a late word fires at once
+            // fix/hold-tweaks: mk = the router saw the launcher's armed code with the key-down: the fire goes at the ring's full point
+            val mk = msg.optInt("mk", 0) == 1
+            if (release.keep(msg.optString("key").ifEmpty { null }, pos, lay, need, now, mk)) fireNow(now)   // a late word fires at once
+            else schedule(release.nextAt())
             return
         }
         if (release.closed(pos, now)) resend?.run()                    // a KEPT press there: its up for the game now
@@ -456,7 +459,8 @@ object HoldCast {
             } else {
                 // the up beat the N-th look: the TAP ran. The takeover goes at once; later fires wait longer
                 if (takeover.pos == pos) takeover.cancel(bandClock())
-                release.short()
+                // fix/hold-tweaks: a fire that carried the code and still ran the tap - the code does not reach the router: R fires end
+                if (fp.marked) { release.markOff = true; log("mark off: a marked fire ran the tap") } else release.short()
                 log("fire SHORT hn=${msg.optInt("hn", -1)} need=${msg.optInt("need", -1)} ft=${fp.ft ?: "?"} bump=${release.bump}ms")
                 onChange?.invoke()
                 onBumpWanted?.invoke()                                  // the add-on's ring fills to the new point too (m202)
@@ -497,7 +501,7 @@ object HoldCast {
     @Volatile private var resend: Runnable? = null
     @JvmStatic fun setResend(r: Runnable?) { resend = r }
 
-    private class FiredPress(val pos: Int, val at: Long, val n: Int?, val ft: Int?)
+    private class FiredPress(val pos: Int, val at: Long, val n: Int?, val ft: Int?, val marked: Boolean = false)
     @Volatile private var firedPress: FiredPress? = null
 
     private var lastButtons = 0
@@ -513,10 +517,24 @@ object HoldCast {
         release.onFire = { pos, layer -> fired(pos, layer) }
         // fix/hold-tweaks: a press let go after its ring filled before its keep word waits for it only where the add-on keeps now
         release.mayKeep = { ctl -> val p = HoldRelease.posOfCtl(ctl); p > 0 && watch.map.any { it % 8 == p - 1 } }
+        release.trigFree = { trigL < TRIG_FREE || trigR < TRIG_FREE }
     }
 
     /** the clock's looks the picture and the fire use: the add-on's `cn` when known, else Settings' */
     fun need(): Int = release.cn ?: CastSettings.holdTime.ticks
+
+    // ---------------------------------------------------------------- fix/hold-tweaks: THE FIRE'S MARK (PadMap m204)
+    /** a trigger under this analog value is FREE for the code (the game's trigger button is far above it) */
+    const val TRIG_FREE = 0.1f
+    /** player 1's triggers as the launcher last wrote them (WinHandler.holdFeed) */
+    @Volatile private var trigL = 0f
+    @Volatile private var trigR = 0f
+    /** WinHandler (main thread, player 1): the triggers' analog values about to be written */
+    @JvmStatic fun trigIn(l: Float, r: Float) { trigL = l; trigR = r }
+    /** WinHandler.holdOut: the code for the free triggers now (0 none; [HoldRelease.markCode]); one call per write */
+    @JvmStatic fun markCode(): Int = if (PlayModes.current == PlayMode.STREAM) 0 else release.markCode(clock())
+    /** the analog value WinHandler writes for code [code] on a free trigger (0 = none): (code + 0.5) / 255, so the byte is the code */
+    @JvmStatic fun markValue(code: Int): Float = if (code <= 0) 0f else (code + 0.5f) / 255f
 
     /** XServerScreen: the event handed to the launcher's handlers now is Android's cancel ([on]), until it says false */
     @JvmStatic fun canceling(on: Boolean) { cancelIn = on }
@@ -606,7 +624,7 @@ object HoldCast {
     }
     private fun fired(pos: Int, layer: Int) {
         val now = clock()
-        firedPress = FiredPress(pos, now, release.cn, release.ft)
+        firedPress = FiredPress(pos, now, release.cn, release.ft, release.lastMarked)
         watch.fired(pos, now)
         if (!watch.box) takeover.start(pos, layer, bandClock())
         onChange?.invoke()

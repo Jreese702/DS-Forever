@@ -122,4 +122,68 @@ class HoldRingAgreesTest {
         w.press(8, 0, 1000)
         assertEquals("no early fire: the ring fills to F (the release decides)", 678L, w.ringMs(8))
     }
+
+    // ---------------------------------------------------------------- THE FIRE'S MARK (the user's pick "Cast at the fill")
+
+    /** a press of A with the keep word's mk (the router saw the armed code), let go at [rel]: (ring full at the release, the game's up,
+     *  that up carried A's fire code) */
+    private fun marked(rel: Long, free: Boolean = true): Triple<Boolean, Long, Boolean> {
+        val e = HoldRelease().apply { cn = n; this.ft = this@HoldRingAgreesTest.ft; trigFree = { free } }
+        val w = HoldCast.Watch({ n }, { ft }, { 0L }, { e.cn != null }, { e.waitsPos(it) }).apply { map = setOf(HoldCast.key(0, 8)) }
+        var up = -1L; var code = false
+        e.edge(HoldRelease.A, true, 1000); w.press(8, 0, 1000)
+        assertEquals("armed while held: code 3", 3, e.markCode(1000))
+        assertTrue(e.keep("PAD1", 8, 0, n, 1100, mk = true))
+        while (e.nextAt() <= rel) {
+            val at = e.nextAt(); e.due(at)
+            if (e.forcedMask and 1 != 0 && up < 0) { up = at; code = e.markCode(at) == 6 }
+        }
+        val full = w.charge(8, rel) >= 1f
+        if (up < 0) code = e.markCode(rel) == 6
+        e.edge(HoldRelease.A, false, rel); w.release(8, rel)
+        if (up < 0) {
+            if (e.keptMask and 1 != 0) { val at = e.nextAt(); e.due(at); up = at; code = e.markCode(at) == 6 } else up = rel
+        }
+        return Triple(full, up, code)
+    }
+
+    @Test fun aMarkedPressCastsAtTheFillAndARelaseBeforeItIsTheTap() {
+        val bad = ArrayList<String>()
+        for (rel in 1050L..2000L step 5L) {
+            val (full, up, code) = marked(rel)
+            if (full && up != 1000L + HoldRelease.ringMs(n, ft)) bad += "release +${rel - 1000}: ring full but the game's up at +${up - 1000} (not R)"
+            for (phase in 0L..(200L + ft) step 7L) for (step in listOf(200L, 200L + ft)) {
+                val hold = code || looks(1000, up, phase, step) >= n                 // the router: its own fire code, or its looks
+                if (hold != full) bad += "release +${rel - 1000}: ring ${if (full) "full" else "not full"} -> ${if (hold) "HOLD" else "tap"}"
+            }
+        }
+        assertTrue("${bad.size} cases, e.g. " + bad.take(6).joinToString(" | "), bad.isEmpty())
+    }
+
+    @Test fun theMarksCodes() {
+        val e = HoldRelease().apply { cn = 3; ft = 17 }
+        assertEquals("nothing held: no code", 0, e.markCode(0))
+        e.edge(HoldRelease.X, true, 1000)
+        assertEquals("X held: armed 3", 3, e.markCode(1000))
+        e.keep("PAD3", 5, 0, 3, 1100, mk = true)
+        assertEquals("a marked keep fires at R", 1373L, e.nextAt())
+        assertTrue(e.due(1373))
+        assertEquals("the fire's write: 6 + X (1)", 7, e.markCode(1373))
+        assertEquals("... for MARK_MS", 7, e.markCode(1373 + HoldRelease.MARK_MS - 1))
+        assertEquals("then none (X up for the game, nothing else held)", 0, e.markCode(1373 + HoldRelease.MARK_MS))
+        // no mk in the keep word: F, as before
+        val f = HoldRelease().apply { cn = 3; ft = 17 }
+        f.edge(HoldRelease.A, true, 1000); f.keep("PAD1", 8, 0, 3, 1100)
+        assertEquals(1678L, f.nextAt())
+        // no free trigger at R (both held for LT + RT): no code can go - the fire waits for F (the looks decide there)
+        val t = HoldRelease().apply { cn = 3; ft = 17; trigFree = { false } }
+        var fires = 0; t.onFire = { _, _ -> fires++ }
+        t.edge(HoldRelease.A, true, 1000); t.keep("PAD1", 8, 0, 3, 1100, mk = true)
+        assertFalse(t.due(1373)); assertEquals(0, fires); assertEquals(1678L, t.nextAt())
+        assertTrue(t.due(1678)); assertEquals(1, fires); assertEquals("no code at F", 0, t.markCode(1678))
+        // the session's fail-safe: a marked fire the router answered with the tap - no more fires at R
+        val o = HoldRelease().apply { cn = 3; ft = 17; markOff = true }
+        o.edge(HoldRelease.A, true, 1000); o.keep("PAD1", 8, 0, 3, 1100, mk = true)
+        assertEquals(1678L, o.nextAt())
+    }
 }

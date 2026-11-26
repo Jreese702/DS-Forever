@@ -54,7 +54,7 @@ ede23a852058a0e75f71d37ee9dfb538  WowCompanionPvp/WowCompanionPvp.toc
 7cae6895d42cba3a4a2cd3f925bcaf86  WowCompanionSocial/Social.lua
 cf96b1cd890b3662605bc1407b6ba35c  WowCompanionSocial/WowCompanionSocial.toc
 5e8b7b28d877ae7d4be92c5f7e2fa27c  WowCompanionSpells/Book.lua
-f2deafe0df75e2731859d860bce3528c  WowCompanionSpells/PadMap.lua
+905c7fa60e76b434730844384db52980  WowCompanionSpells/PadMap.lua
 6c5d58e64ad480dad19f8403b4dffc28  WowCompanionSpells/PadTabCtl.lua
 d186209188cee2623517add47e309db3  WowCompanionSpells/Radial.lua
 96b3692ce7dd4b14a3c59cf0d853b19e  WowCompanionSpells/Spells.lua

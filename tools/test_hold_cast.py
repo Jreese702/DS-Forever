@@ -62,6 +62,12 @@ C_GamePad.ButtonBindingToIndex = function(n) return PADNUM[n] end
 C_GamePad.ButtonIndexToBinding = function(i) for n, v in pairs(PADNUM) do if v == i then return n end end end
 C_GamePad.GetActiveDeviceID = function() return 1 end
 C_GamePad.GetDeviceMappedState = function() return { buttons = PADSTATE } end
+-- m204 THE FIRE'S MARK: the mapped state's axes (the triggers' analog values) as the router reads them, the client's axis names (0-based:
+-- LTrigger 4, RTrigger 5 -> GetGamePadState's axes 5 / 6), and the restricted environment's floor (the game's has it)
+PADAXES = {}
+C_GamePad.AxisIndexToConfigName = function(i) return ({ [0] = "LStickX", [1] = "LStickY", [2] = "RStickX", [3] = "RStickY", [4] = "LTrigger", [5] = "RTrigger" })[i] end
+RESTRICTED.GetGamePadState = function() return { buttons = PADSTATE, axes = PADAXES } end
+RESTRICTED.floor = math.floor
 C_SpellBook = { GetSpellBookItemInfo = function(slot) local id = BOOK[slot]; return id and { spellID = id } or nil end }
 CVARS = {}
 C_CVar = { GetCVar = function(k) return CVARS[k] end }
@@ -957,6 +963,49 @@ check(u['kind'] != 'slothold', '27. a release 1 ms before the ring is full, the 
       (u['kind'], ring27))
 check(ring27 <= (3 - 1) * 0.2 - 0.025 - 0.010 + 1e-9,
       '27. the ring\'s full point (Normal, 3 looks, ft unknown 25): (3 - 1) x 0.2 s - one frame - 10 ms = 0.365 s at most', ring27)
+
+# ---------------------------------------------------------------- (28) THE FIRE'S MARK (fix/hold-tweaks; the user's pick "Cast at the fill")
+# the app's launcher writes a code on a free trigger's analog axis: 3 while a press is held (armed), 6 + the control in the write that lets a
+# kept press go at the ring's full point R - the router runs the hold on its own fire code (one look is all the clock has there)
+M28 = world()
+M28.execute('WowCompanion.padMap.putHold(1, 1, 8, "spell", 1); advance(1)')
+nA = 'HB("WowCompanionCombatFace8")'
+check(a(M28, nA + '.a["wc-axl"]') == 5 and a(M28, nA + '.a["wc-axr"]') == 6 and a(M28, nA + '.a["wc-hmc"]') == 6
+      and a(M28, '(function() local x = HB("WowCompanionCombatFace5"); return x and x.a["wc-hmc"] end)()') in (7, None)
+      and a(M28, '(function() local x = HB("WowCompanionCombatFace7"); return x and x.a["wc-hmc"] end)()') is None,
+      '28. the router knows the triggers axes (5 / 6) and each button its fire code (A 6, X 7; never B)',
+      (a(M28, nA + '.a["wc-axl"]'), a(M28, nA + '.a["wc-axr"]'), a(M28, nA + '.a["wc-hmc"]')))
+def mark(L, l=None, r=None):
+    L.execute('PADAXES = {}' + ('; PADAXES[5] = %d / 255' % l if l is not None else '') + ('; PADAXES[6] = %d / 255' % r if r is not None else ''))
+n0 = nsent(M28)
+mark(M28, l=3)
+d = edge(M28, 'PAD1', True)
+kw = [x for x in docs(M28, n0, 'facecast') if x.get('hk') == 'keep']
+check(d['kind'] == 'holdkeep' and kw and kw[-1].get('mk') == 1 and a(M28, nA + '.a["wc-hm"]') is True,
+      '28. the armed code (3) with the key-down: kept, the keep word says mk 1', (d['kind'], kw[-1:] if kw else None))
+M28.execute('driveStates()')                                    # one look: the ring's full point comes before the third
+mark(M28, l=6)
+u = edge(M28, 'PAD1', False)
+check(u['kind'] == 'slothold', "28. RED BEFORE: the launcher's up at R with A's fire code (6), one look: the HOLD at the fill", u['kind'])
+mark(M28, l=3)
+edge(M28, 'PAD1', True); M28.execute('driveStates()'); mark(M28, l=3)
+u = edge(M28, 'PAD1', False)
+check(u['kind'] != 'slothold', '28. the player let go before the fill (only the armed code): the TAP', u['kind'])
+edge(M28, 'PAD1', True); M28.execute('driveStates()'); mark(M28, r=7)
+u = edge(M28, 'PAD1', False)
+check(u['kind'] != 'slothold', "28. another button's fire code (X's 7) on A's up: the TAP", u['kind'])
+edge(M28, 'PAD1', True); M28.execute('driveStates(); PADAXES = { [5] = 6.6 / 255 }')
+u = edge(M28, 'PAD1', False)
+check(u['kind'] != 'slothold', '28. an inexact value (6.6 / 255: a trigger brushed) is no code: the TAP', u['kind'])
+n1 = nsent(M28)
+mark(M28)
+edge(M28, 'PAD1', True)
+kw = [x for x in docs(M28, n1, 'facecast') if x.get('hk') == 'keep']
+check(kw and kw[-1].get('mk') is None and a(M28, nA + '.a["wc-hm"]') is None, '28. no code with the key-down: no mk (the app fires at F)', kw[-1:] if kw else None)
+M28.execute('LOOK(3)')
+u = edge(M28, 'PAD1', False)
+check(u['kind'] == 'slothold', '28. ... and the clock still decides without a code (3 looks: the hold at F)', u['kind'])
+check(not lst(M28, 'SNIPERR') and not lst(M28, 'VIOL') and not lst(M28, 'SPY'), '28. no snippet error, nothing blocked, no trace', clean(M28))
 
 # ---------------------------------------------------------------- (9) no trace
 check(not lst(L, 'SPY'), '9. no SetBinding / SetCVar / macro write / game window call', lst(L, 'SPY'))

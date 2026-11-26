@@ -52,8 +52,8 @@ class SpellsOverlay(
     context: Context,
     /** the Cast room's own drawing of one trigger set (CastView.drawSet, read-only); false = it has no layout yet */
     private val drawSet: (c: Canvas, set: Int, dpad: RectF, face: RectF, lit: Int?, litIcon: android.graphics.Bitmap?,
-                          fight: ((Int) -> Int?)?, hold: ((Int) -> Int?)?) -> Boolean =
-        { _, _, _, _, _, _, _, _ -> false },
+                          fight: ((Int) -> Int?)?, hold: ((Int) -> Int?)?, holdLit: Int?) -> Boolean =
+        { _, _, _, _, _, _, _, _, _ -> false },
     /** another controller reader is running (the Cast view's): then this box does not start a second one (home's finding) */
     private val otherReader: () -> Boolean = { false },
     /** b37: one tap on the `spells` row's column (the Bind box's Normal / In combat) */
@@ -148,6 +148,21 @@ class SpellsOverlay(
     private val pCardEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f; color = Color.rgb(96, 80, 58) }
     private val pCardLit = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 4f; color = Color.rgb(255, 209, 0) }
     private val pRecede = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(110, 8, 6, 4) }
+    /** fix/hold-tweaks (the user: "when its selected move the glyph with the controller swap back above the controller and fade out
+     *  slightly the one thats not currently selected"): the device not waited on is faded to about 62 % (this veil at full), easing */
+    private val pFade = Paint(Paint.ANTI_ALIAS_FLAG)
+    /** the device ease: 0 = the controller waited on, 1 = the bar; -1 = not drawn yet (the first frame takes the target at once) */
+    private var devEase = -1f
+    private var devEaseAt = 0L
+    /** the ease's step to [target] at [now]; true while it still moves (the next frame is asked for) */
+    private fun easeDevice(target: Float, now: Long): Boolean {
+        if (devEase < 0f) { devEase = target; devEaseAt = now; return false }
+        val dt = (now - devEaseAt).coerceIn(0L, 100L)
+        devEaseAt = now
+        val step = dt / DEV_EASE_MS
+        devEase = if (devEase < target) minOf(target, devEase + step) else maxOf(target, devEase - step)
+        return devEase != target
+    }
     private val pWell = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(250, 24, 20, 17) }
     private val pWellEdge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f; color = Color.rgb(110, 92, 64) }
     private val pRule = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = 2f }
@@ -399,7 +414,12 @@ class SpellsOverlay(
 
         // CONTROLLER: the device's heading, then the D-pad's four and the face buttons' four (the Cast room's own drawing of that set,
         // stand-ins until it has a layout), at 0.6; the trigger chips and the sticks under it
-        darkSection(c, "Controller", SituationPage.Icon.PAD, CTL_HEAD, box.left + 70f, ruleEnd, lit = !cbOn)
+        // fix/hold-tweaks: the device ease (0 controller, 1 bar) and Select's glyph on the part it switches TO - the bar's heading
+        // while the controller is waited on, back above the controller while the bar is; it slides between the two headings
+        val moving = easeDevice(if (cbOn) 1f else 0f, now)
+        val selOn = (r == null || !r.ok) && !confirming && three() && CastStripModel.toggleDevice(tabNow, true, fightTap(), partyTap()) != tabNow
+        val selRoom = 330f
+        darkSection(c, "Controller", SituationPage.Icon.PAD, CTL_HEAD, box.left + 70f, if (selOn) minOf(ruleEnd, box.right - 70f - selRoom) else ruleEnd, lit = !cbOn)
         val cy0 = box.top + 104f
         val dpad = RectF(w / 2f - 270f - 240f, cy0 + 236f, w / 2f - 270f + 240f, cy0 + 236f + 340f)
         val face = RectF(w / 2f + 290f - 240f, cy0 + 236f, w / 2f + 290f + 240f, cy0 + 236f + 340f)
@@ -418,7 +438,9 @@ class SpellsOverlay(
         c.translate(w / 2f, CTL_CY); c.scale(CTL_K, CTL_K); c.translate(-(w / 2f + 10f), -(cy0 + 406f))
         // fix/hold-tweaks (the user: "I also cant see the current hold spells in each menu"): each button's hold spell, as Home's badge
         val holdOf: ((Int) -> Int?)? = if (party || m == null) null else { p -> holdIcon(m, set, p, f) }
-        val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it in 1..8 }, icon, fight, holdOf) } catch (_: Throwable) { false }
+        // fix/hold-tweaks: a hold just placed (a long press): its BADGE lit with the thing, the button's face as it is
+        val heldLit = lit.takeIf { it in 1..8 && r?.hold == true }
+        val drawn = try { drawSet(c, set, dpad, face, lit.takeIf { it in 1..8 && heldLit == null }, icon, fight, holdOf, heldLit) } catch (_: Throwable) { false }
         if (!drawn) standIns(c, dpad, face, lit, icon, st)
         if (party) {                                                    // b71: the D-pad moves the pick: locked
             c.drawRoundRect(RectF(dpad.left + 40f, dpad.top + 10f, dpad.right - 40f, dpad.bottom - 10f), 24f, 24f, pRecede)
@@ -432,17 +454,15 @@ class SpellsOverlay(
         UiKit.triggerChip(c, RectF(w / 2f - 64f - 38f, CHIP_Y - 24f, w / 2f - 64f + 38f, CHIP_Y + 24f), "${tset}_ltrigger", lt)
         UiKit.triggerChip(c, RectF(w / 2f + 64f - 38f, CHIP_Y - 24f, w / 2f + 64f + 38f, CHIP_Y + 24f), "${tset}_rtrigger", rt)
         if (!f && !party && (set == 1 || set == 2)) sticks(c, w, CHIP_Y, m, set, lit, icon)
-        if (cbOn) c.drawRect(RectF(box.left + 20f, CTL_HEAD + 22f, box.right - 20f, BAR_HEAD - 22f), pRecede)
+        // fix/hold-tweaks: the controller faded while the bar is waited on (easing)
+        if (devEase > 0.001f) { pFade.color = Color.argb((DEV_FADE * devEase).toInt(), 8, 6, 4); c.drawRect(RectF(box.left + 20f, CTL_HEAD + 22f, box.right - 20f, BAR_HEAD - 22f), pFade) }
 
         // TAP-TO-CAST BAR: the situation's layer (Out of combat the bar's own, In combat its fight layer, Party mode its party layer): a
         // set slot wears its badge, an empty one draws blank as on Out of combat (the user, 2026-11-23); the stop's slot lit and showing the thing where
         // it would go, the slot it is on already glowing green (picking that one takes it off); locked: veiled with ONE word
         val older = olderTab()                                          // issue 453: dimmed with the note, never gone
         if (three() || older) {
-            // fix/hold-tweaks: Select moves the box between the controller and the bar - its glyph and where it goes, at the heading's end
-            val selOn = (r == null || !r.ok) && !confirming && three() && CastStripModel.toggleDevice(tabNow, true, fightTap(), partyTap()) != tabNow
-            val selX = if (selOn) UiKit.hints(c, box.right - 80f, BAR_HEAD, selectGlyph(st) to (if (cbOn) "Controller" else "Tap-to-cast bar")) else null
-            darkSection(c, "Tap-to-cast bar", SituationPage.Icon.TAP, BAR_HEAD, box.left + 70f, (selX?.minus(24f)) ?: (box.right - 70f), lit = cbOn)
+            darkSection(c, "Tap-to-cast bar", SituationPage.Icon.TAP, BAR_HEAD, box.left + 70f, if (selOn) box.right - 70f - selRoom else box.right - 70f, lit = cbOn)
             val bar = CastStripModel.Live.bar
             val at = (ctl?.bindCb ?: 1) - 1
             val layer = when (sit) { 1 -> bar?.fslots; 2 -> bar?.pslots; else -> bar?.slots }
@@ -479,8 +499,20 @@ class SpellsOverlay(
                     turnOnRect = tr
                 }
             }
-            if (!cbOn) c.drawRoundRect(well, 14f, 14f, pRecede)
+            // fix/hold-tweaks: the bar faded while the controller is waited on (easing)
+            if (devEase < 0.999f) { pFade.color = Color.argb((DEV_FADE * (1f - devEase)).toInt(), 8, 6, 4); c.drawRoundRect(well, 14f, 14f, pFade) }
         }
+        // fix/hold-tweaks: Select's glyph and where it goes, at the right end of the heading it switches TO (sliding with the ease; its
+        // word cross-fades at the middle)
+        if (selOn) {
+            val gy = BAR_HEAD + (CTL_HEAD - BAR_HEAD) * devEase
+            val word = if (devEase < 0.5f) "Tap-to-cast bar" else "Controller"
+            val wa = (Math.abs(devEase - 0.5f) * 2f).coerceIn(0f, 1f)
+            val lay = c.saveLayerAlpha(box.right - 80f - selRoom, gy - 40f, box.right - 60f, gy + 40f, (255 * (0.35f + 0.65f * wa)).toInt())
+            UiKit.hints(c, box.right - 80f, gy, selectGlyph(st) to word)
+            c.restoreToCount(lay)
+        }
+        if (moving) postInvalidateOnAnimation()
 
         val back = faceGlyph(st, "b")
         if (confirming && r != null && r.ok) {
@@ -719,6 +751,9 @@ class SpellsOverlay(
         private const val SHOW_MS = 1500L
         /** Book b78: the foot's hold line */
         const val HOLD_HINT = "Hold a button: place as hold"
+        /** fix/hold-tweaks: the device ease's length and the fade's veil (alpha of 255: the faded part shows at about 62 %) */
+        const val DEV_EASE_MS = 180f
+        const val DEV_FADE = 96
         /** b71 (Option C) THE BOX, top to bottom: the thing's line, the situations' row, the answer's line, the Controller heading and its
          *  picture (at [CTL_K], centred on [CTL_CY]), the triggers' chips, the bar's heading and its 8 slots, the hints */
         private const val THING_Y = 180f
