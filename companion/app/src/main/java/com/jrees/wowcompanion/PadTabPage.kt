@@ -546,8 +546,8 @@ class PadTabPage(
     private fun fight(): Boolean = view == "combat"
 
     // ---------------------------------------------------------------- p29 (f-combat-forms, PadMap m55): the In combat tab's FORM row
-    /** the form whose own set the bare set shows now (the In combat tab, a form chosen, no trigger set); null = the caster's */
-    private fun formNow(): Int? = ctl?.form?.takeIf { cv() == "combat" && shown() == 1 && (map?.forms?.any { f -> f.id == it } == true) }
+    /** the form whose own set the room shows now (the In combat tab, a form chosen; PadMap m204: every set); null = the caster's */
+    private fun formNow(): Int? = ctl?.form?.takeIf { cv() == "combat" && (map?.forms?.any { f -> f.id == it } == true) }
     /** the button as the room shows it: with a form chosen, the bare set's positions are that form's own In-combat spells (empty = the
      *  caster's spell fights there); B (7) stays the game's Back */
     private fun slotOf(m: PadMapModel.Map, s: Int, p: Int): PadMapModel.Slot? {
@@ -556,11 +556,8 @@ class PadTabPage(
     }
     /** p56: the controller's button [p] as drawn (the cursor on the bar or not) */
     private fun ctlSlotOf(m: PadMapModel.Map, s: Int, p: Int): PadMapModel.Slot? {
-        val f = formNow()
-        if (f == null || s != 1 || p == 7) return PadMapModel.slot(m, s, p)
-        val r = PadMapModel.formFight(m, f, p)
-        return if (r != null) PadMapModel.Slot(p, null, PadMapModel.Kind.COMBAT, r.id, r.name, r.icon, combat = r, ov = true)
-               else PadMapModel.Slot(p, null, PadMapModel.Kind.NONE, null, null, 0)
+        val f = formNow() ?: return PadMapModel.slot(m, s, p)
+        return PadMapModel.formSlot(m, f, s, p) ?: PadMapModel.slot(m, s, p)         // PadMap m204: that form's own on every set
     }
     /** the form row: Caster, then the forms (between the set row and the buttons) */
     private fun formRect(i: Int) = PadDiamonds.rect(PadDiamonds.formRect(i))
@@ -739,7 +736,7 @@ class PadTabPage(
 
     /** m34 / p43 why the chosen button cannot take a game binding (PadMap's rule, ChooserTabs.bindBlock), or null when it can */
     private fun bindBlock(m: PadMapModel.Map): String? =
-        ChooserTabs.bindBlock(shown(), pos, toolbar = m.dpad?.want == true, form = formNow() != null && pos != 7)
+        ChooserTabs.bindBlock(shown(), pos, toolbar = m.dpad?.want == true, form = formNow() != null && (shown() != 1 || pos != 7))
 
     private fun bindWhy(m: PadMapModel.Map): String? = when (bindBlock(m)) {
         "form" -> "A form's set has no game key of its own"                // p43 (PadMap m141)

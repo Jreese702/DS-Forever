@@ -54,7 +54,7 @@ object HomeFightFace {
      */
     fun formOwn(map: PadMapModel.Map): Map<Int, PadMapModel.Ref> {
         val f = map.activeForm ?: return emptyMap()
-        return map.formFights.filter { it.form == f.id && it.pos != 7 }.associate { it.pos to it.ref }
+        return map.formFights.filter { it.form == f.id && it.set == 1 && it.pos != 7 }.associate { it.pos to it.ref }   // m204: the bare set's
     }
 
     /** the face positions (5 / 6 / 8): a form's own face spell shows whenever the faces' own do; its D-pad ones only in a fight */
