@@ -2310,7 +2310,15 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         checkVisible()
     }
 
-    private fun checkVisible() = setRoomVisible(isAttachedToWindow && winVisible && isShown)
+    private fun checkVisible() = setRoomVisible(isAttachedToWindow && ((winVisible && isShown) || readAway))
+
+    /**
+     * SINGLE SCREEN MODE WHILE PLAYING (CompanionHost's PLAY wiring, SingleLook's PLAY state): Home's rest is the game, so this band is
+     * not drawn (its window hidden) - but its controller reader runs on, as on Home with two screens: Party mode's D-pad box and Select,
+     * LB's party picture, the class wheel's chords and Home's B read it ([onPadButtons], [onButtonsAlso]). False on two screens (always)
+     */
+    var readAway = false
+        set(v) { if (field == v) return; field = v; if (ready) checkVisible() }
 
     private fun setRoomVisible(v: Boolean) {
         if (v == roomVisible) return

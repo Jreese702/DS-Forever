@@ -48,7 +48,7 @@ def tap(L):
 
 
 pm = SRC["padmap"]
-check('local PV = "m199"' in pm and "m187 THE SAVED-SETTINGS PACK ONLY AFTER A CHANGE" in pm, "PadMap m187 and its note")
+check('local PV = "m201"' in pm and "m187 THE SAVED-SETTINGS PACK ONLY AFTER A CHANGE" in pm, "PadMap m187 and its note")
 check(pm.count('pcall(C_Timer.NewTicker, 5, function() pcall(send, false) end)') == 0, "the old every-5-s pack is gone")
 
 L = world()

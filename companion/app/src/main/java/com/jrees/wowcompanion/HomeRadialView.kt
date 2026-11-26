@@ -819,7 +819,12 @@ class HomeRadialView(
     }
 
     /** the bar's Home disc, in this view's coordinates: its middle and its width */
+    /** single screen mode (SingleNpc): this wheel over the game with the room bar not shown (Home's rest is the game): the hub rises from
+     *  the panel's bottom middle, where the bar's Home disc stands in a room (the pause wheel's own rule); false = two screens */
+    var single = false
+
     private fun discHere(): Pair<PointF, Float> {
+        if (single && !strip.isShown) return PointF(width / 2f, height - Strip.HEIGHT / 2f) to 140f
         val r = strip.place(Room.HOME) ?: return PointF(width / 2f, height - 80f) to 140f
         val a = IntArray(2); val b = IntArray(2)
         strip.getLocationOnScreen(a); getLocationOnScreen(b)

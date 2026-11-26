@@ -98,7 +98,7 @@ def boot(pre=""):
 
 def main():
     ab = open(tnb.AB, encoding="utf-8").read()
-    chk("0. ActionBar nbar25 and its note (nbar21, nbar18 kept)", 'local NB = { V = "nbar25"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab
+    chk("0. ActionBar nbar25 and its note (nbar21, nbar18 kept)", 'local NB = { V = "nbar26"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab
         and "nbar21 THE HOLD SPELL ON THE TOP SCREEN" in ab and "nbar18 HOLD TO CAST" in ab)
     chk("0. no beads any more", "HOLD_BEADS" not in ab and "hb.beads" not in ab)
     L, G = boot()

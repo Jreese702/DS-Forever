@@ -86,6 +86,14 @@ class StartView(context: Context) : View(context) {
     /** BROWSER's one button pressed (touch only) */
     var onBrowserLogin: (() -> Unit)? = null
 
+    /**
+     * SINGLE SCREEN MODE'S STRIP (SingleLook row 2b; the review 2026-11-25): with the game screen up the page is only its row along the
+     * top screen's foot, over the game - no loading scene behind it (the game's login screen and character select show), no redraw
+     * loop. False = the page as always (two screens: never set)
+     */
+    var bare = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
     private val area = RectF()
     private val hits = ArrayList<Pair<RectF, Int>>()
     private var pressed = -1
@@ -95,8 +103,10 @@ class StartView(context: Context) : View(context) {
         // THE LOADING REVEAL (the user, 2026-10-28): the scene behind both screens replaces the game's still scene and the small swirl.
         // Every 33 ms, NOT every vsync: on a software GPU (the emulator, ~1 s a frame) a per-vsync redraw starved the main thread and,
         // with a document backlog decoding icons, hung the app (Map's ANR on integ-b40 + mapset; UI Art's measure). 30 fps is plenty
-        LoadingScene.draw(c, area, top = false)
-        postInvalidateDelayed(FRAME_MS)
+        if (!bare) {
+            LoadingScene.draw(c, area, top = false)
+            postInvalidateDelayed(FRAME_MS)
+        }
         drawRow(c)
         if (menuOpen) {
             val top = height - ROW_DOWN - BUTTON_H

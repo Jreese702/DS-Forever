@@ -62,7 +62,8 @@ class HomeEditWiringTest {
         // ... only while it is LIVE: parked by a fight, B shrinks the band, the band touch-casts and Party mode's D-pad works as always
         assertTrue(home.contains("private fun editLive(): Boolean = edit?.parked == false"))
         assertTrue(body(home, "private fun onB()").contains("if (editLive()) return"))
-        assertTrue(home.contains("fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && isShown && !typeWanted && !editLive()"))
+        // (single screen mode's PLAY state: Home's rest is the player's screen though not drawn - restElsewhere, false on two screens)
+        assertTrue(home.contains("fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && (isShown || restElsewhere) && !typeWanted && !editLive()"))
         assertTrue(body(home, "override fun onInterceptTouchEvent(").contains("if (editLive()) { barsDown = false; return false }"))
         // the guest "home" while editing, never while parked by a fight
         assertTrue(home.contains("fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false"))

@@ -89,7 +89,9 @@ object WinTitle {
     const val BOTTOM = "DSF bottom"
     const val TOP_INPUT = "DSF top input"
     const val GAME = "DSF game"
-    val ALL = listOf(BOTTOM, TOP_INPUT, GAME)
+    /** single screen mode's window over the game on the top screen (fork/TopWindow) */
+    const val SINGLE = "DSF one screen"
+    val ALL = listOf(BOTTOM, TOP_INPUT, GAME, SINGLE)
 
     /** sets [title] on [w] before it is added (call from the Presentation's onCreate) */
     @JvmStatic fun apply(w: android.view.Window?, title: String) {

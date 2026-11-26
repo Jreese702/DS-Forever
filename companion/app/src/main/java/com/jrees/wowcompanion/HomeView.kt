@@ -2176,7 +2176,7 @@ class HomeView(
     private val PARTY_MODULE get() = GameUi.partyModeOn()
     /** Party mode holds the D-pad here (its box moves on it): the game's D-pad layout must not also open the bar cursor (2026-11-04,
      *  the user: "pushing down on the Dpad makes the cursor also appear on the bottom bar menu") */
-    fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && isShown && !typeWanted && !editLive()
+    fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && (isShown || restElsewhere) && !typeWanted && !editLive()
     /** Party mode on with Home's rest page shown (no module full screen): the disc's touch = Party mode off */
     fun partyOnRest(): Boolean = partyOnHere() && flow.full == null
 
@@ -2259,11 +2259,11 @@ class HomeView(
         // party_design.md E: a Select press the reader sees flashes the tab's pressed look (the add-on's document turns it on / off)
         val sel = PadInput.isHeld(held, PadInput.SLOT_SELECT)
         // (never under a wheel: the pause wheel's Select is its power button, 2026-11-24)
-        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown && overlayOpen?.invoke() != true) partyView.selectPressed()
+        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && (isShown || restElsewhere) && overlayOpen?.invoke() != true) partyView.selectPressed()
         partySelWas = sel
         // b-class-takeover: the class wheel's D-pad never reaches the game (its guest keeps it), so the box's optimistic move would part
         // from the game's - the wheel's presses are the wheel's
-        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted || editLive() || (lent(castView) && castView.classRadialOpen())) return
+        if (fresh == 0 || !partyOnHere() || flow.full != null || !(isShown || restElsewhere) || typeWanted || editLive() || (lent(castView) && castView.classRadialOpen())) return
         for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) { partyView.invalidate(); castView.partyChanged() }
     }
 
@@ -3021,7 +3021,7 @@ class HomeView(
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
-        if (typeWanted) typeTool.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
+        if (typeWanted && typeTool.parent === this) typeTool.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         val cw = if (classRect.isEmpty) MeasureSpec.getSize(wSpec) else classRect.width()
         val ch = if (classRect.isEmpty) frameOf(hSpec) else classRect.height()
@@ -3029,7 +3029,7 @@ class HomeView(
         wheelLayer?.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         for ((p, v) in views) {
-            if (v.visibility == View.GONE) continue
+            if (v.visibility == View.GONE || docked(v)) continue                 // (single screen mode: a piece in a play dock is laid there)
             val r = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             v.measure(MeasureSpec.makeMeasureSpec(max(1, r.width().toInt()), MeasureSpec.EXACTLY),
                       MeasureSpec.makeMeasureSpec(max(1, r.height().toInt()), MeasureSpec.EXACTLY))
@@ -3045,7 +3045,7 @@ class HomeView(
      */
     private fun placeFrame() {
         for ((p, v) in views) {
-            if (v.visibility == View.GONE) continue
+            if (v.visibility == View.GONE || docked(v)) continue
             val f = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             val x1 = max(x0 + 1, f.right.toInt()); val y1 = max(y0 + 1, f.bottom.toInt())
@@ -3069,9 +3069,10 @@ class HomeView(
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        if (typeWanted) typeTool.layout(0, 0, r - l, b - t - bottomInset)                  // f-trackpad-keyboard: the whole page
-        // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
-        if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
+        if (typeWanted && typeTool.parent === this) typeTool.layout(0, 0, r - l, b - t - bottomInset)   // f-trackpad-keyboard: the whole page
+        // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint (single screen mode: centred)
+        if (singleLayersOnly) singleLayersLayout(r - l, b - t - bottomInset)
+        else if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         wheelLayer?.layout(0, 0, r - l, b - t - bottomInset)                              // f-radial-behind: the whole page, under the columns
         // fix/menus-fit: over the party list's column as laid (any share, either side: the chat's for Classic's dock; after 1518 the
         // map's when it sits there), under the band as it is now
@@ -3083,7 +3084,7 @@ class HomeView(
             targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
         }
         for ((p, v) in views) {
-            if (v.visibility == View.GONE) continue
+            if (v.visibility == View.GONE || docked(v)) continue
             val f = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             v.layout(x0, y0, max(x0 + 1, f.right.toInt()), max(y0 + 1, f.bottom.toInt()))
@@ -4608,6 +4609,7 @@ class HomeView(
     fun pageZoom(): Pair<Float, Float>? = if (pageMatrix(pageM)) FloatArray(9).also { pageM.getValues(it) }.let { it[0] to it[5] } else null
 
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        if (singleLayersOnly) return singleLayersTouch(e)                           // single screen mode's class wheel: its layer alone
         // EDIT TABS: the tab row over the zoomed page (its own finger), and every other touch mapped into Home's px through the zoom
         if (edit?.parked == false && pageMatrix(pageM)) {
             if (e.actionMasked == MotionEvent.ACTION_DOWN) tabFinger = e.y < HomeEditView.TAB_ROW && !holdTakes
@@ -4835,6 +4837,7 @@ class HomeView(
 
     /** P2: edit mode's chrome is drawn LAST, over Home's own paint (the zone band, the clock block, the wells' edges) */
     override fun dispatchDraw(c: Canvas) {
+        if (singleLayersOnly) { singleLayersDraw(c); return }                       // single screen mode's class wheel: its layer alone
         // EDIT TABS: the page (and the chrome over it) zoomed out under the tab row while edit mode's chrome shows ([pageMatrix])
         val zoomed = pageMatrix(pageM)
         val z = if (zoomed) c.save() else -1
@@ -4846,7 +4849,7 @@ class HomeView(
         if (z >= 0) c.restoreToCount(z)
         if (zoomed && editView.visibility == View.VISIBLE) editView.drawTabs(c, width.toFloat(), chromeA.coerceIn(0f, 1f))
     }
-    override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView) false else super.drawChild(c, child, drawingTime)
+    override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView || (singleLayersOnly && child !== classLayer)) false else super.drawChild(c, child, drawingTime)
 
     /** fix/menus-fit: the map's own paint follows the map view's real move during the pause / LB slides (Classic too: the user's pick
      *  2026-11-21, "Fix in Classic too") */
@@ -6038,6 +6041,140 @@ class HomeView(
         QuestTier.VERY_DIFFICULT -> Theme.questOrange
         QuestTier.IMPOSSIBLE -> Theme.questRed
         QuestTier.UNKNOWN -> Theme.gameGold
+    }
+
+    // ===== SINGLE: CORE =====
+    /**
+     * single screen mode's PLAY state (SingleLook: the game alone, Home's page not drawn): Home's rest page IS the player's screen though
+     * not shown, so Party mode's D-pad hold and Select read as on Home ([partyHoldsDpad], [onPadHeld]'s Select). Set by the host from
+     * the look; false on two screens (always): nothing changes there
+     */
+    var restElsewhere = false
+
+    // ===== SINGLE: PLAY =====
+    /**
+     * SINGLE SCREEN MODE WHILE PLAYING (SingleDocks; the user's pick "1, 2, and also the chat on the left thr ds toolbar should have the
+     * same functionality in single screen mode"): Home's rest IS the game there (not drawn), so its own chat pane, party list and map
+     * stand over the game in the play docks - LENT, not copied (one map, one chat): [lendToDocks] moves them into the docks' slots,
+     * [reclaimFromDocks] puts them back exactly where they were BEFORE Home's page shows (a panel, Home's glance, a room). While lent,
+     * Home's layout passes leave them alone ([docked]: onMeasure / placeFrame / onLayout skip them); Home's own state still decides
+     * whether each is laid at all ([dockLaid]). The map is lent only while Home holds it (borrow); another room taking it back
+     * (giveBack) needs nothing from here.
+     */
+    private class DockLoan(val view: View, val parent: ViewGroup, val index: Int, val lp: ViewGroup.LayoutParams?, val alpha: Float,
+                           val tx: Float, val ty: Float, val cover: Float, val keepOut: List<RectF>)
+    private val dockLoans = ArrayList<DockLoan>()
+    /** [v] stands in a play dock now */
+    fun docked(v: View): Boolean = dockLoans.any { it.view === v }
+    /** something of Home's is in the docks */
+    val dockedNow: Boolean get() = dockLoans.isNotEmpty()
+
+    /** what Home's rest page lays now - the pieces the docks show: its chat, Party mode's list, the map (Home holding it) */
+    data class DockLaid(val chat: Boolean, val party: Boolean, val map: Boolean)
+    fun dockLaid(): DockLaid = DockLaid(chatPane.visibility == View.VISIBLE && now.containsKey(Part.CHAT),
+        partyView.visibility == View.VISIBLE && now.containsKey(Part.PARTY), lent(mapView) && mapSlot.visibility == View.VISIBLE)
+
+    /** Party mode's list as drawn: its height (the well and the Select tab) at the list's own row size; null in a Party-mode Top fight
+     *  (its rows fill whatever box they get) */
+    fun dockPartyH(): Int? {
+        if (partyView.mode == PartyLayout.Mode.FIGHT_TOP) return null
+        val m = partyView.module()
+        return (maxOf(m.well.b, m.tag.b) - minOf(m.well.t, m.tag.t)).toInt() + 4
+    }
+
+    /** Home's chat pane, party list and map into the docks' slots [chat], [party], [map] (each the slot's only child) */
+    fun lendToDocks(chat: ViewGroup, party: ViewGroup, map: ViewGroup) {
+        dockLend(chatPane, chat)
+        dockLend(partyView, party)
+        if (lent(mapView) && mapView.parent === mapSlot) {
+            dockLend(mapView, map)
+            mapView.compactCover = 0f; mapView.rimKeepOut = emptyList()       // (Home's card and buffs are not over it there)
+        }
+    }
+
+    private fun dockLend(v: View, into: ViewGroup) {
+        if (docked(v)) { if (v.parent !== into) { (v.parent as? ViewGroup)?.removeView(v); into.addView(v) }; return }
+        val parent = v.parent as? ViewGroup ?: return
+        val mv = v as? MapView
+        dockLoans.add(DockLoan(v, parent, parent.indexOfChild(v), v.layoutParams, v.alpha, v.translationX, v.translationY,
+            mv?.compactCover ?: 0f, mv?.rimKeepOut ?: emptyList()))
+        parent.removeView(v)
+        into.addView(v, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        v.translationX = 0f; v.translationY = 0f; v.alpha = 1f
+    }
+
+    /** every lent view back where it came from (last lent first), as it was; Home lays its page again */
+    fun reclaimFromDocks() {
+        if (dockLoans.isEmpty()) return
+        while (dockLoans.isNotEmpty()) {
+            val l = dockLoans.removeAt(dockLoans.size - 1)
+            val v = l.view
+            // the map given back to its room meanwhile (another room opened: giveBack): it is that room's now
+            if (v === mapView && !lent(mapView)) continue
+            (v.parent as? ViewGroup)?.removeView(v)
+            if (l.lp != null) l.parent.addView(v, min(l.index, l.parent.childCount), l.lp) else l.parent.addView(v, min(l.index, l.parent.childCount))
+            v.translationX = l.tx; v.translationY = l.ty; v.alpha = l.alpha
+            if (v === mapView) { mapView.compactCover = l.cover; mapView.rimKeepOut = l.keepOut }
+        }
+        requestLayout(); invalidate()
+    }
+
+    // ===== SINGLE: NPC =====
+    /**
+     * NPC (single screen mode's class wheel, SingleLook row 7 HOME_LAYERS): Home draws ONLY its class wheel's layer over the game - no
+     * page, no modules, no ground of its own (the rooms column's is the host's), the layer laid as a centred square of its slot's size;
+     * a touch outside it is taken (nothing of Home's under it is pressed). False (two screens, always): Home exactly as before
+     */
+    var singleLayersOnly = false
+        set(v) {
+            if (field == v) return
+            field = v
+            background?.alpha = if (v) 0 else 255
+            requestLayout(); invalidate()
+        }
+
+    private fun singleLayersDraw(c: Canvas) {
+        if (classLayer.parent === this && classLayer.visibility == View.VISIBLE) drawChild(c, classLayer, drawingTime)
+    }
+
+    private fun singleLayersLayout(w: Int, h: Int) {
+        val side = (if (classRect.isEmpty) minOf(w, h) else minOf(classRect.width(), w, h)).coerceAtLeast(1)
+        val l = (w - side) / 2; val t = (h - side) / 2
+        classLayer.layout(l, t, l + side, t + side)
+    }
+
+    private fun singleLayersTouch(e: MotionEvent): Boolean {
+        if (classLayer.parent !== this || classLayer.visibility != View.VISIBLE) return true
+        val t = MotionEvent.obtain(e)
+        t.offsetLocation(-classLayer.left.toFloat(), -classLayer.top.toFloat())
+        try { classLayer.dispatchTouchEvent(t) } finally { t.recycle() }
+        return true
+    }
+
+    /** the Keyboard & Trackpad tool's tab while it is open (0 the Track Pad, 1 the Keyboard), else -1 */
+    fun toolTab(): Int = if (typeWanted) typeTool.tabNow else -1
+
+    /** Home's sub-states but the tool (SingleLook: the tool is the strip over the game, not Home's page) */
+    fun subBesidesTool(): Boolean = flow.full != null || auraPane.open != null || mailOpen
+
+    /** single screen mode (SingleNpc, spec 8.3): the open tool lent to the strip window (its strip look); null = none open / lent already */
+    fun singleToolLend(scale: Float): TypeToolView? {
+        if (!typeWanted || typeTool.parent !== this) return null
+        removeView(typeTool)
+        typeTool.translationZ = 0f
+        typeTool.stripScale = scale
+        typeTool.strip = true
+        return typeTool
+    }
+
+    /** the tool back on Home's page (the strip closed, or Home's page shows) */
+    fun singleToolBack() {
+        typeTool.onTab = null
+        typeTool.strip = false
+        if (typeTool.parent !== this) { (typeTool.parent as? ViewGroup)?.removeView(typeTool); addView(typeTool) }
+        typeTool.translationZ = TYPE_Z
+        if (typeWanted) typeTool.bringToFront()
+        requestLayout()
     }
 
     companion object {

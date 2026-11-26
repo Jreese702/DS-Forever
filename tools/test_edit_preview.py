@@ -91,8 +91,8 @@ def part_a():
     print("\n-- A the channel (Book / PadMap)")
     src_pm = open(os.path.join(ADDONS, "WowCompanionSpells", "PadMap.lua"), encoding="utf-8").read()
     src_bk = open(os.path.join(ADDONS, "WowCompanionSpells", "Book.lua"), encoding="utf-8").read()
-    chk("A0. PadMap m198, Book b85 and their notes", 'local PV = "m199"' in src_pm and "m198 EDIT HOME'S TOP-SCREEN PREVIEW" in src_pm
-        and 'local BV = "b85"' in src_bk and "b85 EDIT HOME'S TOP-SCREEN PREVIEW" in src_bk)
+    chk("A0. PadMap m198, Book b85 and their notes", 'local PV = "m201"' in src_pm and "m198 EDIT HOME'S TOP-SCREEN PREVIEW" in src_pm
+        and 'local BV = "b86"' in src_bk and "b85 EDIT HOME'S TOP-SCREEN PREVIEW" in src_bk)
     W = tct.boot()
     pm = 'WowCompanion.padMap'
     chk("A1. the preview API is there (editPreview / preview)", W.eval('type(%s.editPreview) == "function" and type(%s.preview) == "function"' % (pm, pm)) is True)
@@ -194,7 +194,7 @@ def part_b():
     import test_top_castbar as ttc
     import test_wings_match as twm
     src = open(os.path.join(ADDONS, "WowCompanion", "ActionBar.lua"), encoding="utf-8").read()
-    chk("B0. ActionBar nbar23 and its note", 'local NB = { V = "nbar25"' in src and "nbar23 EDIT HOME'S TOP-SCREEN PREVIEW" in src)
+    chk("B0. ActionBar nbar23 and its note", 'local NB = { V = "nbar26"' in src and "nbar23 EDIT HOME'S TOP-SCREEN PREVIEW" in src)
     L = ttc.boot()
     G = L.globals()
     # the saved flags all off, no fight: whatever shows is the preview's

@@ -43,6 +43,9 @@ interface HostShell {
     fun hostWindow(): android.view.Window?
     fun hostIntent(): Intent?
     fun startHostActivity(i: Intent)
+    /** single screen mode's top window (fork/TopWindow: SingleShell), null = two screens (the bottom Presentation, the app's own
+     *  MainActivity, Swap screens' activity: unchanged) */
+    fun hostSingle(): SingleShell? = null
 }
 
 /**
@@ -53,6 +56,10 @@ interface HostShell {
  * EVERY EDIT THAT USED TO GO TO MainActivity.kt GOES HERE (shared file: list it in AGENT_LOG first).
  */
 class CompanionHost(base: Context, private val shell: HostShell) : ContextWrapper(base) {
+
+    /** SINGLE SCREEN MODE (SingleScreen, 2026-11-25): this host's top window over the game, null = two screens (every single-mode
+     *  branch below is `single != null`: two screens run exactly as before) */
+    private val single: SingleShell? = shell.hostSingle()
 
     private lateinit var content: FrameLayout
     /** THEMES (the user, 2026-11-12): a theme picked in Settings repaints the whole bottom screen at once (ThemeLive) */
@@ -459,7 +466,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         for (w in notes) {
             val l = PadLayerNote.logLine(w)
             Log.i("WCSETUP", l); DiagLog.event("pad", l)
-            ui.post { homeView.padNote(w) }
+            ui.post { if (!singleNote(w)) homeView.padNote(w) }
         }
     }
 
@@ -494,6 +501,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * True = it is up on the bottom screen and this window hidden until it closes (voice: its buttons are the activity's meanwhile).
      */
     private fun openOnBottom(cls: Class<*>, tag: String, setClosed: ((() -> Unit)?) -> Unit): Boolean {
+        singleOpenOnBottom(cls, tag, setClosed)?.let { return it }
         val i = android.content.Intent(this, cls).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         val displayId = runCatching {
             (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.displayId
@@ -596,6 +604,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             ThemeLive.bg(this, Tok.INK)
         }
         themeRoot = root
+        roomsRoot = root                                         // single screen mode: the rooms column shows only with a room / Home's glance
         Theme.onChange(themeChanged)
         content = FrameLayout(this)
         root.addView(content, LinearLayout.LayoutParams(
@@ -825,7 +834,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         barSelect = HomeBarSelect(this, strip, { questsPad }) { r, go -> if (go == BarB.Go.PAUSE) openPause("the bar's swirl", byStart = false) else pickRoom(r) }
         // LATER item 23a (the user: "the buttons at the top still show their presses, and that's confusing"): quiet while the cursor is up
         // p35: while the bar holds the controller its D-pad Left / Right move it: Cast shows the bar's arrows there
-        barSelect.onOpenChanged = { open -> castView.quietPresses = open; castView.barArrows = open; if (!open) homeView.overlayClosed() }
+        barSelect.onOpenChanged = { open -> castView.quietPresses = open; castView.barArrows = open; if (!open) homeView.overlayClosed(); singleSync("the bar cursor") }
         // b-cast-predict-menus (the user: "the predictive cast is triggering when I am navigating menus"): the predicted bar starts only
         // for a press that goes to the game's bars - the router's own holder (the add-on's capture), Home's guests, the menus on screen
         castView.pressesReachGame = {
@@ -868,7 +877,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         }
         barSelect.roomNow = { room }        // Select's cursor starts on the room on screen (never on Home: the user's skip-Home rule)
         // the Home button's B follows Home's own state at once (a module full screen shows B; user 15:08)
-            homeView.onStateChanged = { discB("Home's state"); petBTell("Home's state"); if (::dialogView.isInitialized) dialogView.fightCheck(); trackSync() }     // B: pet follow follows Home's own state; loot-pop: a fight's end grows the rolls
+            homeView.onStateChanged = { discB("Home's state"); petBTell("Home's state"); if (::dialogView.isInitialized) dialogView.fightCheck(); trackSync(); singleSync("Home's state") }     // B: pet follow follows Home's own state; loot-pop: a fight's end grows the rolls
         homeView.onBHome = { strip.homePressed() }
         homeView.capHolderNow = { capHolder }                             // #584: the module asks again after a "taken" loss only once nobody holds
         partyWire()
@@ -1354,8 +1363,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 addUpdateListener { a -> slideT = a.animatedValue as Float; pauseSlideAll(slideT) }
                 start()
             }
+            singleSync("the pause closed")
         }
         pauseView.onPick = { s -> pausePick(s) }
+        // single screen mode (the user's pick "Icon on Y"): the button below Edit's refusal and the wheel's top-screen look
+        pauseView.single = single != null
+        pauseView.screensRefusal = { SingleScreen.refusal(singleAsk()) }
+        // the review (2026-11-25): Edit (X) in a fight while Home's page is not drawn - the wheel's red line says it (two screens: Edit
+        // Home's own pencils flash, as before)
+        if (single != null) pauseView.editRefusal = { if (homeView.fightShown()) SingleScreen.NOT_FIGHT else null }
         // feat/pause-power: THE POWER BUTTON (the user, 2026-11-18): its prompt's line, and Close. feat/exit-now (the user's pick
         // 2026-11-24, "Keep the confirm, allow in fights"): Close = DS Forever closes at once (ExitNow, as the Menu's Exit game), in a
         // fight too (no refusal any more); the old sequence ([PausePower.Sequence]) only without the launcher
@@ -1430,7 +1446,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 homeView.barsBottom() + (a[1] - b[1])
             }
         }
-        shell.setHostContent(object : FrameLayout(this) {
+        shell.setHostContent(boxAll(object : FrameLayout(this) {
             // b-release-spirit (test16: a bottom-screen dialog press reached nothing, not even the dialog's own view): while a dialog
             // shows, a finger's DOWN says which view on top took it, so one log read tells "covered" from "pressed"
             override fun dispatchTouchEvent(e: MotionEvent): Boolean {
@@ -1534,7 +1550,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }
             addView(recIndicator, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 android.view.Gravity.TOP or android.view.Gravity.END).apply { topMargin = 8; rightMargin = 8 })
-        })
+        }))
+        singleReady = true
         show(Room.HOME)
         ui.postDelayed(castAskTick, 1_000L)                                  // the one-time tap-to-cast bar question (CastBarAsk)
 
@@ -1570,6 +1587,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         //   the one app's rows (UI Art's look, 2026-10-08): --es login_preview native_save|native_signing|native_late|native_auth
         shell.hostIntent()?.getStringExtra("login_preview")?.let { p -> ui.postDelayed({ loginPreview(p) }, 1_500L) }
 
+        singleCoreWire()
+        singlePlayWire()
+        singleNpcWire()
         ui.post(object : Runnable {
             override fun run() {
                 // Home holds the same map (compact), so it is fed there too
@@ -1590,6 +1610,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (room == Room.HOME) ui.post { partyAsk(PartyModel.Ask.HOME_SHOWN); homeView.partyHomeOpened() }     // back from the background: Party mode's documents
         TapBridge.watchPad()        // the quiet pad's clock from the start (Quests, step 0): the first tap already knows the last press
         if (unpacking) return
+        // single screen mode's switch: the new window's GameUi taps wait a moment, so ONE reconcile follows the switch
+        if (SingleScreen.switchedLately(SystemClock.uptimeMillis(), SingleScreen.SWITCH_HOLD_MAX_MS))
+            GameUi.holdTaps(System.currentTimeMillis() + SingleScreen.SWITCH_HOLD_MS)
         GameUi.onVisible(true)
         barSelect.appBack()
     }
@@ -1613,6 +1636,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     private fun show(r: Room, byB: Boolean = false, motion: Boolean = true) {
         MemWatch.room = r.name.lowercase()                                // WCMEM: what is on show
+        if (r != Room.HOME) glanceHub = false                             // single screen mode: a room ends Home's glance (B -> the game)
         if (r != Room.HOME) talkReset("room $r")                          // hold to talk: a room change ends a hold, nothing sent
         flushBLeave(entering = r)
         // PARTY MODE (1.1, 4.2): Home shown again re-asks the add-on's documents; leaving Home turns Party mode off only by the switch
@@ -1754,6 +1778,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // in a fight the pad follows the room shown now (PadOwnerSync)
         padOwnerStep()
         GameUi.onRoom(r)
+        singleSync("room ${r.name}")
     }
 
     /**
@@ -2150,6 +2175,544 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     private fun pickRoom(r: Room) = show(r)
 
+    // ===== SINGLE: CORE =====
+    // SINGLE SCREEN MODE (the user, 2026-11-25: "a single screen mode where the game shifts to the top screen when a button is pushed. We
+    // need to rebuild all of our menus and features to work on the top screen"; SingleScreen): this host in the top window over the game
+    // ([single]); the rooms 1:1 in the centred panel ([boxed]); what shows decided by SingleLook from what is open ([singleSync]);
+    // Home's page a glance from the wheel's hub ([glanceHub]); B in a room = straight to the game (show(Room.HOME) = the PLAY look).
+
+    /** the rooms column (rooms + the bar): GONE while the look shows no room and no Home page (the PLAY state) */
+    private var roomsRoot: View? = null
+    /** the views exist: the look may be read (Home's state changes come during onCreate already) */
+    private var singleReady = false
+    /** single screen mode: Home's page is up as a glance (the wheel's hub; sticky until B, a tap on the dim or a room) */
+    private var glanceHub = false
+    /** the look applied last (SingleLook), null = none yet */
+    private var singleLookNow: SingleLook.Look? = null
+    /** the heal ran (the first current interact document of this host) */
+    private var healDone = false
+
+    /** a child of the content in the centred panel (single screen mode); two screens: [lp] as it is */
+    private fun boxed(lp: FrameLayout.LayoutParams): FrameLayout.LayoutParams {
+        val s = single ?: return lp
+        val m = SingleScreen.boxMargins(intArrayOf(lp.leftMargin, lp.topMargin, lp.rightMargin, lp.bottomMargin), s.box, s.screenW, s.screenH)
+        lp.setMargins(m[0], m[1], m[2], m[3])
+        return lp
+    }
+
+    /** every child of the host's content in the centred panel, but the pause wheel (its corners at the screen's corners: the mockup the
+     *  user picked from); two screens: nothing changes */
+    private fun boxAll(f: FrameLayout): FrameLayout {
+        if (single == null) return f
+        for (i in 0 until f.childCount) {
+            val v = f.getChildAt(i)
+            if (v === pauseView) continue
+            (v.layoutParams as? FrameLayout.LayoutParams)?.let { v.layoutParams = boxed(it) }
+        }
+        return f
+    }
+
+    /** Home's sub-states that show Home's page in the panel and end with what opened them (a module full screen, the buff list, the tool,
+     *  the mail card, the bar cursor, edit mode, Party mode's menus) */
+    private fun singleHomeSub(): Boolean = homeView.bClosesSomething() || barSelect.open || homeView.editing ||
+        homeView.partyMenu.visibility == View.VISIBLE || homeView.targetMenu.visibility == View.VISIBLE
+
+    /**
+     * the review (2026-11-25, "Single mode puts DS Forever's opaque waiting page over the game's login and character select"): with the
+     * game screen up the start page is the WAITING page (a logout, a disconnect, a reload, "Loading your character", the sign-in row): on
+     * two screens it sits beside the game; here it is only its row along the foot (SingleLook row 2b, the strip "start") and the game's
+     * own login screen / character select stay seen and touched. Its Menu opened = the page in the panel again (the Menu needs it)
+     */
+    private fun singleWaiting(): Boolean = startView.visibility == View.VISIBLE && LauncherHooks.gameUp() && !startView.menuOpen
+
+    /** what is open now, for SingleLook (the NPC builder adds its inputs: [singleNpcIn]) */
+    private fun singleIn(): SingleLook.In = singleNpcIn(SingleLook.In(
+        room = room.name,
+        launchCover = LaunchLoad.covers(),
+        startPages = (startView.visibility == View.VISIBLE && !singleWaiting()) || setupView.visibility == View.VISIBLE ||
+            (::chooserPanel.isInitialized && chooserPanel.visibility == View.VISIBLE) || loginPrompt.isOpen,
+        report = (::reportPage.isInitialized && reportPage.isOpen) || (::pathReview.isInitialized && pathReview.isOpen) ||
+            (::reportNotice.isInitialized && reportNotice.asking),
+        npc = ::interactView.isInitialized && interactView.visibility == View.VISIBLE,
+        dialog = ::dialogView.isInitialized && dialogView.covers(),
+        spells = spellsOverlay.visibility == View.VISIBLE,
+        pause = ::pauseView.isInitialized && pauseView.isOpen,
+        glanceHub = glanceHub,
+        homeSub = singleHomeSub(),
+        quick = (::radialView.isInitialized && radialView.isOpen) || tradOpen(),
+        classWheel = homeView.classBusy(),
+        lb = ::lbView.isInitialized && lbView.isShown2,
+        tool = if (homeView.toolWanted()) 0 else -1,
+        waiting = singleWaiting(),
+    ))
+
+    /** the look now applied to the top window (single screen mode; two screens: nothing). The rooms column shows only for a room or Home's
+     *  page; Home's rest is the player's screen though not drawn (HomeView.restElsewhere); PLAY's hook runs first (its docks give Home's
+     *  views back before Home's page shows), NPC's after */
+    private fun singleSync(why: String) {
+        val s = single ?: return
+        if (!singleReady || shell.hostGone()) return
+        val look = SingleLook.of(singleIn())
+        homeView.restElsewhere = look.root == SingleLook.Root.GONE && room == Room.HOME
+        if (look == singleLookNow) return
+        singleLookNow = look
+        singlePlayLook(look)
+        roomsRoot?.let { r -> val v = if (look.root == SingleLook.Root.GONE) View.GONE else View.VISIBLE; if (r.visibility != v) r.visibility = v }
+        s.look(look)
+        singleNpcLook(look)
+        Log.i("WCHOME", "one screen: ${look.frame.name.lowercase()}" + (if (look.frame == SingleLook.Frame.FULL) " dim ${look.dim}" else "") +
+            ", ${look.root.name.lowercase()}" + (if (look.docks) ", docks" else "") + (look.strip?.let { ", strip $it" } ?: "") + " ($why)")
+    }
+
+    /** the look's safety poll while single screen mode is on: a pure call, applied only on a change ([SingleScreen.LOOK_POLL_MS]) */
+    private val singlePoll = object : Runnable {
+        override fun run() {
+            if (single == null || shell.hostGone()) return
+            singleSync("poll")
+            ui.postDelayed(this, SingleScreen.LOOK_POLL_MS)
+        }
+    }
+
+    /** a fight now, for DsForeverScreen's one-screen start rule (held weakly: a replaced host is never kept by it) */
+    private val singleFight: () -> Boolean = run {
+        val me = java.lang.ref.WeakReference(this)
+        val f: () -> Boolean = { me.get()?.let { h -> h.homeView.inFight() || h.lastBook?.combat == true } ?: false }
+        f
+    }
+
+    private fun singleCoreWire() {
+        SingleScreen.fightNow = singleFight
+        if (single != null) { ui.removeCallbacks(singlePoll); ui.post(singlePoll) }
+    }
+
+    /** what the switch would meet now (the wheel's refusal reads the same) */
+    private fun singleAsk(): SingleScreen.Ask {
+        val now = System.currentTimeMillis()
+        return SingleScreen.Ask(
+            swapInUse = ScreenSwap.inUse(this),
+            streaming = PlayModes.current == PlayMode.STREAM,
+            loading = GameInput.load.loading(now) || LaunchLoad.covers(),
+            inWorld = GameLife.worldNow || GameInput.live(now),
+            fight = homeView.inFight() || lastBook?.combat == true,
+            bottomBusy = single != null && SingleScreen.keysPaused,
+        )
+    }
+
+    /**
+     * THE SWITCH (the wheel's button, after its fold): refused = the line where the wheel's red line stands; Home first (the room on screen
+     * lets go by its own routes); the pause wheel's controller free is waited for (at most [SingleScreen.SWITCH_FREE_WAIT_MS]) so the new
+     * host never finds the wheel's guest still holding; then DsForeverScreen tears this host down and builds the other window's
+     */
+    private fun singleSwitch(on: Boolean, why: String) {
+        SingleScreen.refusal(singleAsk())?.let { no -> pauseView.note(no); Log.i("WCHOME", "one screen: refused ($no)"); return }
+        if (room != Room.HOME) show(Room.HOME)
+        val until = SystemClock.uptimeMillis() + SingleScreen.SWITCH_FREE_WAIT_MS
+        fun go() {
+            if (shell.hostGone()) return
+            if (pauseView.freePending() && SystemClock.uptimeMillis() < until) { ui.postDelayed({ go() }, 50L); return }
+            // the review (2026-11-25): a fight can begin inside the wait - read again, the wheel's line says it (never a teardown in a fight)
+            SingleScreen.refusal(singleAsk())?.let { no -> pauseView.note(no); Log.i("WCHOME", "one screen: refused after the wait ($no)"); return }
+            val asked = SingleScreen.request?.invoke(on, why) == true
+            Log.i("WCHOME", "one screen ${if (on) "on" else "off"}: ${if (asked) "asked" else "not here (no launcher screen to ask)"} ($why)")
+        }
+        go()
+    }
+
+    /** Home's page as a glance over the game (the wheel's hub; [on] false = back to the game: B, a tap on the dim) */
+    private fun singleGlance(on: Boolean, why: String) {
+        if (single == null) return
+        glanceHub = on
+        Log.i("WCHOME", "one screen: Home's glance ${if (on) "on" else "off"} ($why)")
+        if (on && room != Room.HOME) show(Room.HOME) else singleSync("Home's glance ($why)")
+    }
+
+    /**
+     * a touch on the dim beside the panel (TopWindow): a room = the bar's own route Home (= the game; never the disc's touch route, which
+     * turns Party mode off on Home); Home's glance = off; the pause wheel reads its own; NPC windows, dialogs, start pages, the quick
+     * wheels: NPC's ([singleNpcDim]), else nothing
+     */
+    fun singleDimTap() {
+        if (single == null || shell.hostGone() || !singleReady) return
+        if (singleNpcDim()) return
+        val i = singleIn()
+        if (i.startPages || i.report || i.npc || i.dialog || i.spells || i.pause || i.quick || i.classWheel || i.waiting) return
+        when {
+            room != Room.HOME -> { Log.i("WCHOME", "one screen: a tap on the dim: ${room.name} -> the game"); pickRoom(Room.HOME) }
+            glanceHub -> singleGlance(false, "a tap on the dim")
+        }
+    }
+
+    /**
+     * the defensive heal: on this host's first current interact document after a switch, a guest of ours it has nothing open for (the
+     * old window's wheel, bar cursor, Home module, tool, class wheel) is freed at once, once - not after the usual grace
+     */
+    private fun singleHeal(holder: String) {
+        if (healDone) return
+        healDone = true
+        if (!SingleScreen.switchedLately(SystemClock.uptimeMillis())) return
+        val id = holder.removePrefix("pad:")
+        if (id !in HEAL_IDS) return
+        val open = if (id == "class") castView.classRadialOpen() else guestShown(id)
+        if (open) return
+        val sent = guestTap(GuestPad.cells(questsPad, id, hold = false))
+        Log.i("WCHOME", "one screen: the old window's guest $id ${if (sent) "freed" else "not freed (no pad)"}")
+        if (sent) DiagLog.event("app", "screens: freed a guest left by the old window ($id)")
+    }
+    private val HEAL_IDS = setOf("radial", "bar", "home", "tool", "class")
+
+    // ===== SINGLE: PLAY (builder play edits only here) =====
+    // SINGLE SCREEN MODE WHILE PLAYING (the user's pick 2026-11-25 for "While playing": "1, 2, and also the chat on the left thr ds toolbar
+    // should have the same functionality in single screen mode. We can shift those panels ine and out of combat to all fit better"): the
+    // game's own HUD and our Nintendo bar (GameUi's preset, SingleUi), in fights the Wings and our top cast bar, our top cast bar for every
+    // cast out of fights too (the add-on told the mode: SingleTop, PadMap m199 / ActionBar nbar25), and over the game Home's own map,
+    // Party mode's list and chat in small windows (SingleDocks, SinglePlayLayout: out of combat / in combat, clear of the add-ons' HUD),
+    // hold to talk's pop-up over them. The DS toolbar is the router's as ever (Left the Chat room, Up the consumables wheel, Right Home's
+    // map module, Down the bar): each opens its panel over the game, and the docks give Home's views back first.
+
+    private var docks: SingleDocks? = null
+    /** the look applied last (the docks follow it) */
+    private var playLook: SingleLook.Look? = null
+    private val PLAY_TICK_MS = 100L
+    /** while the docks are up: Home's fight word (the shift), Party mode, the live HUD and hold to talk followed (pure reads) */
+    private val playTick = object : Runnable {
+        override fun run() {
+            ui.removeCallbacks(this)
+            val d = docks ?: return
+            if (!d.up || shell.hostGone()) return
+            playStep(animate = true)
+            ui.postDelayed(this, PLAY_TICK_MS)
+        }
+    }
+
+    /** 1529's performance mode on the top screen (held weakly: a replaced host is never kept by it) */
+    private val playProbe: () -> Boolean = run {
+        val me = java.lang.ref.WeakReference(this)
+        val f: () -> Boolean = {
+            me.get()?.let { h -> SinglePlayLayout.paced(h.room == Room.HOME, h.homeView.isShown, h.homeView.restElsewhere,
+                h.homeView.inFight() || h.lastBook?.combat == true, h.mapView.movingNow()) } ?: false
+        }
+        f
+    }
+
+    /** PLAY: the play docks, the add-on's single flag, the frame pace (end of onCreate) */
+    private fun singlePlayWire() {
+        val s = single ?: return
+        docks = SingleDocks(this, s, castView)
+        SingleUi.docks = true                                            // the game's minimap and chat give way to Home's
+        // the top panel runs up to 120 Hz: Home's frames (the docked map's trail above all) paced while moving / fighting with Home's rest
+        // being the game, not only while Home's page shows (the two-screen probe above stays as it was)
+        FramePace.probe = playProbe
+        // the host's first look (onCreate's show(Room.HOME), before this wiring: no docks yet) given to the docks now - else they would
+        // wait for the look's next change (a fresh host after the switch starts on PLAY and stays there)
+        singleLookNow?.let { singlePlayLook(it) }
+    }
+
+    /** PLAY: the look applied (before the rooms column shows): the docks up with Home's views lent in the PLAY state, else gone and the
+     *  views given back before Home's page / a panel shows; the band's controller reader kept running while Home's rest is the game */
+    private fun singlePlayLook(l: SingleLook.Look) {
+        val d = docks ?: return
+        playLook = l
+        val play = l.docks && room == Room.HOME
+        // the band's controller reader runs whenever Home is the room, as with two screens (Home's page is under every overlay there):
+        // never stopped at a look's edge on Home - the class wheel opened from the game (NPC's Home layers), Home's glance, a quick
+        // wheel - since a stop lets every held button and stick go at once (PadInput.stop), which would end the class wheel's chord
+        castView.readAway = room == Room.HOME
+        if (!play) {
+            ui.removeCallbacks(playTick)
+            d.show(false)
+            homeView.reclaimFromDocks()
+            return
+        }
+        // a fresh host starts here with Home never laid (its rooms column GONE from the first look): laid once at the panel's place
+        val b = single?.box
+        if (b != null && roomsRoot != null && SingleDocks.layHomeOnce(homeView, roomsRoot!!, b[0], b[1], b[2], b[3]))
+            Log.i("WCHOME", "one screen: Home laid once for the docks (${homeView.width} x ${homeView.height})")
+        homeView.lendToDocks(d.chat, d.party, d.map)
+        val was = d.up
+        d.show(true)
+        playStep(animate = was)
+        ui.removeCallbacks(playTick); ui.postDelayed(playTick, PLAY_TICK_MS)
+    }
+
+    /** the docks laid for now: the arrangement (Home's fight word), what Home lays (its chat, Party mode's list, its map), the live HUD;
+     *  the fight's rolls stand at the map's place (NPC's strip), LB's party picture over the party list; hold to talk's pop-up */
+    private fun playStep(animate: Boolean) {
+        val d = docks ?: return
+        val s = single ?: return
+        if (!d.up || shell.hostGone()) return
+        val laid = homeView.dockLaid()
+        val hud = SinglePlayLayout.Hud(GameUi.hudHeight() ?: SinglePlayLayout.Y_DEF, GameUi.hudWidth() ?: SinglePlayLayout.W_DEF,
+            GameUi.hudScale() ?: SinglePlayLayout.S_DEF)
+        val p = SinglePlayLayout.plan(SinglePlayLayout.arr(homeView.fightShown()), laid.party, hud, s.screenW, s.screenH, homeView.dockPartyH())
+        // the fight's rolls in the map's place, LB's party picture over the party list (NPC's strip, SingleLook rows 9 / 10)
+        val l = playLook
+        val hide = SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map)
+        val before = d.plan?.arr
+        d.arrange(p, animate && before != null, hide)
+        if (before != null && before != p.arr) Log.i("WCHOME", "one screen: the docks ${if (p.arr == SinglePlayLayout.Arr.IN) "into the fight" else "out of the fight"} " +
+            "(chat ${p.chatLines} lines${if (p.party != null) ", the party list" else ""})")
+        d.talkSync()
+    }
+
+    /** the host goes (onDestroy): nothing of the docks left running or held */
+    private fun singlePlayEnd() {
+        ui.removeCallbacks(playTick); ui.removeCallbacks(ssAgain)
+        docks?.close(); docks = null
+        if (single != null) {
+            SingleUi.docks = false
+            if (::castView.isInitialized) castView.readAway = false
+        }
+        if (FramePace.probe === playProbe) FramePace.probe = null
+    }
+
+    // ---- the add-on told the mode (SingleTop: Book b86's fourth page, PadMap m200's `ss`)
+    private var ssSentAt: Long? = null
+    private var ssSentWant: Boolean? = null
+    private var ssTries = 0
+    private val ssAgain = Runnable { lastDpad?.let { singleTopCheck(it, fresh = false) } }
+
+    /**
+     * [SingleTop]: SingleScreen.inUse vs the add-on's `ss` on every current dpad state, EVERY host (two screens: OFF while the add-on still
+     * has it); out of combat, re-sent until `ss` says it, renewed inside the add-on's lease, never beside another page-3 batch.
+     * The review (2026-11-25): a lease this host did not send is renewed at once (a new host after a switch or a launcher resume: the
+     * old host's lease may lapse before 600 s from here); before the host's first current word the REPLAYED state is acted on for ON only
+     * (idempotent: it renews the lease or turns it on, so the first fight after a switch has the Wings), OFF waits for a current word; a
+     * batch TapBridge did not send (the game not live: a loading screen) is neither stamped nor counted, and a [fresh] word starts the
+     * tries over (no hard stop for the host's life)
+     */
+    private fun singleTopCheck(d: PadMapModel.Dpad, fresh: Boolean = true) {
+        SingleUi.addonSingle = d.ss == 1
+        val want = SingleScreen.inUse
+        if (!mirrorCurrent && !want) return
+        if (ssSentWant != want) { ssSentAt = null; ssTries = 0 }
+        if (fresh) ssTries = 0
+        val now = SystemClock.elapsedRealtime()
+        ui.removeCallbacks(ssAgain)
+        if (d.ss == null) return
+        if (page3Busy(now, "ss")) { ui.postDelayed(ssAgain, CAST_AFTER_TOP_MS); return }
+        val fight = homeView.inFight() || lastBook?.combat == true
+        when (val a = SingleTop.decide(want, d.ss, fight, ssSentAt?.let { now - it })) {
+            SingleTop.Act.Matched -> {
+                ssTries = 0
+                if (want) { ssSentWant = want; ui.postDelayed(ssAgain, SingleTop.renewDelay(now, ssSentAt)) } else ssSentWant = null
+            }
+            SingleTop.Act.Wait -> ui.postDelayed(ssAgain, SingleTop.RESEND_MS)      // a fight: looked at again after it
+            is SingleTop.Act.Send -> {
+                if (ssTries >= SingleTop.TRIES) return
+                ssSentWant = want
+                if (!GameInput.live(System.currentTimeMillis())) { ui.postDelayed(ssAgain, SingleTop.RESEND_MS); return }
+                // spaced: code 0 taps the cell the prefix's 0 just tapped (TapPad's repeat guard)
+                val sent = TapBridge.tapsSpaced(this, talentsPad ?: spellsPad, SingleTop.cells(a.on), SingleTop.GAP_MS)
+                Log.i(HomeView.TAG, "one screen: the add-on's single mode ${if (a.on) "on" else "off"} ${if (sent) "sent" else "not sent"}")
+                if (sent) { ssSentAt = now + SingleTop.BATCH_MS; ssTries++ }
+                if (ssTries < SingleTop.TRIES) ui.postDelayed(ssAgain, if (sent) SingleTop.BATCH_MS + SingleTop.RESEND_MS + 200L else SingleTop.RESEND_MS)
+            }
+        }
+    }
+
+    // ===== SINGLE: NPC (builder npc edits only here) =====
+    // SINGLE SCREEN MODE, THE NPC PART (SingleNpc; the user's picks 2026-11-25 "Ours over the game", "Centred panel"): our NPC windows,
+    // the game's pop-ups and every room are the panel over the dim (SingleLook rows 2 / 4: nothing to do here but the inputs); the quick
+    // wheels draw whole over a light dim (Home's page is not drawn: the wheel never goes into Home's slot then) and close at a tap on
+    // the dim; the class wheel is Home's layer alone (HomeView.singleLayersOnly: no page, no ground, no bar); the type tool, the
+    // fight's small rolls and LB's picture go into ONE strip window over the game with the rest of the screen the game's; our own
+    // activities open on the other screen; Home's notes are the hint plate while Home's page is not drawn. Two screens: nothing here
+    // runs (every entry is `single`'s).
+
+    /** the strip window's kind now (SingleLook.Look.strip: SingleNpc.TOOL / ROLLS / LB) and the view it hosts */
+    private var stripKind: String? = null
+    private var stripView: View? = null
+    /** where the lent view came from (the host's content: its place in the z-order and its boxed params), to go back exactly there */
+    private var stripFrom: ViewGroup? = null
+    private var stripIndex = -1
+    private var stripLp: ViewGroup.LayoutParams? = null
+    /** LB's picture's plate in the strip (over the left dock's party list: the picture on a solid ground) */
+    private val lbHolder: FrameLayout by lazy {
+        object : FrameLayout(this@CompanionHost) {
+            private val r = android.graphics.RectF()
+            init { setWillNotDraw(false) }
+            override fun onDraw(c: android.graphics.Canvas) { r.set(0f, 0f, width.toFloat(), height.toFloat()); UiKit.menu(c, r, solid = true) }
+        }
+    }
+
+    /** Home's page is not drawn now (the rooms column GONE: the PLAY state, a quick wheel, the strip) */
+    private fun singleHomeHidden(): Boolean = single != null && roomsRoot?.visibility != View.VISIBLE
+
+    /** NPC: its wiring (end of onCreate) */
+    private fun singleNpcWire() {
+        single ?: return
+        radialView.single = true
+        targetRadial.single = true
+        // the consumables / spell wheel takes Home's middle slot only while Home's page is drawn (its glance); over the game it draws whole
+        val slot0 = radialView.homeSlot
+        radialView.homeSlot = { open -> if (open && singleHomeHidden()) null else slot0?.invoke(open) }
+        // the fight's small roll panel in the strip: the strip's whole window is its "minimap"
+        val box0 = dialogView.mapBox
+        dialogView.mapBox = {
+            if (stripView === dialogView) android.graphics.RectF(0f, 0f, dialogView.width.toFloat(), dialogView.height.toFloat()) else box0()
+        }
+        // LB's picture in the strip: centred in its plate, scaled to the left dock's columns
+        val place0 = lbView.place
+        lbView.place = {
+            if (stripView === lbHolder && lbView.width > 0) single?.let { s ->
+                val f = SingleNpc.lbFit(lbView.width, s.screenH)
+                LbFit.Place(f[0], f[1], f[2], 0f, 0f)
+            } else place0?.invoke()
+        }
+        // LB held / let go: the look at once (not at the next safety poll)
+        val shoulders0 = castView.onShoulders
+        castView.onShoulders = { lb, rb -> shoulders0?.invoke(lb, rb); singleSync("the shoulders") }
+    }
+
+    /** NPC: the inputs it adds to the look: the fight's small rolls, the tool's tab (the tool alone is no Home sub-state: it is the
+     *  strip), the layout editor */
+    private fun singleNpcIn(i: SingleLook.In): SingleLook.In {
+        if (single == null) return i
+        val m = if (::dialogView.isInitialized) dialogView.rollMode() else DialogView.RollMode.NONE
+        val rolls = ::dialogView.isInitialized && SingleNpc.rollsSmall(dialogView.showing(), dialogView.covers(),
+            m == DialogView.RollMode.COMPACT, m == DialogView.RollMode.PILL)
+        val tab = homeView.toolTab()
+        var o = i.copy(fightRolls = rolls, tool = tab, layoutEdit = ::layoutPage.isInitialized && layoutPage.visibility == View.VISIBLE)
+        if (tab >= 0) o = o.copy(homeSub = homeView.subBesidesTool() || barSelect.open || homeView.editing ||
+            homeView.partyMenu.visibility == View.VISIBLE || homeView.targetMenu.visibility == View.VISIBLE)
+        return o
+    }
+
+    /** NPC: the look applied (after the top window has it): the class wheel's layers alone, the strip */
+    private fun singleNpcLook(l: SingleLook.Look) {
+        single ?: return
+        val layers = l.root == SingleLook.Root.HOME_LAYERS
+        if (homeView.singleLayersOnly != layers) {
+            homeView.singleLayersOnly = layers
+            // the rooms column's own ground and the room bar go with Home's page: the class wheel alone over the game
+            roomsRoot?.background?.alpha = if (layers) 0 else 255
+            strip.visibility = if (layers) View.INVISIBLE else View.VISIBLE
+            Log.i("WCHOME", "one screen: the class wheel ${if (layers) "alone over the game" else "back on Home's page"}")
+        }
+        stripSync(l.strip)
+    }
+
+    /** the strip window hosts [kind]'s view (null = nothing: the view back where it came from, the window gone) */
+    private fun stripSync(kind: String?) {
+        val s = single ?: return
+        if (kind == stripKind && stripView != null) { stripPlace(); return }
+        stripBack()
+        val v: View = when (kind) {
+            SingleNpc.TOOL -> homeView.singleToolLend(SingleNpc.boxScale(s.screenW, s.screenH))?.also { t ->
+                t.onTab = { _ -> if (stripView === t) stripPlace() }
+            }
+            SingleNpc.ROLLS -> dialogView.takeIf { it.parent != null }
+            SingleNpc.LB -> lbView.takeIf { it.parent != null }
+            SingleNpc.START -> startView.takeIf { it.parent != null }        // the waiting page's row over the game (row 2b)
+            else -> null
+        } ?: run { if (kind != null) Log.i("WCHOME", "one screen: the strip's $kind has nothing to show"); return }
+        stripKind = kind
+        if (kind != SingleNpc.TOOL) {                         // (the tool: Home's own, lent by HomeView.singleToolLend)
+            val from = v.parent as ViewGroup
+            stripFrom = from; stripIndex = from.indexOfChild(v); stripLp = v.layoutParams
+            from.removeView(v)
+        }
+        if (kind == SingleNpc.LB) {
+            lbHolder.removeAllViews()
+            val pad = Math.round(SingleNpc.LB_PAD * s.screenH / 1080f)
+            lbHolder.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply { setMargins(pad, 0, pad, 0) })
+            stripView = lbHolder
+        } else stripView = v
+        if (kind == SingleNpc.START) startView.bare = true                    // its row alone: the game shows behind it
+        s.sub(SingleNpc.STRIP).put(stripView)
+        stripPlace()
+        Log.i("WCHOME", "one screen: the strip shows $kind")
+    }
+
+    /** the strip window's place for what it hosts now (the tool's tab, the fight for LB's picture) */
+    private fun stripPlace() {
+        val s = single ?: return
+        val kind = stripKind ?: return
+        val w = s.screenW; val h = s.screenH
+        val r = when (kind) {
+            SingleNpc.TOOL -> SingleNpc.toolRect(homeView.toolTab(), w, h, ChatKeyboard.fullHeight(SingleNpc.boxScale(w, h)))
+            SingleNpc.ROLLS -> SingleNpc.rollsRect(w, h)
+            SingleNpc.START -> SingleNpc.startRect(w, h)
+            else -> SingleNpc.lbRect(w, h, homeView.inFight())
+        }
+        val sub = s.sub(SingleNpc.STRIP)
+        sub.place(r[0], r[1], r[2], r[3])
+        sub.touchable(kind != SingleNpc.LB)                     // LB's picture: display only (the game keeps every touch)
+        sub.shown(true)
+    }
+
+    /** the strip's view back where it came from (the host's content at its own place in the z-order; the tool on Home's page) */
+    private fun stripBack() {
+        val v = stripView ?: run { stripKind = null; return }
+        val s = single
+        s?.sub(SingleNpc.STRIP)?.let { it.put(null); it.shown(false) }
+        val lent = if (v === lbHolder) lbView.also { lbHolder.removeView(it) } else v
+        if (stripKind == SingleNpc.START) startView.bare = false              // the whole page again (its Menu, a start page)
+        if (stripKind == SingleNpc.TOOL) homeView.singleToolBack()
+        else stripFrom?.let { f ->
+            (lent.parent as? ViewGroup)?.removeView(lent)
+            f.addView(lent, stripIndex.coerceIn(0, f.childCount), stripLp ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        Log.i("WCHOME", "one screen: the strip's $stripKind back")
+        stripView = null; stripKind = null; stripFrom = null; stripIndex = -1; stripLp = null
+    }
+
+    /** NPC: a tap on the dim; true = handled (a quick wheel closes; an NPC window, a dialog, the class wheel keep it) */
+    private fun singleNpcDim(): Boolean {
+        if (single == null || !singleReady) return false
+        return when (SingleNpc.dimTap(singleIn())) {
+            SingleNpc.Dim.CORE -> false
+            SingleNpc.Dim.KEEP -> true
+            SingleNpc.Dim.CLOSE_QUICK -> {
+                Log.i("WCHOME", "one screen: a tap on the dim closes the wheel")
+                if (radialView.isOpen) radialView.close()
+                if (tradOpen()) targetRadial.close("a tap on the dim")
+                true
+            }
+        }
+    }
+
+    /** Home's pad-layer note while Home's page is not drawn (single screen mode): the plate over the game for the note's time; false =
+     *  Home's own note (two screens, Home's glance) */
+    private fun singleNote(words: String): Boolean {
+        val s = single ?: return false
+        if (!singleHomeHidden()) return false
+        s.hint(words, PadLayerNote.SHOW_MS)
+        return true
+    }
+
+    /**
+     * our own activities in single screen mode (spec 8.4): null = two screens (openOnBottom's own lines). A two-screen device: on the
+     * other screen (Android's launcher is the bottom screen now), the top window never hidden for it, the controller's keys left alone
+     * while it is up (SingleScreen.keysPaused) and looked at again at its close hook, the plate "On the bottom screen". A one-screen
+     * device: on this screen (the launcher pauses: the top window goes and comes back with its resume)
+     */
+    private fun singleOpenOnBottom(cls: Class<*>, tag: String, setClosed: ((() -> Unit)?) -> Unit): Boolean? {
+        val s = single ?: return null
+        val i = android.content.Intent(this, cls).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        val other = s.otherDisplay
+        if (SingleNpc.bottomRoute(true, s.otherDisplay) != SingleNpc.Bottom.OTHER || other == null) {
+            setClosed(null)
+            runCatching { shell.startHostActivity(i) }.onFailure { android.util.Log.w(tag, "${cls.simpleName}: ${it.message}") }
+            android.util.Log.i(tag, "${cls.simpleName} on this screen (one screen: the launcher pauses meanwhile)")
+            return false
+        }
+        SingleScreen.keysPaused = true
+        setClosed { ui.post { SingleScreen.keysPaused = false; SingleScreen.keysAgain?.invoke(); setClosed(null) } }
+        val ok = runCatching {
+            startActivity(i, android.app.ActivityOptions.makeBasic().setLaunchDisplayId(other).toBundle())
+        }.onFailure { android.util.Log.w(tag, "${cls.simpleName} on display $other: ${it.message}") }.isSuccess
+        if (!ok) {
+            SingleScreen.keysPaused = false
+            setClosed(null)
+            runCatching { shell.startHostActivity(i) }.onFailure { android.util.Log.w(tag, "${cls.simpleName}: ${it.message}") }
+            return false
+        }
+        s.hint(SingleNpc.ON_BOTTOM, SingleNpc.ON_BOTTOM_MS)
+        android.util.Log.i(tag, "${cls.simpleName} on the other screen ($other); the top window stays")
+        return true
+    }
+
     /** a pause-menu pick, once the wheel has folded: a ROOM opens as the bar opens it; View Buffs = Home's buff list */
     private fun pausePick(s: HomePauseModel.Slice) {
         when (s.kind) {
@@ -2159,6 +2722,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // the corner's Edit (the user, 2026-11-24: X "puts them into the home edit mode"): Edit Home's own entry (Home first from
                 // a room; a fight: Edit Home's refusal, its pencils flash)
                 HomePauseModel.EDIT.key -> editHome("the pause wheel's Edit")
+                // single screen mode (the user's pick "Icon on Y"): One screen / Two screens; the hub's Home glance ("Straight to the game")
+                HomePauseModel.SCREENS.key -> singleSwitch(single == null, "the pause wheel")
+                HomePauseModel.HOME_GLANCE.key -> singleGlance(true, "the pause wheel's hub")
                 // f-trackpad-keyboard: the pause wheel's D-pad Left; on Home (from a room: Home first)
                 // the pause wheel's D-pad Left / Right (the user, 2026-10-16): the Track Pad / the Keyboard, the same tool on its tab
                 "trackpad", "typetool" -> { if (room != Room.HOME) show(Room.HOME); homeView.post { homeView.openTypeTool(0) } }
@@ -3472,6 +4038,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 // ONE grace for both kinds, keyed by the full holder string: a holder that let go (or changed) starts it afresh
                 val holderNow = if (current) msg.optString("holder") else ""
                 if (current) { if (holderNow != capHolder) capHolderAt = SystemClock.uptimeMillis(); capHolder = holderNow }
+                if (current) singleHeal(holderNow)                    // single screen mode: a guest the old window left holding
                 if (current) hiddenSince.keys.retainAll { it == holderNow }
                 // after HIDDEN_GRACE only (batch 19's log: a holder doc written just before a guest's own free landed was read after
                 // its room closed, and freed it a second time)
@@ -3728,7 +4295,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     // the 1514 merge (CharKey): the WHOLE key only; named with no realm = pending (no record read or written, the
                     // previous character's key let go; an edit meanwhile is laid on the real record once the key comes)
                     if (current && named) HomeLayoutStore.character(ck, d.name)
-                    if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d); castCheck(d); swingCheck(d); previewCheck(d) }
+                    if (current) { mirrorCurrent = true; mirrorCheck(d); topCheck(d); castCheck(d); swingCheck(d); previewCheck(d); singleTopCheck(d) }
+                    // single screen mode, a new host (a switch, a launcher resume): the replayed state already sends ON (SingleTop; the review)
+                    else if (!mirrorCurrent && SingleScreen.inUse) singleTopCheck(d, fresh = false)
                     // Quests q35: the rooms' guests keep Start from the game while the toolbar is on (our wheel), and let it through while
                     // it is off (the game's own wheel); told at the first current word and at every change of the toolbar's state
                     // issue 588 (the user's ruling 2026-11-23): with PadMap m186+ Start is our wheel with the toolbar off too: always 36
@@ -4149,6 +4718,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     fun onDestroy() {
         Voice.stopAll()
+        ui.removeCallbacks(singlePoll)
+        singlePlayEnd()
+        if (SingleScreen.fightNow === singleFight) SingleScreen.fightNow = { false }
         Theme.removeListener(themeChanged)
         ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
         ui.removeCallbacks(silenceTick)
@@ -4254,6 +4826,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * Not in a fight (the capture's secure leave then, the old route) nor under any overlay (the wheels, a dialog, the bar cursor).
      */
     private fun bPressed() {
+        // single screen mode: B on Home's glance (nothing of Home's own open that B closes) = straight back to the game
+        if (single != null && room == Room.HOME && glanceHub && !singleHomeSub() && !shell.hostGone()) { singleGlance(false, "B"); return }
         if (room == Room.HOME || shell.hostGone()) return
         val v = shownView as? BLeadsHome ?: return
         if (fightLeave.cell != null || barSelect.open || startView.visibility == View.VISIBLE || setupView.visibility == View.VISIBLE ||
@@ -4418,6 +4992,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val from = if (pauseBack?.isRunning == true) slideT else 0f
         pauseBack?.cancel(); pauseBack = null
         pauseView.open(from, byStart)
+        singleSync("the pause wheel")
     }
     /** the reverse running (a Start meanwhile cancels it and the open goes on from [slideT]) */
     private var pauseBack: android.animation.ValueAnimator? = null
@@ -5396,7 +5971,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  ago - they all start with the same prefix cells, and TapPad's 0.25 s repeat guard would swallow this batch's first 39. Every page-3
      *  sender reads this one guard (1531: the mirror / top / cast / swing checks never waited for the hold time's batch) */
     private fun page3Busy(now: Long, mine: String): Boolean =
-        listOf("mirror" to mirrorSentAt, "top" to topSentAt, "cast" to castSentAt, "swing" to swingSentAt, "pv" to pvSentAt, "hold" to holdSentAt)
+        listOf("mirror" to mirrorSentAt, "top" to topSentAt, "cast" to castSentAt, "swing" to swingSentAt, "pv" to pvSentAt, "hold" to holdSentAt,
+            "ss" to ssSentAt)
             .any { (k, t) -> k != mine && t != null && now - t < CAST_AFTER_TOP_MS }
 
     /** TopCombatBar.castWanted ("Cast bar in fights: Top screen" with In fights = Top screen) vs the add-on's `cc`: [topCheck]'s rules

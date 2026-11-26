@@ -2,6 +2,9 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar26 THE 1533 MERGE OF feat/single-screen (test build 1533, 2026-11-25; PadMap m201): the two nbar25s together - hold to cast's
+-- visuals (the shaded badge, the glowing ring, the gold checked ring's takeover, the face says the spell it shows) and single screen
+-- mode's top cast bar for every cast (WC.padMap.single); nothing else changed.
 -- nbar25 HOLD TO CAST'S VISUALS, ROUND 1533 (PadMap m199; the user on test 1532, 2026-11-25: "The red outline is an eyesore we
 -- should just shade the ability like we do with the glyphs. And same with the charge up dots, it should be a glowing ring around the
 -- skill. When the ability is casting it should show the ability with a golden ring, a great example of this is raptor strikes normal
@@ -18,6 +21,8 @@
 -- confusing"): while a hold's takeover has the face, the glyph / word red (range only), b.range, the face's own shade (b.hflash: blue
 -- not enough mana, grey unusable) and the count are the HOLD spell's (NB.faceLook: switched at the fire, back at the end at once); the
 -- badge fades out (1 - the face's alpha) and always wears its hold spell - never the tap spell (nbar21's swap retired).
+-- nbar25 SINGLE SCREEN MODE (PadMap m199; the user, 2026-11-25: "a single screen mode where the game shifts to the top screen"): while the
+-- app's mode is on (WC.padMap.single) our top cast bar shows EVERY cast of the player, out of the takeover too - at "nbar25" below.
 -- nbar24 RULING A (the user's pick 2026-11-25, "Stay until it ends (Recommended)"): a trigger layer's hold (LT + X) keeps its
 -- takeover on the main circle after the trigger is let go - drawn on its fired layer and on any layer that only lacks one of its
 -- triggers (the bare one after LT + X; LT or RT alone after LT + RT + X), never on a layer with a trigger the press did not have;
@@ -2582,7 +2587,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar25", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar26", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -5415,6 +5420,7 @@ function NB.topTick(el)
         if ct ~= (T.castTop == true) then T.dirty, T.inKey = true, nil end   -- nbar18: the bar's room in or out of the HUD block: re-fit
         T.castTop = ct
         T.castSw = NB.castSwingFlag()                                    -- nbar18: the app's Swing timer for the top bar
+        T.single = NB.singleFlag()                                       -- nbar25: single screen mode (PadMap m199)
     end
     local flag = T.flag
     if not flag and not T.want and not T.shown and not T.edit and T.dir == 0 and T.t <= 0 then
@@ -5562,6 +5568,26 @@ function NB.cbUnits()
     local C = NB.CB
     local sw = C.SW_GAP + C.SW_H + C.SW_SEP + C.SW_OFF_H
     return sw, C.H + 2 * C.BORDER, C.PLATE_H
+end
+-- nbar25 SINGLE SCREEN MODE (PadMap m199; the user, 2026-11-25: "We need to rebuild all of our menus and features to work on the top
+-- screen when single screen mode is selected"; the pick for "While playing": the cast bar out of fights too): the app runs DS Forever on
+-- the top screen, so no bottom screen's band carries a cast. While the app's mode is on (WC.padMap.single, read with the flags every
+-- FLAG_S; PadMap's combatTopOn / combatCastTopOn answer true then, so the Wings and our bar take the fights) our top cast bar shows for
+-- EVERY cast of the player out of the takeover too - the Hearthstone, a mount, gathering, disenchanting, crafting - at its place above
+-- the HUD block, from the cast's first frame until its finish or fail has faded (NB.cbLook's own times), the swing per cs as ever.
+-- Display only, as nbar18: plain frames of our own, no protected call, nothing written; never over Edit Home's preview.
+function NB.singleFlag()
+    local pm = rawget(WC, "padMap")
+    if type(pm) == "table" and type(pm.single) == "function" then
+        local ok, v = pcall(pm.single)
+        return ok and v == true
+    end
+    return false
+end
+-- nbar25: out of the takeover, a cast of the player's to show (running, or its finish / fail still fading) while the mode is on
+function NB.cbSingle()
+    if NB.top.single ~= true or NB.pv() then return false end
+    return NB.cbLook(SN(GetTime) or 0) ~= nil
 end
 -- our bar wanted on the top screen in the takeover (the flag and Cast bar = Top screen)
 function NB.cbWanted()
@@ -5861,7 +5887,7 @@ end
 function NB.cbTick(el)
     local C, T = NB.CB, NB.top
     el = el or 0
-    local on = NB.cbWanted() and T.want == true and T.cbAt ~= nil
+    local on = NB.cbWanted() and (T.want == true or NB.cbSingle()) and T.cbAt ~= nil      -- nbar25: every cast in single screen mode
     local cb = NB.cb
     if not cb then
         if not on or not NB.cbBuild() then return end

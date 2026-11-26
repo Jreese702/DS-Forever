@@ -47,6 +47,42 @@ object HomePauseModel {
      *  mode"): the corner's Edit, never a slice - X or a touch folds the wheel, then Edit Home's own entry (CompanionHost.editHome) */
     val EDIT = Slice("edithome", "Edit", Kind.HOME)
 
+    /** single screen mode (the user, 2026-11-25: "The button to shift it needs to be in the pause menu below the edit mode button"; the
+     *  pick "Icon on Y"): the corner below Edit, never a slice - Y or a touch folds the wheel, then the host switches One screen / Two
+     *  screens (CompanionHost.singleSwitch) */
+    val SCREENS = Slice("screens", "Screens", Kind.HOME)
+
+    /** single screen mode's hub (the pick "Straight to the game": the game is Home, Home's page a glance from the wheel): A with nothing
+     *  lit, or a tap on the hub, opens Home's page over the game ([Flow.single]); two screens: the hub closes, as always */
+    val HOME_GLANCE = Slice("home", "Home", Kind.HOME)
+
+    /** the corner buttons' size and margin as UiKit draws them (UiKit.POWER_SIZE, its POWER_MARGIN), k = min(w / 1240, h / 1080) */
+    const val CORNER_SIZE = 117f
+    const val CORNER_MARGIN = 16f
+    private fun cornerK(l: Float, t: Float, r: Float, b: Float) = minOf((r - l) / 1240f, (b - t) / 1080f)
+
+    /** Edit's box (the top-right corner) in a canvas (left, top, right, bottom): (left, top, right, bottom) */
+    fun editBox(l: Float, t: Float, r: Float, b: Float): FloatArray {
+        val k = cornerK(l, t, r, b); val sz = CORNER_SIZE * k; val m = CORNER_MARGIN * k
+        return floatArrayOf(r - m - sz, t + m, r - m, t + m + sz)
+    }
+
+    /** the One screen / Two screens button's box: Edit's moved down by its size and the margin - (1107, 149)-(1224, 266) on the bottom
+     *  screen, (1787, 149)-(1904, 266) on single screen mode's 1920 x 1080 wheel */
+    fun screensBox(l: Float, t: Float, r: Float, b: Float): FloatArray {
+        val e = editBox(l, t, r, b)
+        val d = (CORNER_SIZE + CORNER_MARGIN) * cornerK(l, t, r, b)
+        return floatArrayOf(e[0], e[1] + d, e[2], e[3] + d)
+    }
+
+    /** Y (or a touch) on the button: nothing while it is not [offered] (a one-screen device: it is not drawn); a [refusal] = the wheel's
+     *  red line, the wheel stays; else the pick (the wheel folds, then the host switches) */
+    fun screensAct(offered: Boolean, refusal: String?): Act = when {
+        !offered -> Act.None
+        refusal != null -> Act.Refuse(SCREENS.copy(off = true, offLine = refusal))
+        else -> Act.Pick(SCREENS)
+    }
+
     /** the Macros room (Spells s10): page 3's slice where Calendar stood, and the Game Menu's own "Macros" entry (HomePauseView) */
     val MACROS = Slice("macros", "Macros", Kind.ROOM, room = "MACROS")
 
@@ -157,6 +193,8 @@ object HomePauseModel {
          */
         var holdOpen = false
         var pickA = false
+        /** single screen mode: the hub is Home's glance ([HOME_GLANCE]), not the close */
+        var single = false
         /** both at once (the older single setting): Tap + A, or Hold + Release */
         var tap: Boolean
             get() = !holdOpen && pickA
@@ -234,6 +272,8 @@ object HomePauseModel {
          * stick then lights nothing until it is back in the middle, so its own release cannot pick a second time (PvP's confirm).
          */
         fun a(): Act {
+            // single screen mode: A with nothing lit = the hub's own (Home's page as a glance), whatever the pick setting
+            if (single && pointed < 0) return Act.Pick(HOME_GLANCE)
             if (!pickA) return Act.None                              // RELEASE TO SELECT: A does nothing
             val slice = slices().getOrNull(pointed) ?: return Act.None
             pointed = -1; cancelled = aiming; aiming = false
@@ -274,7 +314,7 @@ object HomePauseModel {
 
         /** a finger on slot [s] (the kit's hit test): a pick at once; [HUB] closes */
         fun touch(s: Int): Act {
-            if (s == HUB) return Act.Close
+            if (s == HUB) return if (single) Act.Pick(HOME_GLANCE) else Act.Close
             val slice = slices().getOrNull(s) ?: return Act.None
             pointed = s
             return if (slice.enabled) Act.Pick(slice) else Act.Refuse(slice)

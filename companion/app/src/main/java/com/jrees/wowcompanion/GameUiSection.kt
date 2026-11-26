@@ -546,6 +546,7 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
         picture(c, id, r, GameUiTiles.well(box).rect())
         // (Edit layout is a page to open, not a choice: no badge, "Open" for its word)
         if (id != GameUiTiles.LAYOUT_ID) TilePictures.badge(c, GameUiTiles.badgeBox(box).rect(), GameUiTiles.badge(r))
+        if (SingleScreen.inUse && SingleNpc.setByOne(id)) setByOne(c, GameUiTiles.well(box).rect())
         edge(c, rect, open)
         val waiting = r == null || !r.known
         val x = box.l + GameUiTiles.WELL_PAD + 2f
@@ -557,6 +558,20 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
             pValue.color = if (waiting || r.mode == UiMode.OFF) Theme.textDim else Theme.gold
             c.drawText(fitText(pValue, Tr.t(if (id == GameUiTiles.LAYOUT_ID) "Open" else word(r.mode)), maxW, 22f, 18f), x, box.b - 12f, pValue)
         }
+    }
+
+    /**
+     * single screen mode (SingleNpc.setByOne, spec 8.2): the one-screen preset decides this element on the game now - the tile keeps the
+     * SAVED choice (its word and badge), the picture's foot says "Set by One screen"
+     */
+    private fun setByOne(c: Canvas, well: RectF) {
+        val band = RectF(well.left, well.bottom - 30f, well.right, well.bottom)
+        pFill.color = Color.argb(214, 10, 10, 12)
+        c.drawRoundRect(band, 8f, 8f, pFill)
+        val p = UiKit.bodyPaint(19f, Theme.gold).apply { textAlign = Paint.Align.CENTER }
+        val words = Tr.t(SingleNpc.SET_BY_ONE)
+        while (p.measureText(words) > band.width() - 12f && p.textSize > 13f) p.textSize -= 1f
+        c.drawText(words, band.centerX(), band.centerY() + p.textSize * 0.35f, p)
     }
 
     /** a tile's or the band's edge: the game's metal ring (the kit's ring_square), lit gold for the open tile; without it, the drawn ring */
