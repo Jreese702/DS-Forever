@@ -43,7 +43,7 @@ class SinglePlayShotsTest {
     private fun save(s: SinglePlayStage, name: String, p: SinglePlayLayout.Plan, party: Boolean, talk: Boolean = false): Bitmap {
         val b = s.draw()
         val j = JSONObject().put("arr", p.arr.name).put("party", party).put("talk", talk).put("chatLines", p.chatLines)
-        for (k in listOf(Piece.MAP, Piece.PARTY, Piece.CHAT)) j.put(k.name.lowercase(), arr(s.docks.boxNow(k)))
+        for (k in listOf(Piece.MAP, Piece.PARTY, Piece.CHAT, Piece.QUEST, Piece.ROW)) j.put(k.name.lowercase(), arr(s.docks.boxNow(k)))
         if (talk) j.put("talkBox", arr(p.talk))
         val ks = JSONArray()
         for (k in SinglePlayLayout.keepOuts(p.arr, party)) ks.put(JSONArray().put(k.name).put(k.box.l).put(k.box.t).put(k.box.r).put(k.box.b))
@@ -77,20 +77,32 @@ class SinglePlayShotsTest {
         warm(s)
         val bo = save(s, "dock_out", o, party = true)
         assertTrue("the map, the party list and the chat drawn", painted(bo, o.map) && painted(bo, o.party) && painted(bo, o.chat))
-        assertTrue("nothing of ours outside them", clearOutside(bo, listOf(o.map, o.party, o.chat)))
+        // the 1535 polish: the focused quest's card under the map, the room row at the bottom centre, the chat on the right
+        assertTrue("the quest card and the room row drawn", painted(bo, o.quest) && painted(bo, o.row))
+        assertTrue("the chat on the right", o.chat.l > 960)
+        assertTrue("nothing of ours outside them", clearOutside(bo, listOf(o.map, o.party, o.chat, o.quest, o.row)))
+        // the docks see-through (the user: "way more see through"): a pixel inside the chat's well, away from its words, lets the game through
+        assertTrue("the chat's ground is see-through: alpha ${bo.getPixel(o.chat.l + 20, o.chat.t + 20) ushr 24}",
+            (bo.getPixel(o.chat.l + 20, o.chat.t + 20) ushr 24) < 120)
         // the shift into the fight: its frames
         s.fight(true)
-        val i = SinglePlayLayout.plan(Arr.IN, true, partyH = s.home.dockPartyH())
-        val from = mapOf(Piece.MAP to s.docks.boxNow(Piece.MAP), Piece.PARTY to s.docks.boxNow(Piece.PARTY), Piece.CHAT to s.docks.boxNow(Piece.CHAT))
+        val i = s.plan(Arr.IN)
+        val moving = listOf(Piece.MAP, Piece.PARTY, Piece.CHAT, Piece.QUEST, Piece.ROW)
+        val from = moving.associateWith { s.docks.boxNow(it) }
         s.docks.arrange(i, animate = true)
-        // the glide's frames as the animator lays them (its own clock under the paused looper runs it to its end at once)
+        // the glide's frames as the animator lays them (its own clock under the paused looper runs it to its end at once); the row slides
+        // down under the bottom edge whole
         for ((f, name) in listOf(0f to "dock_glide_0", 0.5f to "dock_glide_50")) {
-            for (k in listOf(Piece.MAP, Piece.PARTY, Piece.CHAT)) frame.invoke(s.docks, k, from[k], i.box(k), Motion.curve().getInterpolation(f))
+            for (k in moving) {
+                val a = from[k]; val b = i.box(k) ?: if (k in SinglePlayLayout.SLIDES && a != null) SinglePlayLayout.below(a) else null
+                frame.invoke(s.docks, k, a, b, Motion.curve().getInterpolation(f))
+            }
             save(s, name, i, party = true)
         }
         s.settle(20)
         val bi = save(s, "dock_glide_100", i, party = true)
         assertTrue("landed in the fight's places", painted(bi, i.map) && painted(bi, i.party) && painted(bi, i.chat))
+        assertTrue("the row gone in the fight (its window down)", i.row == null && s.sub(Piece.ROW)?.on == false)
         save(s, "dock_in", i, party = true)
         // hold to talk's pop-up over the party list (out of combat)
         s.fight(false)
@@ -112,7 +124,7 @@ class SinglePlayShotsTest {
         val bo = save(s, "dock_out_solo", o, party = false)
         assertTrue(painted(bo, o.map) && painted(bo, o.chat))
         s.fight(true)
-        val i = SinglePlayLayout.plan(Arr.IN, false)
+        val i = s.plan(Arr.IN)
         s.docks.arrange(i, animate = false)
         save(s, "dock_in_solo", i, party = false)
         writeBoxes("docks_solo.json")

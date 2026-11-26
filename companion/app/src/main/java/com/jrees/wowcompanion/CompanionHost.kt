@@ -1465,6 +1465,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 return r
             }
         }.apply {
+            singleHostRoot = this
             addView(root, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             // the bar selector's cursor and hint plate: over the rooms and the bar (it takes no touch)
@@ -2261,7 +2262,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!singleReady || shell.hostGone()) return
         val look = SingleLook.of(singleIn())
         homeView.restElsewhere = look.root == SingleLook.Root.GONE && room == Room.HOME
+        // the 1535 polish (SingleFade): while the window shows, what it shows is noted (every sync and the 100 ms poll) - its picture is
+        // what fades out when it closes (the views are already the next state's by then: a room left, Home's views lent to the docks)
+        if (look.frame == SingleLook.Frame.FULL) singleGhostNote()
         if (look == singleLookNow) return
+        if (singleLookNow?.frame == SingleLook.Frame.FULL && look.frame == SingleLook.Frame.HIDDEN) s.ghost(singleGhost())
         singleLookNow = look
         singlePlayLook(look)
         roomsRoot?.let { r -> val v = if (look.root == SingleLook.Root.GONE) View.GONE else View.VISIBLE; if (r.visibility != v) r.visibility = v }
@@ -2269,6 +2274,41 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         singleNpcLook(look)
         Log.i("WCHOME", "one screen: ${look.frame.name.lowercase()}" + (if (look.frame == SingleLook.Frame.FULL) " dim ${look.dim}" else "") +
             ", ${look.root.name.lowercase()}" + (if (look.docks) ", docks" else "") + (look.strip?.let { ", strip $it" } ?: "") + " ($why)")
+    }
+
+    /** the host's content root (the top window's) */
+    private var singleHostRoot: FrameLayout? = null
+    /** what the top window showed at its last FULL look: the content's shown children (the rooms column as its ground, its bar and the
+     *  room then shown) */
+    private var ghostViews: List<View> = emptyList()
+    private var ghostGround: View? = null
+
+    private fun singleGhostNote() {
+        val r = singleHostRoot ?: return
+        val out = ArrayList<View>(8)
+        var ground: View? = null
+        for (i in 0 until r.childCount) {
+            val v = r.getChildAt(i)
+            if (v.visibility != View.VISIBLE) continue
+            val rr = v as? ViewGroup
+            if (v === roomsRoot && rr != null) {
+                ground = v
+                for (j in 0 until rr.childCount) {
+                    val c = rr.getChildAt(j)
+                    if (c.visibility != View.VISIBLE) continue
+                    if (c === content) shownView?.let { out += it } else out += c
+                }
+            } else out += v
+        }
+        ghostViews = out; ghostGround = ground
+    }
+
+    /** the picture of what the window showed (null: nothing noted) */
+    private fun singleGhost(): android.graphics.Picture? {
+        val r = singleHostRoot ?: return null
+        val p = SingleFade.record(r, ghostViews, ghostGround)
+        ghostViews = emptyList(); ghostGround = null
+        return p
     }
 
     /** the look's safety poll while single screen mode is on: a pure call, applied only on a change ([SingleScreen.LOOK_POLL_MS]) */

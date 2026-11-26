@@ -51,6 +51,13 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     private val subs = LinkedHashMap<String, SubWindow>()
     private var lookNow: SingleLook.Look? = null
     private var touchNow = true
+    /** the 1535 polish (SingleFade): the last picture of what the window showed, fading out over the game; the fades running */
+    private lateinit var ghostView: com.jrees.wowcompanion.SingleFade.Ghost
+    private var ghostNext: android.graphics.Picture? = null
+    private var fade: android.animation.ValueAnimator? = null
+    private var dimFade: android.animation.ValueAnimator? = null
+    /** fading out: the decor still shows (the ghost), never a touch's */
+    private var fadingOut = false
 
     /** the activity's window size now (the host lays its views by the size made with: [stale] when it is no more this) */
     private fun liveSize(): IntArray =
@@ -106,8 +113,10 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
             setOnClickListener { host?.singleDimTap() }
         }
         hostSlot = FrameLayout(context)
+        ghostView = com.jrees.wowcompanion.SingleFade.Ghost(context)
         frame.addView(dim, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         frame.addView(hostSlot, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        frame.addView(ghostView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(frame)
         w?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         w?.attributes = w?.attributes?.also { a ->
@@ -172,6 +181,9 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         host?.let { it.onStop(); it.onDestroy() }
         host = null
         up = false
+        fade?.cancel(); fade = null; dimFade?.cancel(); dimFade = null
+        if (::ghostView.isInitialized) ghostView.pic = null
+        ghostNext = null
         main.removeCallbacksAndMessages(null)
         for (s in subs.values) s.close()
         subs.clear()
@@ -190,12 +202,57 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     // ---- SingleShell
 
     /** the decor's visibility IS the frame (HIDDEN = GONE: no surface); set before the window is added too (the first look comes from
-     *  the host's onCreate, inside Dialog.show) */
+     *  the host's onCreate, inside Dialog.show). THE 1535 POLISH (the user: "Right now everything kind of pops open, we need to have
+     *  smooth transitions for everything"): shown = the window fades in with the panel rising (SingleFade.IN_MS, RISE), from wherever a
+     *  fade-out had got to; gone = the window's last picture (the host's [ghost]) fades out with the dim over SingleFade.OUT_MS, no
+     *  touch taken meanwhile, then the decor is GONE (no surface) as before */
     private fun showDecor(on: Boolean) {
         val d = window?.decorView ?: return
-        val v = if (on) View.VISIBLE else View.GONE
-        if (d.visibility != v) d.visibility = v
+        val fx = com.jrees.wowcompanion.SingleFade
+        // not on screen yet (the first look comes inside Dialog.show): as it is, no fade
+        if (!d.isAttachedToWindow) { d.visibility = if (on) View.VISIBLE else View.GONE; return }
+        if (on) {
+            ghostNext = null
+            val wasOut = fadingOut
+            if (fadingOut) { fade?.cancel(); fade = null; fadingOut = false; ghostView.pic = null; touchFlag(touchNow) }
+            if (d.visibility != View.VISIBLE || wasOut) {
+                val from = if (d.visibility != View.VISIBLE) 0f else frame.alpha
+                d.visibility = View.VISIBLE
+                fade?.cancel()
+                frame.alpha = from
+                fade = fx.run(from, 1f, (fx.IN_MS * (1f - from)).toLong().coerceAtLeast(1L), { k ->
+                    frame.alpha = k; hostSlot.translationY = fx.RISE * (screenH / 1080f) * (1f - k)
+                }) { fade = null; hostSlot.translationY = 0f }
+            }
+            return
+        }
+        if (d.visibility != View.VISIBLE || fadingOut) return
+        fade?.cancel(); dimFade?.cancel(); dimFade = null
+        ghostView.pic = ghostNext
+        ghostNext = null
+        fadingOut = true
+        touchFlag(false)
+        hostSlot.translationY = 0f
+        fade = fx.run(frame.alpha, 0f, (fx.OUT_MS * frame.alpha).toLong().coerceAtLeast(1L), { k -> frame.alpha = k }) {
+            fade = null; fadingOut = false
+            d.visibility = View.GONE
+            frame.alpha = 1f
+            ghostView.pic = null
+            lookNow?.let { dim.alpha = it.dim }
+            touchFlag(touchNow)
+        }
     }
+
+    /** the window's touch flag as asked ([on]), set only on a change */
+    private var touchSet = true
+    private fun touchFlag(on: Boolean) {
+        if (on == touchSet) return
+        touchSet = on
+        window?.setFlags(if (on) 0 else WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+    }
+
+    /** the 1535 polish: the picture the next fade-out shows (the host records what the window showed as it closes) */
+    override fun ghost(p: android.graphics.Picture?) { ghostNext = p }
 
     override fun look(l: SingleLook.Look) {
         if (lookNow == l) return
@@ -207,12 +264,15 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         val full = l.frame == SingleLook.Frame.FULL
         // the browser page and a typing field keep the window up whatever the look says
         showDecor(full || pageSlot.up || typer.typing)
-        if (::dim.isInitialized) dim.alpha = l.dim
-        val touch = l.touchable || pageSlot.up || !full
-        if (touch != touchNow) {
-            touchNow = touch
-            window?.setFlags(if (touch) 0 else WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        // the dim eases to the look's (a fade-out keeps it: the window's own alpha takes it away)
+        if (::dim.isInitialized && !fadingOut && dim.alpha != l.dim) {
+            dimFade?.cancel()
+            val from = dim.alpha
+            dimFade = com.jrees.wowcompanion.SingleFade.run(from, l.dim, com.jrees.wowcompanion.SingleFade.DIM_MS, { k -> dim.alpha = k }) { dimFade = null }
         }
+        val touch = l.touchable || pageSlot.up || !full
+        touchNow = touch
+        if (!fadingOut) touchFlag(touch)
     }
 
     override fun sub(id: String): SingleSub = subs.getOrPut(id) { SubWindow(activity, id) { screen.ourTouch() } }

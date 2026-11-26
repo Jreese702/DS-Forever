@@ -27,6 +27,8 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
     val screen = FrameLayout(app)
     val shell = FakeShell(app, screen, w, h)
     val docks: SingleDocks
+    /** the 1535 polish: the rooms column's bar, lent to the row window as CompanionHost.rowLend does */
+    val strip = Strip(app) { }
 
     /** one fake top-screen window: its content [frame] placed in [screen] at its bounds; counts its updates */
     class FakeSub(ctx: Context, private val screen: FrameLayout) : SingleSub {
@@ -136,6 +138,9 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
         settle()
         if (laid) lay(home, HW, HH)
         docks = SingleDocks(app, shell, cast)
+        strip.showOrder(RoomBar.shown(HomeSettings.layout), 0L)
+        strip.active = Room.HOME
+        strip.xp = Strip.Track("xp", 0.62f)
     }
 
     /** the game's fight word as the add-on's full document says it (Home's takeover follows it) */
@@ -149,12 +154,23 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
 
     /** the PLAY state as CompanionHost's PLAY wiring lays it: Home's views lent, the docks up, the arrangement for [arr] */
     fun play(arr: SinglePlayLayout.Arr, animate: Boolean = false): SinglePlayLayout.Plan {
-        home.lendToDocks(docks.chat, docks.party, docks.map)
+        home.lendToDocks(docks.chat, docks.party, docks.map, docks.quest)
+        if (strip.parent !== docks.row) {
+            (strip.parent as? android.view.ViewGroup)?.removeView(strip)
+            docks.row.addView(strip, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
         docks.show(true)
+        val p = plan(arr)
         val laid = home.dockLaid()
-        val p = SinglePlayLayout.plan(arr, laid.party, SinglePlayLayout.Hud(), w, h, home.dockPartyH())
-        docks.arrange(p, animate, SinglePlayLayout.hidden(null, false, laid.chat, laid.map))
+        docks.arrange(p, animate, SinglePlayLayout.hidden(null, false, laid.chat, laid.map, laid.quest))
         return p
+    }
+
+    /** the arrangement CompanionHost.playStep lays for [arr] now (the party list's and the quest card's own heights) */
+    fun plan(arr: SinglePlayLayout.Arr): SinglePlayLayout.Plan {
+        val laid = home.dockLaid()
+        return SinglePlayLayout.plan(arr, laid.party, SinglePlayLayout.Hud(), w, h, home.dockPartyH(),
+            questH = home.dockQuestH(fold = arr == SinglePlayLayout.Arr.IN))
     }
 
     /** the top screen's windows laid as the window manager would (each at its bounds) */

@@ -109,7 +109,7 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
                 override fun onAnimationEnd(animation: android.animation.Animator) {
                     if (cut) return
                     anim = null
-                    for (g in glides) land(g.piece, g.to)                                                   // the shrink
+                    for (g in glides) land(g.piece, to[g.piece])         // the shrink (a sliding piece's end under the edge: gone)
                 }
             })
             start()
