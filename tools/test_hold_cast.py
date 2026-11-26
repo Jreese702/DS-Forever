@@ -194,20 +194,20 @@ def tapped(u, btn):
 pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
-check('local PV = "m201"' in pm and 'm199 HOLD TO CAST ROUND 1533, THE FIRE AT THE THRESHOLD' in pm and 'm198 EDIT HOME' in pm
+check('local PV = "m202"' in pm and 'm199 HOLD TO CAST ROUND 1533, THE FIRE AT THE THRESHOLD' in pm and 'm198 EDIT HOME' in pm
       and 'm197 THE 1531 MERGE OF feat/hold-cast' in pm and 'm196 THE 1530 MERGE OF TEST 1529' in pm
       and 'm195 THE HOLD SPELL TAKES THE BUTTON' in pm and 'm194 HOLD TO CAST IN THE GAME' in pm and 'm193 THE 1528b MERGE OF feat/hold-cast' in pm
       and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m199 (m198, m197, m196, m195 / m194, m193, m190, m189 kept)')
 check('local CV = "p63"' in ptc and 'p63 THE 1531 MERGE OF feat/hold-cast' in ptc and 'p62 HOLD TO CAST IN THE GAME' in ptc
       and 'p61 THE 1528b MERGE OF feat/hold-cast' in ptc and 'p60 THE HOLD SPELL BUTTON' in ptc and 'p59 HOLD TO CAST' in ptc,
       '0. PadTabCtl p63 (p62, p61, p60, p59 kept)')
-check('local BV = "b86"' in bk and 'b84 THE 1531 MERGE OF feat/hold-cast' in bk and 'b83 THE 1530 MERGE OF TEST 1529' in bk
+check('local BV = "b87"' in bk and 'b84 THE 1531 MERGE OF feat/hold-cast' in bk and 'b83 THE 1530 MERGE OF TEST 1529' in bk
       and 'b82 HOLD TO CAST IN THE GAME' in bk and 'b81 THE 1528b MERGE OF feat/hold-cast' in bk and 'b79 THE HOLD SPELL BUTTON BY TOUCH' in bk
       and 'P3[28] = function(pt) if type(pt) == "table" and type(pt.holdOpen) == "function" then pcall(pt.holdOpen) end end' in bk
       and 'for k = 0, 1 do P3[26 + k]' in bk
       and 'for k = 0, 2 do P3[29 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdTicks) == "function" then pcall(pm.holdTicks, 2 + k) end end end' in bk,
       '0. Book b84 (b83, b82, b81 kept): the swing 26 / 27, the hold chooser 28, the hold time 29 / 30 / 31')
-check('local NB = { V = "nbar26"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
+check('local NB = { V = "nbar27"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
       and 'nbar20 THE 1528b MERGE OF feat/hold-cast' in ab and 'nbar18 HOLD TO CAST' in ab,
       '0. ActionBar nbar25 (nbar22, nbar21, nbar20, nbar18 kept): tools/test_hold_wings.py tests it')
 
@@ -650,6 +650,24 @@ check(hm.get('cn') == 3 and a(K, 'WowCompanion.padMap.holdTicksNow()') == 2 and 
 K.execute('COMBAT = false; driveStates(); fire("PLAYER_REGEN_ENABLED"); advance(1); WowCompanion.padMapHold().tick(true)')
 check(last(K, 'holdmap').get('cn') == 2, "12. ... the fight's end: the clock takes it, cn 2", last(K, 'holdmap'))
 K.execute('WowCompanion.padMap.holdTicks(3); WowCompanion.padMapHold().tick(true)')
+# 23b. m202 (the int/1533 review): the app's session bump after a SHORT fire (Book b87's fourth-page codes 2-5) in our fire point too, so
+# the top screen's ring fills when the launcher lets the press go; in memory only, the padmap's hold.hb says it
+K.execute('WowCompanion.padMap.emit(true)')
+hd = (last(K, 'padmap').get('m') or {}).get('hold') or {}
+check(hd.get('hb') == 0 and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.678) < 1e-9, "12b. m202: the padmap's hold says hb 0, F 0.678 s", hd)
+db0 = a(K, 'WowCompanionSpellsDB.holdBump')
+check(a(K, 'WowCompanion.padMap.holdBump(2)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - (0.678 + 0.068)) < 1e-9,
+      '12b. holdBump(2): F + 2 x 34 ms = 0.746 s', a(K, 'WowCompanion.padMap.holdSecs()'))
+K.execute('WowCompanion.padMap.emit(true)')
+check(((last(K, 'padmap').get('m') or {}).get('hold') or {}).get('hb') == 2, "12b. ... the padmap's hold says hb 2 (the app stops sending)",
+      (last(K, 'padmap').get('m') or {}).get('hold'))
+check(a(K, '(WowCompanion.padMap.holdBump(4))') is False and a(K, '(WowCompanion.padMap.holdBump(-1))') is False
+      and a(K, 'WowCompanion.padMapHold().bump') == 2, '12b. only 0-3 steps (4, -1 refused)')
+check(a(K, 'WowCompanion.padMap.holdTicks(4)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - (0.895 + 0.068)) < 1e-9,
+      '12b. ... on every hold time (Long: 0.963 s)', a(K, 'WowCompanion.padMap.holdSecs()'))
+K.execute('WowCompanion.padMap.holdTicks(3)')
+check(a(K, 'WowCompanion.padMap.holdBump(0)') is True and abs(a(K, 'WowCompanion.padMap.holdSecs()') - 0.678) < 1e-9 and db0 is None
+      and a(K, 'WowCompanionSpellsDB.holdBump') is None, '12b. holdBump(0): F again; nothing saved')
 # 24. THE FOLLOW: q / ok / fail / none / gcd / a cast's START
 def fire_hold(L):
     edge(L, 'PAD4', True, lt=True); L.execute('LOOK(3)')

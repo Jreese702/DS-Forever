@@ -1555,14 +1555,23 @@ fun XServerScreen(
                 val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.deviceId)
                 // 1.0.29 key lag ("insane input lag on my face buttons"): the press's event time -> the game's handler, rate-limited
                 com.jrees.wowcompanion.KeyLag.atGame(it.event)
-                if (assignedSlot > 0) {
-                    handled = winHandler.onKeyEvent(it.event)
-                } else {
-                    winHandler.setCurrentController(it.event.deviceId)
-                    handled = physicalControllerHandler?.onKeyEvent(it.event) == true
-                    if (!handled) handled = PluviaApp.inputControlsView?.onKeyEvent(it.event) == true
-                    // Final fallback to WinHandler passthrough
-                    if (!handled) handled = winHandler.onKeyEvent(it.event)
+                // DS Forever (the int/1533 review, single screen mode): Android's CANCELLED up (a touch on the other screen moved the keys
+                // to the window there while the button was held) is handed to hold to cast as one - a kept press stays down for the game
+                // to its fill and casts the hold there (HoldRelease.cancelUp); any other press gets its up as before
+                val cancelUp = it.event.action == KeyEvent.ACTION_UP && it.event.isCanceled
+                if (cancelUp) com.jrees.wowcompanion.HoldCast.canceling(true)
+                try {
+                    if (assignedSlot > 0) {
+                        handled = winHandler.onKeyEvent(it.event)
+                    } else {
+                        winHandler.setCurrentController(it.event.deviceId)
+                        handled = physicalControllerHandler?.onKeyEvent(it.event) == true
+                        if (!handled) handled = PluviaApp.inputControlsView?.onKeyEvent(it.event) == true
+                        // Final fallback to WinHandler passthrough
+                        if (!handled) handled = winHandler.onKeyEvent(it.event)
+                    }
+                } finally {
+                    if (cancelUp) com.jrees.wowcompanion.HoldCast.canceling(false)
                 }
             }
             if (!handled && isKeyboard) {
@@ -1617,14 +1626,22 @@ fun XServerScreen(
                 val winHandler = xServerView!!.getxServer().winHandler
                 ControllerManager.getInstance().noteGamepadActivity(it.event)
                 val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.deviceId)
-                if (assignedSlot > 0) {
-                    handled = winHandler.onGenericMotionEvent(it.event)
-                } else {
-                    winHandler.setCurrentController(it.event.deviceId)
-                    handled = physicalControllerHandler?.onGenericMotionEvent(it.event!!) == true
-                    if (!handled) handled = PluviaApp.inputControlsView?.onGenericMotionEvent(it.event) == true
-                    // Final fallback to WinHandler passthrough
-                    if (!handled) handled = winHandler.onGenericMotionEvent(it.event)
+                // DS Forever (the int/1533 review): a joystick's ACTION_CANCEL (the keys moved to the other screen while held: its hat is
+                // let go, ExternalController) is handed to hold to cast as a cancel, as a cancelled key's up above
+                val cancelPad = it.event.actionMasked == MotionEvent.ACTION_CANCEL
+                if (cancelPad) com.jrees.wowcompanion.HoldCast.canceling(true)
+                try {
+                    if (assignedSlot > 0) {
+                        handled = winHandler.onGenericMotionEvent(it.event)
+                    } else {
+                        winHandler.setCurrentController(it.event.deviceId)
+                        handled = physicalControllerHandler?.onGenericMotionEvent(it.event!!) == true
+                        if (!handled) handled = PluviaApp.inputControlsView?.onGenericMotionEvent(it.event) == true
+                        // Final fallback to WinHandler passthrough
+                        if (!handled) handled = winHandler.onGenericMotionEvent(it.event)
+                    }
+                } finally {
+                    if (cancelPad) com.jrees.wowcompanion.HoldCast.canceling(false)
                 }
             }
             if (PluviaApp.touchpadView?.hasPointerCapture() != true && !PluviaApp.isOverlayPaused) {

@@ -61,9 +61,9 @@ def part_a():
     print("\n-- A the channel (Book b86 / PadMap m199)")
     pm_src = src("WowCompanionSpells", "PadMap.lua")
     bk_src = src("WowCompanionSpells", "Book.lua")
-    chk("A0. PadMap m201 (the 1533 merge; m200 the lease said at its lapse, m199 the mode), Book b86 and their notes", 'local PV = "m201"' in pm_src
+    chk("A0. PadMap m201 (the 1533 merge; m200 the lease said at its lapse, m199 the mode), Book b86 and their notes", 'local PV = "m202"' in pm_src
         and "m199 SINGLE SCREEN MODE" in pm_src and "m200 THE SINGLE SCREEN LEASE SAID" in pm_src
-        and 'local BV = "b86"' in bk_src and "b86 SINGLE SCREEN MODE" in bk_src and "b86 THE FOURTH PAGE" in bk_src)
+        and 'local BV = "b87"' in bk_src and "b86 SINGLE SCREEN MODE" in bk_src and "b86 THE FOURTH PAGE" in bk_src)
     W = tep.tct.boot()
     pm = 'WowCompanion.padMap'
     chk("A1. the API is there (single / singleSet / SS_TTL)",
@@ -169,7 +169,7 @@ def part_b():
     print("\n-- B our top cast bar for every cast (ActionBar nbar25)")
     import test_top_castbar as ttc
     ab = src("WowCompanion", "ActionBar.lua")
-    chk("B0. ActionBar nbar26 (the 1533 merge) and nbar25's note", 'local NB = { V = "nbar26"' in ab and "nbar25 SINGLE SCREEN MODE" in ab)
+    chk("B0. ActionBar nbar26 (the 1533 merge) and nbar25's note", 'local NB = { V = "nbar27"' in ab and "nbar25 SINGLE SCREEN MODE" in ab)
     L = ttc.boot()
     G = L.globals()
     L.execute('''
@@ -327,8 +327,48 @@ def part_d():
             {n: apart(b) for n, b in outs.items()})
 
 
+# ------------------------------------------------------------------------------------------------------------ E the hold's bump
+def part_e():
+    """The int/1533 review (Book b87 / PadMap m202): the fourth page's codes 2-5 = the app's session bump after a SHORT hold fire, 0-3
+    steps of 34 ms - PadMap's fire point (holdSecs: ActionBar's ring, the only one in single screen mode) holds it, so the ring fills when
+    the launcher lets the press go. In memory only; the mode's codes 0 / 1 untouched; no trace."""
+    print("\n-- E the hold's bump (Book b87 / PadMap m202)")
+    pm_src = src("WowCompanionSpells", "PadMap.lua")
+    bk_src = src("WowCompanionSpells", "Book.lua")
+    chk("E0. PadMap m202, Book b87 and their notes", 'local PV = "m202"' in pm_src and "m202 THE int/1533 REVIEW" in pm_src
+        and 'local BV = "b87"' in bk_src and "b87 THE int/1533 REVIEW" in bk_src
+        and 'for k = 0, 3 do P2.P4[2 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdBump) == "function" '
+            'then pcall(pm.holdBump, k) end end end' in bk_src)
+    W = tep.tct.boot()
+    pm = 'WowCompanion.padMap'
+    if W.eval('type(%s.holdBump) ~= "function" or type(%s.holdSecs) ~= "function"' % (pm, pm)):
+        chk("E1. the API is there (holdBump / holdSecs)", False)
+        return
+    db0 = W.eval(SER)
+    f0 = float(W.eval(pm + '.holdSecs()'))
+    ss0 = W.eval(pm + '.dpadState()').ss
+    for k, steps in ((3, 1), (5, 3), (2, 0), (4, 2)):
+        tep.tct.padtab(W, 39, 38, 0, k)
+        W.execute('runTimers(NOW + 1)')
+        f = float(W.eval(pm + '.holdSecs()'))
+        chk("E1. 39, 38, 0, %d: %d step(s) - F %.3f -> %.3f s" % (k, steps, f0, f), abs(f - (f0 + 0.034 * steps)) < 1e-9, (f0, f))
+    chk("E2. the mode untouched (ss as it was)", W.eval(pm + '.dpadState()').ss == ss0, (ss0, W.eval(pm + '.dpadState()').ss))
+    tep.tct.padtab(W, 39, 38, 0)
+    W.execute('NOW = NOW + 3; runTimers(NOW + 1)')
+    tep.tct.padtab(W, 2)
+    W.execute('runTimers(NOW + 1)')
+    chk("E3. a stale pick (3 s): a late 2 is not the bump (still 2 steps)", abs(float(W.eval(pm + '.holdSecs()')) - (f0 + 0.068)) < 1e-9)
+    chk("E4. nothing saved", W.eval('SER(WowCompanionSpellsDB, 0)') == db0)
+    bad = re.compile(r'SetCVar|SetBinding|SetOverrideBinding|CreateMacro|EditMacro|DeleteMacro|RegisterStateDriver|SaveBindings|ALT-|F1[0-2]?\b')
+    blk = pm_src[pm_src.index("-- m202 THE APP'S SESSION BUMP"):pm_src.index("function OV.hold.setTicks(n)")]
+    bkb = bk_src[bk_src.index("-- b87 (PadMap m202"):bk_src.index("if type(pad) == \"table\" and type(pad.op) == \"function\" then")]
+    code = "\n".join(l.split("--", 1)[0] for l in (blk + bkb).splitlines())
+    chk("E5. the new code calls no CVar / binding / macro API, never the saved variables", not bad.search(code) and "WowCompanionSpellsDB" not in code)
+    tep.tct.clean(W, "E5")
+
+
 def main():
-    for fn in (part_a, part_b, part_c, part_d):
+    for fn in (part_a, part_b, part_c, part_d, part_e):
         try:
             fn()
         except Exception as e:      # noqa: BLE001

@@ -207,6 +207,10 @@ class EditPreviewShotsTest {
         .onTab(HomeTab.COMBAT) { it.copy(fight = HomeLayout.FightBand.TOP, fightCast = HomeLayout.FightCast.TOP) }
         .onTab(HomeTab.PARTY) { it.copy(cast = HomeLayout.CastDock.SPLIT, party = HomeLayout.PartyDock.ABOVE_CHAT, fight = HomeLayout.FightBand.GROW) }
 
+    /** SingleScreen.inUse (DsForeverScreen alone sets it on the device; SingleNpcShotsTest's way) */
+    private fun singleInUse(on: Boolean) =
+        SingleScreen::class.java.getDeclaredField("inUse").apply { isAccessible = true }.setBoolean(null, on)
+
     @Test fun thePreviewFollowsTheTabThePicksAndTheSession() {
         HomeSettings.swingTimer = true
         val p = page(REC)
@@ -221,6 +225,11 @@ class EditPreviewShotsTest {
         assertEquals(HomeTab.COMBAT, m.tab)
         assertTrue("the host heard the tab change", heard > 0)
         assertEquals("In combat, Top screen + Cast bar Top + the swing", 35, p.home.editPreviewCode())
+        // the int/1533 review: single screen mode lays Edit Home in the centred panel, whose opaque ground covers every previewed piece
+        // (the Wings halves at x 380..740 / 1180..1540, the party rows at 640..1360: all inside 340..1580) - none sent
+        singleInUse(true)
+        try { assertEquals("single screen mode: none", EditPreview.OFF, p.home.editPreviewCode()) } finally { singleInUse(false) }
+        assertEquals("two screens again: the tab's own", 35, p.home.editPreviewCode())
         shot(p, "01_bottom_in_combat_top_cast_top")
         HomeSettings.swingTimer = false
         assertEquals("the swing off", 34, p.home.editPreviewCode())

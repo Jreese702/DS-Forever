@@ -226,7 +226,7 @@ class HoldReleaseTest {
         // the launcher's own copy (WinHandler.holdOut): no 0x3FF truncation, only A / X / Y of the buttons
         val w = java.io.File(listOf(java.io.File("../app"), java.io.File("app")).first { it.isDirectory },
             "src/main/java/com/winlator/winhandler/WinHandler.java").readText()
-        assertTrue(w.contains("o.buttons = (short) (s.buttons & ~(m & 0x0D));") && !w.contains("& 0x3FF"))
+        assertTrue(w.contains("o.buttons = (short) ((s.buttons | (k & 0x0D)) & ~(m & 0x0D));") && !w.contains("& 0x3FF"))
     }
 
     // 11
@@ -340,5 +340,146 @@ class HoldReleaseTest {
         assertEquals(1, lines.count { it.startsWith("fire unanswered pos=5") })
         HoldCast.padIn(0, false, false, false, false, now)
         HoldCast.setResend(null); HoldCast.log = { }
+    }
+
+    // 14 the int/1533 review (input focus, single screen mode): ANDROID'S CANCELLED UP. With Android's launcher on the bottom screen a
+    // palm's touch there moves the keys to it, and the launcher's activity gets a FLAG_CANCELED up for every key still held (a joystick
+    // ACTION_CANCEL for the hat). Written as an up at once, a kept X cast its TAP at 0.4 s while the player still held it for the hold.
+    // Now a CONFIRMED press keeps its down for the game to its fire point and is let go there (the hold casts at the fill); its physical
+    // state is up from the cancel, so the first press after the keys come back is a clean edge (never swallowed by a FORCED mask)
+    private fun gameX(e: HoldRelease, physical: Boolean) =
+        HoldRelease.isDown(X, HoldRelease.outButtons(if (physical) 1 shl 2 else 0, e.forcedMask, e.keptMask), BooleanArray(4))
+
+    @Test fun aCancelledUpKeepsTheKeptPressToItsFill() {
+        val e = engine()
+        val fires = ArrayList<Pair<Int, Int>>()
+        e.onFire = { p, l -> fires += p to l }
+        e.edge(X, true, 1000); assertTrue(e.keep("PAD3", 5, 0, 3, 1100))
+        e.cancelUp(X, 1400)
+        assertEquals(HoldRelease.KEPT, e.state(X))
+        assertTrue("the cancel at 1400: the game still has X down (the controller's state reads up)", gameX(e, physical = false))
+        assertEquals("its fire point stands", 1678L, e.nextAt())
+        assertFalse(e.due(1677)); assertTrue(gameX(e, false))
+        assertTrue("F: the output changed", e.due(1678))
+        assertFalse("X up for the game at the fill: the router's release path casts the hold", gameX(e, false))
+        assertEquals("the fire's picture", listOf(5 to 0), fires)
+        assertEquals(HoldRelease.IDLE, e.state(X)); assertEquals(0, e.keptMask); assertEquals(0, e.forcedMask)
+        e.edge(X, true, 2000)
+        assertTrue("the next press after the hand-back passes at once (no FORCED mask to swallow it)", gameX(e, true))
+        assertEquals(HoldRelease.HELD, e.state(X))
+    }
+
+    @Test fun aCancelledUpOfAnythingElseIsAnUp() {
+        val t = engine()
+        t.edge(X, true, 1000)                                            // no keep word (not a hold press)
+        t.cancelUp(X, 1200)
+        assertEquals("not kept: the up passes at once, as 1532", HoldRelease.IDLE, t.state(X)); assertEquals(0, t.keptMask)
+        assertFalse(gameX(t, false))
+        val f = engine()
+        f.edge(X, true, 1000); f.keep("PAD3", 5, 0, 3, 1100); f.due(1678)
+        f.cancelUp(X, 1900)
+        assertEquals("already let go for the game (FORCED): the cancel is its physical up", HoldRelease.IDLE, f.state(X))
+        assertEquals(0, f.forcedMask); assertEquals(0, f.keptMask)
+        f.edge(X, true, 2500); assertTrue("the next press passes", gameX(f, true))
+    }
+
+    @Test fun aKeptCancelledPressIsNeverLeftDown() {
+        // the keys back and the button pressed again before F: the same press for the game (it never saw an up) - fired at its point
+        val r = engine()
+        r.edge(X, true, 1000); r.keep("PAD3", 5, 0, 3, 1100); r.cancelUp(X, 1300)
+        r.edge(X, true, 1500)
+        assertEquals(HoldRelease.CONFIRMED, r.state(X)); assertEquals(0, r.keptMask); assertTrue(gameX(r, true))
+        assertTrue(r.due(1678)); assertFalse("fired as a held press: up for the game, still held", gameX(r, true))
+        assertEquals(HoldRelease.FORCED, r.state(X))
+        // gates closed at F: let go all the same (no picture), never a stuck down
+        val g = engine()
+        val fires = ArrayList<Int>()
+        g.onFire = { p, _ -> fires += p }
+        g.edge(X, true, 1000); g.keep("PAD3", 5, 0, 3, 1100); g.cancelUp(X, 1300)
+        g.gatesOpen = { false }
+        assertTrue(g.due(1678)); assertFalse(gameX(g, false)); assertEquals(emptyList<Int>(), fires)
+        // the screen lost, a controller change, another word for its position: let go at once (true = send the state again)
+        val p = engine()
+        p.edge(X, true, 1000); p.keep("PAD3", 5, 0, 3, 1100); p.cancelUp(X, 1300)
+        assertTrue("pause", p.pause()); assertFalse(gameX(p, false)); assertEquals(HoldRelease.NEVER, p.nextAt())
+        val c = engine()
+        c.edge(X, true, 1000); c.keep("PAD3", 5, 0, 3, 1100); c.cancelUp(X, 1300)
+        assertTrue("a controller change", c.cancelPending()); assertFalse(gameX(c, false))
+        val w = engine()
+        w.edge(X, true, 1000); w.keep("PAD3", 5, 0, 3, 1100); w.cancelUp(X, 1300)
+        assertTrue("its position closed", w.closed(5, 1350)); assertFalse(gameX(w, false)); assertEquals(HoldRelease.IDLE, w.state(X))
+        val n = engine()
+        n.edge(X, true, 1000); n.keep("PAD3", 5, 0, 3, 1100); n.cancelUp(X, 1300)
+        n.reset(); assertEquals(0, n.keptMask)
+        // nothing kept: pause / cancelPending say nothing changed (no resend)
+        val q = engine()
+        q.edge(X, true, 1000); q.keep("PAD3", 5, 0, 3, 1100)
+        assertFalse(q.pause())
+    }
+
+    @Test fun theHatsCancelThroughHoldCast() {
+        HoldCast.gates = { true }
+        HoldCast.later = { _, _ -> }
+        var scheduled = HoldRelease.NEVER
+        HoldCast.schedule = { scheduled = it }
+        var resent = 0
+        HoldCast.setResend { resent++ }
+        var now = 20_000L
+        HoldCast.clock = { now }; HoldCast.bandClock = { now }
+        try {
+            HoldCast.padReset(true)
+            HoldCast.onMap(JSONObject().put("type", "holdmap").put("on", true).put("b", "bare:2").put("why", "on").put("cn", 3).put("ft", 17))
+            HoldCast.padIn(0, true, false, false, false, now)                           // D-pad Up down (the hat)
+            now += 100
+            HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 2).put("hk", "keep").put("key", "PADDUP").put("need", 3))
+            assertEquals(20_678L, scheduled)
+            // the palm at +400: the hat's ACTION_CANCEL, centred (ExternalController), handed over as a cancel (XServerScreen)
+            now = 20_400L
+            HoldCast.canceling(true)
+            try { HoldCast.padIn(0, false, false, false, false, now) } finally { HoldCast.canceling(false) }
+            assertEquals("Up kept down for the game", HoldRelease.bitOf(UP), HoldCast.keptMask())
+            assertTrue("the game's Up", HoldRelease.outDpad(0, false, HoldCast.forcedMask(), HoldCast.keptMask()))
+            now = 20_678L; HoldCast.fireNow(now)
+            assertEquals("the fill: the state sent again with Up let go", 1, resent)
+            assertEquals(0, HoldCast.keptMask()); assertEquals(0, HoldCast.forcedMask())
+            assertFalse(HoldRelease.outDpad(0, false, HoldCast.forcedMask(), HoldCast.keptMask()))
+            // keys back, Up pressed again: a clean edge, the game gets it at once
+            now = 21_500L
+            HoldCast.padIn(0, true, false, false, false, now)
+            assertTrue(HoldRelease.outDpad(0, true, HoldCast.forcedMask(), HoldCast.keptMask()))
+            assertEquals(HoldRelease.HELD, HoldCast.release.state(UP))
+            HoldCast.padIn(0, false, false, false, false, now + 100)
+            // without the cancel flag an up is an up (the tap's road, as before)
+            HoldCast.padIn(1 shl 2, false, false, false, false, now + 200)
+            HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 5).put("hk", "keep").put("key", "PAD3").put("need", 3))
+            HoldCast.padIn(0, false, false, false, false, now + 400)
+            assertEquals(HoldRelease.IDLE, HoldCast.release.state(X)); assertEquals(0, HoldCast.keptMask())
+            // the screen lost with a kept press: let go and sent at once
+            HoldCast.padIn(1 shl 2, false, false, false, false, now + 1000)
+            HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 5).put("hk", "keep").put("key", "PAD3").put("need", 3))
+            HoldCast.canceling(true)
+            try { HoldCast.padIn(0, false, false, false, false, now + 1300) } finally { HoldCast.canceling(false) }
+            val r0 = resent
+            HoldCast.focusLost()
+            assertEquals(r0 + 1, resent); assertEquals(0, HoldCast.keptMask())
+            HoldCast.focusBack()
+        } finally {
+            HoldCast.setResend(null)
+        }
+    }
+
+    @Test fun theCancelsRoadsInTheSources() {
+        fun src(mod: String, path: String) = java.io.File(listOf(java.io.File("../$mod"), java.io.File(mod)).first { it.isDirectory }, path).readText()
+        val x = src("app", "src/main/java/app/gamenative/ui/screen/xserver/XServerScreen.kt")
+        val keys = x.substringAfter("val onKeyEvent: (AndroidEvent.KeyEvent) -> Boolean = {").substringBefore("val onMotionEvent:")
+        assertTrue("a cancelled key up is handed over as one", keys.contains("it.event.action == KeyEvent.ACTION_UP && it.event.isCanceled"))
+        assertTrue(keys.contains("com.jrees.wowcompanion.HoldCast.canceling(true)") && keys.contains("com.jrees.wowcompanion.HoldCast.canceling(false)"))
+        val motion = x.substringAfter("val onMotionEvent: (AndroidEvent.MotionEvent) -> Boolean = {").substringBefore("val onGuestProgramTerminated:")
+        assertTrue("a joystick ACTION_CANCEL too", motion.contains("MotionEvent.ACTION_CANCEL") && motion.contains("com.jrees.wowcompanion.HoldCast.canceling(true)"))
+        val ec = src("app", "src/main/java/com/winlator/inputcontrols/ExternalController.java")
+        assertTrue("the hat's cancel is taken and centred (its axes are the last ones)", ec.contains("isJoystickCancel(event)") &&
+            ec.contains("java.util.Arrays.fill(this.state.dpad, false);"))
+        val w = src("app", "src/main/java/com/winlator/winhandler/WinHandler.java")
+        assertTrue("the kept downs on, the forced ups off", w.contains("o.buttons = (short) ((s.buttons | (k & 0x0D)) & ~(m & 0x0D));"))
     }
 }

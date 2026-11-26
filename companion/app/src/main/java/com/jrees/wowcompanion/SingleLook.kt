@@ -58,6 +58,10 @@ object SingleLook {
     val PLAY = Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = true)
     val COVERED = Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = false)
 
+    /** the int/1533 review: a text field of the top window can type under [l] only while its window shows (FULL); HIDDEN draws none of
+     *  its content (the strips are windows of their own), so a field typing then gives the keys back (TopWindow.look) */
+    fun canType(l: Look): Boolean = l.frame == Frame.FULL
+
     fun of(i: In): Look {
         val inRoom = i.room != HOME
         // pause / NPC over Home: Home's page shows only while it is up as a glance

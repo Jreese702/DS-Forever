@@ -98,7 +98,7 @@ def boot(pre=""):
 
 def main():
     ab = open(tnb.AB, encoding="utf-8").read()
-    chk("0. ActionBar nbar25 and its note (nbar21, nbar18 kept)", 'local NB = { V = "nbar26"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab
+    chk("0. ActionBar nbar25 and its note (nbar21, nbar18 kept)", 'local NB = { V = "nbar27"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab
         and "nbar21 THE HOLD SPELL ON THE TOP SCREEN" in ab and "nbar18 HOLD TO CAST" in ab)
     chk("0. no beads any more", "HOLD_BEADS" not in ab and "hb.beads" not in ab)
     L, G = boot()
@@ -185,6 +185,18 @@ def main():
     chk("2. Short (0.46 s): charged by 0.5 s held", b[2].hcharge == "charged", b[2].hcharge)
     L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.895; HELD.PADDUP = true; TICK(0.7)')
     chk("2. Long (0.90 s): still filling at 0.7 s", isinstance(b[2].hcharge, (int, float)) and 0 < b[2].hcharge < 1, b[2].hcharge)
+    L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.678')
+    # nbar27 (the int/1533 review): the fill point is taken ONCE at the press (b.hdSure), as the app's launcher freezes its fire point
+    # there - a frame time (ft) or a bump that changes mid-hold no more moves the fill off the cast
+    L.execute('KEPT[2] = true; HELD.PADDUP = true; TICK(0.3)')
+    sure0 = float(b[2].hdSure)
+    L.execute('SECS = 0.95; TICK(0.45)')
+    chk("2. nbar27: the fill point frozen at the press (0.678 s): charged by 0.75 s held although holdSecs now says 0.95",
+        abs(sure0 - 0.678) < 1e-9 and b[2].hcharge == "charged" and abs(float(rg2.cd.cdDur) - (0.678 - 0.25)) < 1e-9,
+        (sure0, b[2].hcharge, rg2.cd.cdDur))
+    L.execute('HELD.PADDUP = nil; TICK(0.1); HELD.PADDUP = true; TICK(0.75)')
+    chk("2. ... the next press takes the new point (0.95 s): still filling at 0.75 s", abs(float(b[2].hdSure) - 0.95) < 1e-9
+        and isinstance(b[2].hcharge, (int, float)) and 0 < b[2].hcharge < 1, (b[2].hdSure, b[2].hcharge))
     L.execute('HELD.PADDUP = nil; TICK(0.1); SECS = 0.678')
     # the 1531 audit: a WINDOW taking the pad (the bars unusable: the bar reads no buttons then) mid-press: the ring goes, it never
     # keeps filling on the last read (the router's kept flag can stay up while the window has the release)

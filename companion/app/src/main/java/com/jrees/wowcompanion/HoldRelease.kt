@@ -25,6 +25,12 @@ package com.jrees.wowcompanion
  * Controls (never B): A, X, Y and the D-pad's four, keyed by the keep word's game key (PAD1 / PAD3 / PAD4 / PADDUP ...; else its
  * position). The mask: bits 0 / 2 / 3 = GamepadState.buttons' A / X / Y, bits 4..7 = dpad[0..3] (up, right, down, left) of its own -
  * never bits 1 (B), 4..15 of the buttons (the shoulders, Select, Start, the sticks, L2 / R2), the axes or the sticks.
+ *
+ * ANDROID'S CANCELLED UP ([cancelUp]; the int/1533 review, single screen mode): a touch on the other screen moves Android's keys to the
+ * window there (Android's launcher: its own window can take them), and the launcher's activity gets a FLAG_CANCELED up for every key
+ * still held (a joystick ACTION_CANCEL for the hat) while the finger is still on the button. A CONFIRMED press is then KEPT: its down
+ * stays the game's ([keptMask], over the controller's state) to its fire point and is let go there - the hold casts at the fill, as held;
+ * its physical state is up from the cancel, so the first press after the keys come back is a clean edge. Anything else: an up as made.
  */
 class HoldRelease {
     companion object {
@@ -42,6 +48,8 @@ class HoldRelease {
         const val CTLS = 7
 
         const val IDLE = 0; const val HELD = 1; const val CONFIRMED = 2; const val FORCED = 3; const val GAVE_UP = 4
+        /** a CONFIRMED press whose up Android cancelled ([cancelUp]): down for the game to its fire point ([keptMask]), physically up */
+        const val KEPT = 5
 
         /** the fire point after the press (ms): [n] the hold clock's looks, [ft] the game's longest frame (null: unknown) */
         fun fireMs(n: Int, ft: Int?): Long { val f = (ft?.takeIf { it > 0 } ?: FT_UNKNOWN).toLong(); return n * (TICK_MS + f) + f + JITTER_MS }
@@ -61,10 +69,12 @@ class HoldRelease {
         /** the mask's buttons part (A / X / Y only) */
         const val BUTTON_BITS = 0x0D
 
-        /** GamepadState.buttons as the game gets it under [mask]: A / X / Y up where forced, every other bit as it is */
-        fun outButtons(buttons: Int, mask: Int): Int = buttons and (mask and BUTTON_BITS).inv()
-        /** dpad[i] (0 up, 1 right, 2 down, 3 left) as the game gets it under [mask] */
-        fun outDpad(i: Int, v: Boolean, mask: Int): Boolean = v && (mask and (1 shl (4 + i))) == 0
+        /** GamepadState.buttons as the game gets it under [mask]: A / X / Y up where forced, down where [kept], every other bit as it is
+         *  (WinHandler.holdOut writes the same) */
+        fun outButtons(buttons: Int, mask: Int, kept: Int = 0): Int = (buttons or (kept and BUTTON_BITS)) and (mask and BUTTON_BITS).inv()
+        /** dpad[i] (0 up, 1 right, 2 down, 3 left) as the game gets it under [mask] (forced up) and [kept] (kept down) */
+        fun outDpad(i: Int, v: Boolean, mask: Int, kept: Int = 0): Boolean =
+            (v || (kept and (1 shl (4 + i))) != 0) && (mask and (1 shl (4 + i))) == 0
         /** a control's physical state in an input: [buttons] GamepadState's, [dpad] up / right / down / left */
         fun isDown(ctl: Int, buttons: Int, dpad: BooleanArray): Boolean = when (ctl) {
             A -> buttons and 1 != 0; X -> buttons and (1 shl 2) != 0; Y -> buttons and (1 shl 3) != 0
@@ -84,7 +94,8 @@ class HoldRelease {
     var cn: Int? = null
         @Synchronized set(v) {
             field = v?.takeIf { it in 2..4 }
-            // a need that changed while a press is held: that press's early release is off (the release decides)
+            // a need that changed while a press is held: that press's early release is off (the release decides; a KEPT press's up
+            // is still let go at its fire point: it came already)
             for (c in 0 until CTLS) if ((st[c] == HELD || st[c] == CONFIRMED) && cnAt[c] != (field ?: -1)) giveUp(c)
         }
     /** the game's longest recent frame (ms) as the add-on says it (`ft`); null = unknown */
@@ -92,6 +103,8 @@ class HoldRelease {
     /** the session's correction after a SHORT fire (ms) */
     var bump = 0L
         private set
+    /** [bump] in [BUMP_STEP_MS] steps (0-3): what the add-on's fire point is told (PadMapModel.bumpCells) */
+    val bumpSteps: Int get() = (bump / BUMP_STEP_MS).toInt().coerceIn(0, (BUMP_MAX_MS / BUMP_STEP_MS).toInt())
     /** the gates (true = open): read at the fire moment; closed = no early release, the release decides */
     var gatesOpen: () -> Boolean = { true }
     /** a hold fired at (game position, its layer): the picture's takeover */
@@ -101,6 +114,9 @@ class HoldRelease {
     /** the controls forced up now (read on every write: volatile, read once per write) */
     @Volatile var forcedMask = 0
         private set
+    /** the controls whose down the game keeps although their up came, cancelled ([KEPT]; the same bits as [forcedMask]) */
+    @Volatile var keptMask = 0
+        private set
 
     @Synchronized fun state(ctl: Int): Int = st.getOrElse(ctl) { IDLE }
     @Synchronized fun fireAtOf(ctl: Int): Long = fireAt.getOrElse(ctl) { NEVER }
@@ -108,6 +124,12 @@ class HoldRelease {
     /** the control [ctl] went down / up at [now] (the write that carries it follows at once) */
     @Synchronized fun edge(ctl: Int, down: Boolean, now: Long) {
         if (ctl !in 0 until CTLS) return
+        if (st[ctl] == KEPT) {
+            // the keys back and pressed again before the fire point: the same press for the game (it never saw an up), fired at its
+            // point as a held one; an up here is nothing new (the physical up was the cancel)
+            if (down) { unkeep(ctl); st[ctl] = CONFIRMED }
+            return
+        }
         if (down) {
             if (st[ctl] == FORCED) unforce(ctl)                          // an up we never saw: this is a new press, it passes at once
             st[ctl] = HELD; t0[ctl] = now; kpos[ctl] = 0; klay[ctl] = 0
@@ -132,10 +154,28 @@ class HoldRelease {
         return true
     }
 
+    /**
+     * Android cancelled the up of [ctl] at [now] (the keys moved to another screen's window while it was held): a CONFIRMED press is
+     * [KEPT] - down for the game to its fire point, let go there ([due]); any other state is an up as [edge] (a press that was not kept
+     * passes at once, as 1532; a FORCED one was up for the game already). The caller writes the state at once, as for every edge
+     */
+    @Synchronized fun cancelUp(ctl: Int, now: Long) {
+        if (ctl !in 0 until CTLS) return
+        if (st[ctl] != CONFIRMED) { edge(ctl, false, now); return }
+        st[ctl] = KEPT
+        keptMask = keptMask or bitOf(ctl)
+    }
+
     /** another word for position [pos] (a press that was not kept, an up, a kept press's release): a confirmed press there waits for
-     *  its own keep word again (a stale keep of a quick tap before it is closed by that tap's own words) */
-    @Synchronized fun closed(pos: Int, now: Long) {
-        for (c in 0 until CTLS) if (st[c] == CONFIRMED && kpos[c] == pos) { st[c] = HELD; kpos[c] = 0 }
+     *  its own keep word again (a stale keep of a quick tap before it is closed by that tap's own words); a KEPT one there is let go
+     *  at once (its up came already). True = the output changed (send the state again) */
+    @Synchronized fun closed(pos: Int, now: Long): Boolean {
+        var changed = false
+        for (c in 0 until CTLS) {
+            if (st[c] == CONFIRMED && kpos[c] == pos) { st[c] = HELD; kpos[c] = 0 }
+            else if (st[c] == KEPT && kpos[c] == pos) { letGo(c); changed = true }
+        }
+        return changed
     }
 
     /** the fires due at [now]; true = the output changed (send the state again) */
@@ -151,6 +191,15 @@ class HoldRelease {
                     onFire?.invoke(kpos[c], klay[c])
                 }
                 HELD -> if (fireAt[c] != NEVER && now > fireAt[c] + KEEP_LATE_MS) giveUp(c)
+                // its up came (cancelled): let go for the game at the fill - the fire (its picture) while the gates are open, else
+                // just the up (never a down left behind)
+                KEPT -> if (now >= fireAt[c]) {
+                    val open = !paused && gatesOpen()
+                    val p = kpos[c]; val l = klay[c]
+                    letGo(c)
+                    changed = true
+                    if (open) onFire?.invoke(p, l)
+                }
             }
         }
         return changed
@@ -159,7 +208,7 @@ class HoldRelease {
     /** the next moment [due] has work: a confirmed press's fire point */
     @Synchronized fun nextAt(): Long {
         var n = NEVER
-        for (c in 0 until CTLS) if (st[c] == CONFIRMED && fireAt[c] < n) n = fireAt[c]
+        for (c in 0 until CTLS) if ((st[c] == CONFIRMED || st[c] == KEPT) && fireAt[c] < n) n = fireAt[c]
         return n
     }
 
@@ -169,20 +218,32 @@ class HoldRelease {
     /** a fire the add-on answered with the TAP (the up beat the n-th look): later fires wait [BUMP_STEP_MS] longer */
     @Synchronized fun short() { bump = (bump + BUMP_STEP_MS).coerceAtMost(BUMP_MAX_MS) }
 
-    /** the app lost the game screen: nothing fires while away (a forced button stays up for the game until its physical up) */
-    @Synchronized fun pause() { paused = true; cancelPending() }
+    /** the app lost the game screen: nothing fires while away (a forced button stays up for the game until its physical up; a KEPT
+     *  one is let go now). True = the output changed (send the state again) */
+    @Synchronized fun pause(): Boolean { paused = true; return cancelPending() }
     /** back: a forced control that reads up now ([isDown]: the physical state) is let go */
     @Synchronized fun resume(isDown: (Int) -> Boolean) {
         paused = false
         for (c in 0 until CTLS) if (st[c] == FORCED && !isDown(c)) { unforce(c); st[c] = IDLE }
     }
-    /** every pending fire off (the release decides); forced controls stay up for the game until their physical up */
-    @Synchronized fun cancelPending() { for (c in 0 until CTLS) if (st[c] == HELD || st[c] == CONFIRMED) giveUp(c) }
+    /** every pending fire off (the release decides); forced controls stay up for the game until their physical up; a KEPT one (its
+     *  up came, cancelled) is let go now. True = the output changed (send the state again) */
+    @Synchronized fun cancelPending(): Boolean {
+        var changed = false
+        for (c in 0 until CTLS) when (st[c]) {
+            HELD, CONFIRMED -> giveUp(c)
+            KEPT -> { letGo(c); changed = true }
+        }
+        return changed
+    }
     /** everything clean (a new session, the tests) */
     @Synchronized fun reset() {
-        st.fill(IDLE); fireAt.fill(NEVER); kpos.fill(0); klay.fill(0); forcedMask = 0; paused = false; bump = 0L
+        st.fill(IDLE); fireAt.fill(NEVER); kpos.fill(0); klay.fill(0); forcedMask = 0; keptMask = 0; paused = false; bump = 0L
     }
 
     private fun giveUp(c: Int) { st[c] = GAVE_UP; fireAt[c] = NEVER }
     private fun unforce(c: Int) { forcedMask = forcedMask and bitOf(c).inv() }
+    private fun unkeep(c: Int) { keptMask = keptMask and bitOf(c).inv() }
+    /** a KEPT press's up for the game (it is physically up already): nothing left of it */
+    private fun letGo(c: Int) { unkeep(c); st[c] = IDLE; fireAt[c] = NEVER }
 }

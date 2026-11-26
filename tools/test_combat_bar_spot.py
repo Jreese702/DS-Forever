@@ -305,7 +305,7 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar18 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar26"' in src
+    chk("0. ActionBar's tag nbar18 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar27"' in src
         and "nbar12 THE WINGS' PLATES AND PARTY MODE" in src and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)

@@ -3428,6 +3428,10 @@ class HomeView(
     /** EDIT HOME'S TOP-SCREEN PREVIEW ([EditPreview]): the code the top screen should show now - the live session's tab and its page (the
      *  draft), the app's Swing timer and the add-on's words; [EditPreview.OFF] with edit mode closed, parked (a fight, another room) */
     fun editPreviewCode(): Int {
+        // the int/1533 review: single screen mode lays Edit Home in the centred panel, whose opaque ground covers every previewed piece
+        // (the Wings halves, the party rows: all inside x 340..1580) - nothing is sent that could not be seen, and the page-3 batches
+        // never hold up the mode's own `ss` lease (SingleTop) behind them
+        if (SingleScreen.inUse) return EditPreview.OFF
         val m = edit?.takeIf { !it.parked && !editAway } ?: return EditPreview.OFF
         val d = padMap?.dpad
         return EditPreview.code(m.tab, m.page, HomeSettings.swingTimer, d?.ct, d?.cc)

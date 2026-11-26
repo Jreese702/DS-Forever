@@ -126,6 +126,27 @@ class SingleLookTest {
         assertEquals(720 - SingleNpc.START_H, SingleNpc.startRect(1280, 720)[1])
     }
 
+    /**
+     * THE int/1533 REVIEW (input focus): a field typing (Bags' search) when a pull lets go of the room (PLAY, HIDDEN) kept the invisible
+     * window focusable over the whole screen - every pad press of the fight, B too, went to it, never to the game. A HIDDEN look can type
+     * in nothing (its content is not drawn; the strips are their own windows), so the top window gives the keys back first; every FULL
+     * look (a room, an NPC window, the report, the start pages) keeps a field typing
+     */
+    @Test fun aHiddenLookGivesATypingFieldsKeysBack() {
+        assertFalse(SingleLook.canType(SingleLook.PLAY)); assertFalse(SingleLook.canType(SingleLook.COVERED))
+        for (i in listOf(play.copy(tool = 1), play.copy(lb = true), play.copy(fightRolls = true), play.copy(waiting = true)))
+            assertFalse("$i", SingleLook.canType(SingleLook.of(i)))
+        for (i in listOf(play.copy(room = "BAGS"), play.copy(room = "PROFESSIONS"), play.copy(npc = true), play.copy(report = true),
+            play.copy(startPages = true), play.copy(pause = true, room = "BAGS"), play.copy(glanceHub = true), play.copy(quick = true)))
+            assertTrue("$i", SingleLook.canType(SingleLook.of(i)))
+        val tw = listOf(java.io.File("src/main/java/com/jrees/wowcompanion/fork/TopWindow.kt"),
+            java.io.File("dsforever/src/main/java/com/jrees/wowcompanion/fork/TopWindow.kt")).first { it.isFile }.readText()
+        val look = tw.substringAfter("override fun look(l: SingleLook.Look) {").substringBefore("override fun sub(")
+        val give = look.indexOf("if (typer.typing && !pageSlot.up && !SingleLook.canType(l)) { typer.focusable(false); return }")
+        assertTrue("the keys back before the decor is laid", give in 0 until look.indexOf("showDecor(full || pageSlot.up || typer.typing)"))
+        assertTrue("the typer's hook lays the look again", tw.contains("else lookNow?.let { l -> lookNow = null; look(l) } }"))
+    }
+
     @Test fun theHostCountsTheWaitingPageApartOnceTheGameIsUp() {
         val h = listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt"),
             java.io.File("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")).first { it.canRead() }.readText()

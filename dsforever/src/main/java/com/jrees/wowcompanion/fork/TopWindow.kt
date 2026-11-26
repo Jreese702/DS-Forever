@@ -200,6 +200,10 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     override fun look(l: SingleLook.Look) {
         if (lookNow == l) return
         lookNow = l
+        // the int/1533 review: a field typing when the look turns HIDDEN (a pull let go of the room: PLAY) is not drawn any more - kept,
+        // the invisible window held display 0's keys (every pad press of the fight, B too) and its touches. The keys go back to the game
+        // first; the typer's hook lays this look again with nothing typing (SingleLook.canType). The browser page keeps its own focus
+        if (typer.typing && !pageSlot.up && !SingleLook.canType(l)) { typer.focusable(false); return }
         val full = l.frame == SingleLook.Frame.FULL
         // the browser page and a typing field keep the window up whatever the look says
         showDecor(full || pageSlot.up || typer.typing)
@@ -233,7 +237,8 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         hintView.invalidate()
         s.put(hintView)
         val k = screenH / 1080f
-        val w = (HINT_W * k).toInt(); val h = (HINT_H * k).toInt()
+        // the int/1533 review: a note too long for one line (Home's pad-layer notes, es / fr) takes two - the plate grows down for them
+        val w = (HINT_W * k).toInt(); val h = com.jrees.wowcompanion.UiKit.singleHintH(text, k).toInt()
         val l = (screenW - w) / 2; val t = (HINT_Y * k).toInt()
         s.place(l, t, l + w, t + h)
         s.touchable(false)
@@ -247,9 +252,10 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     }
 
     companion object {
-        /** the hint plate: 640 x 72 at y 216 on a 1080-line screen (below Trail's compass, y 4..80, and Hub's target bar under it) */
-        const val HINT_W = 640f
-        const val HINT_H = 72f
+        /** the hint plate: 640 x 72 at y 216 on a 1080-line screen (below Trail's compass, y 4..80, and Hub's target bar under it); 640
+         *  x 104 for a note on two lines (UiKit.singleHintH) */
+        const val HINT_W = com.jrees.wowcompanion.UiKit.SINGLE_HINT_W
+        const val HINT_H = com.jrees.wowcompanion.UiKit.SINGLE_HINT_H
         const val HINT_Y = 216f
     }
 }

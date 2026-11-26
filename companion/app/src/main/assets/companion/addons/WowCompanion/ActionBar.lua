@@ -2,6 +2,10 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar27 THE int/1533 REVIEW, THE RING FILLS WHEN THE HOLD CASTS (PadMap m202; the user: "I also want this to cast right when the
+-- hold bar is filled"): the glowing ring's fill point is taken ONCE, at the press (b.hdSure), as the app's launcher freezes its fire
+-- point at the press - a frame time that changed mid-hold no more moved the fill off the cast; holdSecs holds the app's session bump
+-- (PadMap m202). Nothing else changed.
 -- nbar26 THE 1533 MERGE OF feat/single-screen (test build 1533, 2026-11-25; PadMap m201): the two nbar25s together - hold to cast's
 -- visuals (the shaded badge, the glowing ring, the gold checked ring's takeover, the face says the spell it shows) and single screen
 -- mode's top cast bar for every cast (WC.padMap.single); nothing else changed.
@@ -2587,7 +2591,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar26", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar27", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -2986,9 +2990,9 @@ function NB.holdTick(held)
         local b = f.btn[p]
         if b then
             local down = (math.floor(held / 2 ^ (p - 1)) % 2) == 1
-            if down and not b.hdDown then b.hdAt = now - NB.POLL_S * 0.5; b.hdSet = NB.set or 1 end   -- pressed within the last poll: its middle; its layer (nbar22)
+            if down and not b.hdDown then b.hdAt = now - NB.POLL_S * 0.5; b.hdSet = NB.set or 1; b.hdSure = sure end   -- pressed within the last poll: its middle; its layer (nbar22); nbar27: its fill point, frozen
             b.hdDown = down
-            pcall(NB.holdCharge, b, now, sure)
+            pcall(NB.holdCharge, b, now, b.hdSure or sure)
             -- nbar25: a takeover whose hold is queued (the game's own current read): kept while it is, its end when it stops
             local o = b.hto
             if o and not o.fail and not o.castEnd then                -- (a cast's own "current" is its cast, not a queue)

@@ -177,6 +177,9 @@ object PadMapModel {
         val holdN: Int? = null,
         /** m194: the looks the add-on's hold clock was given since its load (`hold.lk`; grows while presses are kept: the device check) */
         val holdLooks: Int? = null,
+        /** m202: the app's session bump the add-on's fire point holds (`hold.hb`, 0-3 steps of HoldRelease.BUMP_STEP_MS: its ring fills
+         *  to the app's own fire point); null = an add-on before m202 (nothing sent) */
+        val holdHb: Int? = null,
     ) {
         /** m55: the form the character is in now (null: none / caster) */
         val activeForm: Form? get() = forms.firstOrNull { it.on }
@@ -266,6 +269,7 @@ object PadMapModel {
             holdOn = m.optJSONObject("hold")?.optBoolean("on", false),                                                          // m190
             holdN = m.optJSONObject("hold")?.optInt("n", 0)?.takeIf { it in 2..4 },                                              // m194
             holdLooks = m.optJSONObject("hold")?.takeIf { it.has("lk") }?.optInt("lk", 0),                                        // m194
+            holdHb = m.optJSONObject("hold")?.takeIf { it.has("hb") }?.optInt("hb", 0)?.coerceIn(0, 3),                           // m202
             forms = objects(m.optJSONArray("forms")).mapNotNull { o ->
                 val id = o.optInt("id", 0)
                 if (id <= 0) null else Form(o.optInt("x", 0), id, o.optString("n", ""), o.optInt("i", 0), o.optBoolean("on", false),
@@ -893,8 +897,14 @@ object PadMapModel {
     const val P4_SINGLE_OFF = 0
     const val P4_SINGLE_ON = 1
     fun page4(code: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 39, ROW_PADTAB to 38, ROW_PADTAB to 0, ROW_PADTAB to code)
+    /** the int/1533 review (Book b87, PadMap m202): the app's session bump after a SHORT fire (HoldRelease.bump, 0-3 steps of 34 ms),
+     *  page-4 codes 2-5 - the add-on's fire point adds it, so the top screen's ring fills when the launcher lets the press go */
+    const val P4_BUMP_0 = 2
+    const val P4_BUMP_LAST = 5
+    fun bumpCells(steps: Int): List<Pair<String, Int>> = page4(P4_BUMP_0 + steps.coerceIn(0, P4_BUMP_LAST - P4_BUMP_0))
     /** every page-4 code in use: SingleTopTest keeps them apart */
-    val PAGE4_CODES: kotlin.collections.Map<String, IntRange> = mapOf("single screen mode" to P4_SINGLE_OFF..P4_SINGLE_ON)
+    val PAGE4_CODES: kotlin.collections.Map<String, IntRange> = mapOf("single screen mode" to P4_SINGLE_OFF..P4_SINGLE_ON,
+        "hold bump" to P4_BUMP_0..P4_BUMP_LAST)
     fun singleCells(on: Boolean): List<Pair<String, Int>> = page4(if (on) P4_SINGLE_ON else P4_SINGLE_OFF)
     fun mirrorCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_MIRROR_ON else P3_MIRROR_OFF)
     fun combatTopCells(on: Boolean): List<Pair<String, Int>> = page3(if (on) P3_TOP_ON else P3_TOP_OFF)

@@ -397,7 +397,7 @@ object HoldCast {
             if (release.keep(msg.optString("key").ifEmpty { null }, pos, lay, need, now)) fireNow(now)   // a late word fires at once
             return
         }
-        release.closed(pos, now)
+        if (release.closed(pos, now)) resend?.run()                    // a KEPT press there: its up for the game now
         if (hk != "rel") return
         // round 1533: the answer to an early fire of ours
         val fp = firedPress
@@ -412,6 +412,7 @@ object HoldCast {
                 release.short()
                 log("fire SHORT hn=${msg.optInt("hn", -1)} need=${msg.optInt("need", -1)} ft=${fp.ft ?: "?"} bump=${release.bump}ms")
                 onChange?.invoke()
+                onBumpWanted?.invoke()                                  // the add-on's ring fills to the new point too (m202)
             }
             return
         }
@@ -455,6 +456,10 @@ object HoldCast {
     private var lastButtons = 0
     private val lastDpad = BooleanArray(4)
     private val inDpad = BooleanArray(4)
+    /** the int/1533 review (single screen mode): the event the launcher's handlers are writing now is Android's CANCEL (a key's
+     *  FLAG_CANCELED up, a joystick's ACTION_CANCEL: the keys moved to another screen's window while held) - XServerScreen sets it
+     *  around its handlers (main thread) */
+    @Volatile private var cancelIn = false
 
     init {
         release.gatesOpen = { gates() }
@@ -464,30 +469,39 @@ object HoldCast {
     /** the clock's looks the picture and the fire use: the add-on's `cn` when known, else Settings' */
     fun need(): Int = release.cn ?: CastSettings.holdTime.ticks
 
-    /** WinHandler (main thread, player 1): the state it is about to write - A / X / Y / the D-pad's edges onto [release] */
+    /** XServerScreen: the event handed to the launcher's handlers now is Android's cancel ([on]), until it says false */
+    @JvmStatic fun canceling(on: Boolean) { cancelIn = on }
+
+    /** WinHandler (main thread, player 1): the state it is about to write - A / X / Y / the D-pad's edges onto [release] (an up while
+     *  [canceling]: Android's cancel, [HoldRelease.cancelUp]) */
     @JvmStatic @Synchronized fun padIn(buttons: Int, up: Boolean, right: Boolean, down: Boolean, left: Boolean, now: Long) {
         val b = buttons and 0xFFFF
         inDpad[0] = up; inDpad[1] = right; inDpad[2] = down; inDpad[3] = left
+        val cancel = cancelIn
         for (c in 0 until HoldRelease.CTLS) {
             val was = HoldRelease.isDown(c, lastButtons, lastDpad)
             val now2 = HoldRelease.isDown(c, b, inDpad)
-            if (was != now2) release.edge(c, now2, now)
+            if (was != now2) { if (!now2 && cancel) release.cancelUp(c, now) else release.edge(c, now2, now) }
         }
         lastButtons = b
         System.arraycopy(inDpad, 0, lastDpad, 0, 4)
     }
     /** WinHandler: the controls forced up for the game now (bits 0 / 2 / 3 = buttons A / X / Y; 4..7 = dpad[0..3]); one volatile read */
     @JvmStatic fun forcedMask(): Int = release.forcedMask
+    /** WinHandler: the controls whose down the game keeps although the controller reads them up (their up came cancelled: kept to the
+     *  fire point; the same bits as [forcedMask]); one volatile read */
+    @JvmStatic fun keptMask(): Int = release.keptMask
     /** Home: the button at game position [pos] is up for the game now (fired at its fill, still held): drawn unpressed */
     fun forced(pos: Int): Boolean = release.forcedMask != 0 && release.forcedPos(pos)
     /** the app lost the game screen: nothing fires while away */
-    @JvmStatic fun focusLost() { release.pause(); schedule(HoldRelease.NEVER) }
+    @JvmStatic fun focusLost() { if (release.pause()) resend?.run(); schedule(HoldRelease.NEVER) }
     /** back: forced controls that read up are let go */
     @JvmStatic @Synchronized fun focusBack() { release.resume { c -> HoldRelease.isDown(c, lastButtons, lastDpad) } }
     /** player 1's controller changed (or the session ended: [all]): pending fires off; a forced button stays up for the game until it
      *  reads up (never a second down for a press still held) */
     @JvmStatic @Synchronized fun padReset(all: Boolean) {
-        if (all) { release.reset(); lastButtons = 0; java.util.Arrays.fill(lastDpad, false) } else release.cancelPending()
+        if (all) { release.reset(); lastButtons = 0; java.util.Arrays.fill(lastDpad, false) }
+        else if (release.cancelPending()) runCatching { resend?.run() }                // a KEPT press: its up for the game now
         schedule(HoldRelease.NEVER)
     }
 
@@ -543,6 +557,22 @@ object HoldCast {
         if (inFight || (sinceSendMs != null && sinceSendMs < TopCombatBar.RESEND_MS)) return null
         return want
     }
+
+    /**
+     * THE SESSION'S BUMP TO THE ADD-ON (the int/1533 review; Book b87's page-4 codes 2-5, PadMap m202's `hold.hb`): after a SHORT fire
+     * the launcher lets every kept press go [HoldRelease.BUMP_STEP_MS] later (up to 102 ms), but the add-on's ring - the only one in
+     * single screen mode - filled to F without it, full up to 0.1 s before the cast. [want] the app's steps (release.bumpSteps), [have]
+     * the padmap's `hold.hb` (null = an add-on before m202: nothing to send); [ticksToSend]'s rules (out of a fight, re-sent every
+     * TopCombatBar.RESEND_MS until it says it, [SEND_TRIES] a wish). The steps to send, or null
+     */
+    fun bumpToSend(want: Int, have: Int?, inFight: Boolean, sinceSendMs: Long?, tries: Int = 0): Int? {
+        if (have == null || have == want || want !in 0..3) return null
+        if (tries >= SEND_TRIES) return null
+        if (inFight || (sinceSendMs != null && sinceSendMs < TopCombatBar.RESEND_MS)) return null
+        return want
+    }
+    /** CompanionHost's bump sender (weakly held there): a SHORT fire changed the bump */
+    @Volatile var onBumpWanted: (() -> Unit)? = null
 
     /** the Controller room's hint and Settings' tile: the fire point as the room writes it (F at 60 fps, rounded: 0.5 / 0.7 / 0.9 s) */
     fun holdWord(): String = when (CastSettings.holdTime) {

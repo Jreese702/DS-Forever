@@ -384,6 +384,58 @@ class SingleCoreShotsTest {
         save(pic, "core_06_keys_hints.png")
     }
 
+    /**
+     * THE int/1533 REVIEW (layout): Home's pad-layer notes on the plate (PadLayerNote: a WoW setting moved the Stance / Possess Bar onto
+     * LT, RT or LT + RT) were one line in the 640 px plate down to a 14 px floor - the es / fr Stance Bar notes up to 759 px even
+     * there, cut at both ends; en fitted only at 15 to 18 px. Now a note too long for one line at 22 px takes two at 20 px or more, every line inside the
+     * plate's 600 px, and the plate grows to 104 px for them (TopWindow); the controller's short hints stay one line, 72 px
+     */
+    @Test fun theHintPlateWrapsLongNotes() {
+        Tr.init(app)
+        // the device's own body font (the game's frizqt__.ttf, under the art root): the widths the review measured; with no art root the
+        // fallback font's own widths (the 1533 check below needs the real one)
+        val rootField = ArtHarvest::class.java.getDeclaredField("rootDir").apply { isAccessible = true }
+        val root0 = rootField.get(null)
+        System.getenv("CLOCK_ART_ROOT")?.let { root -> rootField.set(null, File(root)) }
+        try { hintPlateNotes(ArtHarvest.file("fonts/frizqt__.ttf").canRead()) } finally { rootField.set(null, root0) }
+    }
+
+    private fun hintPlateNotes(gameFont: Boolean) {
+        val sheet = backdrop("SINGLE_TOP_PLAY")
+        val c = Canvas(sheet)
+        var y = 120f
+        for (l in listOf("en", "es", "fr")) {
+            if (l == "en") Tr.setChoice(app, "auto") else {
+                listOf(File("../companion/app/src/main/assets/companion/i18n/$l.json"), File("companion/app/src/main/assets/companion/i18n/$l.json"))
+                    .firstOrNull { it.canRead() }?.let { Tr.load(l, it.readText()) }
+                Tr.setChoice(app, l)
+            }
+            for (note in PadLayerNote.ALL) {
+                val words = Tr.t(note)
+                if (gameFont && l != "en" && note == PadLayerNote.stanceWords("LT + RT")) assertTrue("$l: 1533's one line ran past the plate even at 14 px ('$words': ${UiKit.bodyPaint(14f, Color.WHITE).measureText(words)} px)",
+                    UiKit.bodyPaint(14f, Color.WHITE).measureText(words) > UiKit.SINGLE_HINT_W - 40f)
+                val (lines, size) = UiKit.singleHintFit(note, 1f)
+                assertEquals("$l: $words", 2, lines.size)
+                assertEquals("$l: every word kept", words, lines.joinToString(" "))
+                assertTrue("$l: $size px", size >= 20f)
+                for (ln in lines) assertTrue("$l: '$ln' inside the plate", UiKit.bodyPaint(size, Color.WHITE).measureText(ln) <= UiKit.SINGLE_HINT_W - 40f)
+                assertEquals(UiKit.SINGLE_HINT_H2, UiKit.singleHintH(note, 1f))
+            }
+            for (note in listOf(PadLayerNote.stanceWords("LT + RT"), PadLayerNote.possessWords("RT"))) {
+                if (y + UiKit.SINGLE_HINT_H2 > TH) break
+                UiKit.singleHint(c, RectF(640f, y, 1280f, y + UiKit.singleHintH(note, 1f)), note)
+                y += UiKit.SINGLE_HINT_H2 + 16f
+            }
+        }
+        Tr.setChoice(app, "auto")
+        for (h in listOf(SingleScreen.CONTROLLER_BACK, SingleScreen.TAP_FOR_KEYS)) {
+            assertEquals("$h: one line", 1, UiKit.singleHintFit(h, 1f).first.size)
+            assertEquals(UiKit.SINGLE_HINT_H, UiKit.singleHintH(h, 1f))
+        }
+        assertEquals("the screen's scale", 2 * 72f, UiKit.singleHintH(SingleScreen.CONTROLLER_BACK, 2f))
+        save(sheet, "core_10_hint_plate_notes_en_es_fr.png")
+    }
+
     @Test fun theButtonSheet() {
         Tr.init(app)
         val cell = 200

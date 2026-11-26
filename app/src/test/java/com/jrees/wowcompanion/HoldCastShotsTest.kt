@@ -9,6 +9,7 @@ import android.view.View
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -182,6 +183,31 @@ class HoldCastShotsTest {
             val v = room(); v.onPadTabCtl(ctl("normal", 2, 6)); shot(v, "r11_room_hold_hint_${t.name.lowercase()}")
         }
         CastSettings.holdTime = CastSettings.HoldTime.NORMAL
+    }
+
+    /**
+     * THE int/1533 REVIEW (layout): the Hold row's hint ("%s, casts when full") ran off the pane - es "0.7 s, se lanza al" and fr "0.7 s,
+     * se lance u", cut at the view's edge, en over the page margin. Now it is whole and inside the pane's text column in every language:
+     * after the Hold mark while it fits there at 20 px or more (en), else on its own line under the hold spell's name (es / fr)
+     */
+    @Test fun theHoldHintFitsThePane() {
+        for (l in listOf("en", "es", "fr")) {
+            lang(l)
+            val pd = UiKit.inkPaint(24f)
+            val text = Tr.t(PadTabPage.HOLD_POINT.replace("%s", HoldCast.holdWord()))
+            val holdW = UiKit.inkPaint(24f).measureText(Tr.t("Hold"))
+            // round 1533's own: at 24 px right after the mark (x0 + 112 + Hold + 22, + 22), the pane's text edge w - 56
+            val inlineX = 740f + 40f + 112f + holdW + 44f
+            if (l != "en") assertTrue("$l: 1533's hint ran past the view's edge (${pd.measureText(text)} px from $inlineX)",
+                inlineX + pd.measureText(text) > w)
+            val hh = PadTabPage.holdHint(text, pd, holdW, w.toFloat())
+            assertEquals("$l: the whole hint, never cut", text, hh.text)
+            assertTrue("$l: ${hh.size} px", hh.size >= PadTabPage.HOLD_HINT_MIN_PX)
+            assertTrue("$l: inside the pane's text column", hh.x + UiKit.inkPaint(hh.size).measureText(hh.text) <= w - 56f)
+            if (l == "en") { assertEquals("en: after the mark", 34f, hh.dy); assertTrue(hh.size >= PadTabPage.HOLD_HINT_INLINE_MIN_PX) }
+            else assertEquals("$l: its own line under the hold spell's name", PadTabPage.HOLD_HINT_LINE, hh.dy)
+        }
+        lang("en")
     }
 
     /** Home's bars (Cast) with the hold badges; [prog] / [fire]: the bare A held [prog] ms (its arc) / let go past the hold point (the

@@ -315,10 +315,10 @@ class HoldCastTest {
     @Test fun everyPageThreeSenderWaitsOutEveryOther() {
         val host = src("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")
         val guard = host.substringAfter("private fun page3Busy(").substringBefore("\n    }").substringBefore("\n\n")
-        for (st in listOf("mirrorSentAt", "topSentAt", "castSentAt", "swingSentAt", "pvSentAt", "holdSentAt"))
+        for (st in listOf("mirrorSentAt", "topSentAt", "castSentAt", "swingSentAt", "pvSentAt", "holdSentAt", "bumpSentAt"))
             assertTrue("the guard reads $st", guard.contains(st))
         for ((fn, mine) in listOf("mirrorCheck" to "mirror", "topCheck" to "top", "castCheck" to "cast", "swingCheck" to "swing",
-                "previewCheck" to "pv", "holdTicksCheck" to "hold")) {
+                "previewCheck" to "pv", "holdTicksCheck" to "hold", "holdBumpCheck" to "bump")) {
             val body = host.substringAfter("private fun $fn(").substringBefore("\n    private fun ")
             assertTrue("$fn waits out the others", body.contains("page3Busy(now, \"$mine\")"))
         }
@@ -588,7 +588,69 @@ class HoldCastTest {
         val host = src("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")
         assertTrue(host.contains("if (page3Busy(now, \"hold\")) { ui.postDelayed(holdAgain, CAST_AFTER_TOP_MS); return }"))   // (every other page-3 batch: the 1532 audit)
         assertTrue("the padmap's check posted after its D-pad checks",
-            host.contains("if (current) ui.post { lastPadMap?.let { m -> if (m === it) holdTicksCheck(m) } }"))
+            host.contains("if (current) ui.post { lastPadMap?.let { m -> if (m === it) { holdTicksCheck(m); holdBumpCheck(m) } } }"))
         assertFalse(host.contains("if (current) holdTicksCheck(it)"))
+    }
+
+    /**
+     * THE int/1533 REVIEW (Book b87, PadMap m202): after a SHORT fire the launcher lets every later kept press go [HoldRelease.BUMP_STEP_MS]
+     * later (up to 102 ms), but the add-on's ring - the only one in single screen mode - filled to F without it: full and "charged" up to
+     * 0.1 s before the cast. The app now tells the add-on its steps (page-4 codes 2-5) until the padmap's `hold.hb` says them, by the hold
+     * time's rules (out of a fight, re-sent, SEND_TRIES a wish); an add-on before m202 (no hb) is sent nothing
+     */
+    @Test fun theSessionBumpReachesTheAddOnsRing() {
+        val r = HoldRelease()
+        assertEquals(0, r.bumpSteps)
+        r.short(); assertEquals(1, r.bumpSteps)
+        r.short(); r.short(); r.short(); assertEquals("capped at 102 ms: 3 steps", 3, r.bumpSteps)
+        assertEquals(2, HoldCast.bumpToSend(2, 0, false, null))
+        assertEquals(0, HoldCast.bumpToSend(0, 3, false, null))
+        assertNull("the add-on has it", HoldCast.bumpToSend(2, 2, false, null))
+        assertNull("an add-on before m202 (no hb): nothing", HoldCast.bumpToSend(2, null, false, null))
+        assertNull("a fight: wait", HoldCast.bumpToSend(2, 0, true, null))
+        assertNull("a send just went", HoldCast.bumpToSend(2, 0, false, 1_000L))
+        assertEquals(2, HoldCast.bumpToSend(2, 0, false, TopCombatBar.RESEND_MS))
+        assertNull("the wish's sends spent", HoldCast.bumpToSend(2, 0, false, null, tries = HoldCast.SEND_TRIES))
+        assertEquals(listOf(PadMapModel.ROW_PADTAB to 39, PadMapModel.ROW_PADTAB to 38, PadMapModel.ROW_PADTAB to 0, PadMapModel.ROW_PADTAB to 2),
+            PadMapModel.bumpCells(0))
+        assertEquals(PadMapModel.ROW_PADTAB to 5, PadMapModel.bumpCells(3).last())
+        assertEquals(2..5, PadMapModel.PAGE4_CODES["hold bump"])
+        fun map(hold: JSONObject) = PadMapModel.parse(JSONObject().put("type", "padmap").put("v", "m202").put("m", JSONObject().put("page", 1)
+            .put("pages", 3).put("sets", org.json.JSONArray()).put("hold", hold)))!!
+        assertEquals(2, map(JSONObject().put("on", true).put("n", 3).put("hb", 2)).holdHb)
+        assertNull("m201: no hb", map(JSONObject().put("on", true).put("n", 3)).holdHb)
+        // a SHORT fire asks the host to send it (the add-on's ring follows at once out of a fight)
+        var asked = 0
+        val was = HoldCast.onBumpWanted
+        val log0 = HoldCast.log
+        val g0 = HoldCast.gates; val s0 = HoldCast.schedule; val l0 = HoldCast.later
+        var now = 50_000L
+        try {
+            HoldCast.onBumpWanted = { asked++ }
+            HoldCast.log = { }
+            HoldCast.clock = { now }; HoldCast.bandClock = { now }
+            HoldCast.gates = { true }; HoldCast.schedule = { }; HoldCast.later = { _, _ -> }
+            HoldCast.padReset(true)
+            HoldCast.onMap(JSONObject().put("type", "holdmap").put("on", true).put("b", "bare:5").put("why", "on").put("cn", 3).put("ft", 17))
+            HoldCast.padIn(1 shl 2, false, false, false, false, now)
+            HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 5).put("hk", "keep").put("key", "PAD3").put("need", 3))
+            now += 678; HoldCast.fireNow(now)
+            now += 100
+            HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 5).put("hk", "rel").put("kind", "native").put("down", true)
+                .put("hn", 2).put("need", 3))
+            assertEquals(1, HoldCast.release.bumpSteps); assertEquals("the SHORT fire asked the host", 1, asked)
+            HoldCast.padIn(0, false, false, false, false, now)
+        } finally {
+            HoldCast.onBumpWanted = was; HoldCast.log = log0; HoldCast.padReset(true)
+            HoldCast.gates = g0; HoldCast.schedule = s0; HoldCast.later = l0
+            HoldCast.release.cn = null; HoldCast.release.ft = null; HoldCast.watch.reset(); HoldCast.takeover.clear()
+            HoldCast.clock = { android.os.SystemClock.uptimeMillis() }; HoldCast.bandClock = { android.os.SystemClock.elapsedRealtime() }
+        }
+        val host = src("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")
+        val chk = host.substringAfter("private fun holdBumpCheck(m: PadMapModel.Map) {").substringBefore("\n    }\n")
+        assertTrue("the launcher's steps vs the padmap's hb", chk.contains("val want = HoldCast.release.bumpSteps") && chk.contains("m.holdHb"))
+        assertTrue("its rules", chk.contains("HoldCast.bumpToSend(want, m.holdHb, m.combat || homeView.inFight()"))
+        assertTrue("its cells", chk.contains("padTabTap(PadMapModel.bumpCells(send))"))
+        assertTrue("the SHORT fire's ask, weakly held", host.contains("HoldCast.onBumpWanted = { me.get()?.let { h -> h.ui.post { h.lastPadMap?.let { m -> h.holdBumpCheck(m) } } } }"))
     }
 }

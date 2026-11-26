@@ -1838,8 +1838,11 @@ class PadTabPage(
             c.drawText(holdWord, x0 + 112f, r2 + 34f, pl)
             val markX = x0 + 112f + pl.measureText(holdWord) + 22f
             HoldArt.mark(c, markX, r2 + 26f, 11f, HOLD_MARK)
-            // round 1533: the fire point ("0.7 s, casts when full": the hold spell casts the moment the ring fills, while still held)
-            c.drawText(Tr.t(HOLD_POINT.replace("%s", HoldCast.holdWord())), markX + 22f, r2 + 34f, pd)
+            // round 1533: the fire point ("0.7 s, casts when full": the hold spell casts the moment the ring fills, while still held);
+            // the int/1533 review: fitted into the pane (es / fr ran past the view's edge, cut mid-word; en over the page margin) -
+            // after the mark while it fits there, else on its own line under the hold spell's name
+            val hint = holdHint(Tr.t(HOLD_POINT.replace("%s", HoldCast.holdWord())), pd, pl.measureText(holdWord), w)
+            c.drawText(hint.text, hint.x, r2 + hint.dy, Paint(pd).apply { textSize = hint.size })
             if (hr != null) c.drawText(TextUtils.ellipsize(Tr.t(hr.name), TextPaint(ps), x1 - x0 - 128f, TextUtils.TruncateAt.END).toString(), x0 + 112f, r2 + 80f, ps)
         }
         // the red line over the buttons: a note (a refusal, a fight), else a real problem of a base face
@@ -2791,6 +2794,38 @@ class PadTabPage(
         const val HOLD_BIND = "Bind hold"
         /** m194 / round 1533: the Hold row's hint - the fire point, and that the hold spell casts there (the ring full, still held) */
         const val HOLD_POINT = "%s, casts when full"
+        /** the Hold row's hint at its smallest before it is cut (the pane's dim 24 px is its size) */
+        const val HOLD_HINT_MIN_PX = 16f
+        /** ... and its smallest after the Hold mark: smaller than this, it takes its own line */
+        const val HOLD_HINT_INLINE_MIN_PX = 20f
+        /** its own line's baseline below the Hold row's top (under the hold spell's name, r2 + 80; above the red note line) */
+        const val HOLD_HINT_LINE = 118f
+
+        /** where the Hold row's hint is drawn: [text] as fitted, at x [x], [dy] below the row's top, [size] px */
+        data class HoldHint(val text: String, val x: Float, val dy: Float, val size: Float)
+
+        /**
+         * THE HOLD ROW'S HINT (the int/1533 review: es "se lanza al llenarse" and fr "se lance une fois plein" ran past the view's edge,
+         * cut mid-word - the one line saying the hold casts when full was lost; en ran over the page margin): [text] after the Hold
+         * mark ([holdW] = the Hold word's width in the row's 24 px) while it fits there at [HOLD_HINT_INLINE_MIN_PX] or more, else on its
+         * own line under the hold spell's name (x0 + 112, the name's column) at its size or smaller down to [HOLD_HINT_MIN_PX], cut with
+         * an ellipsis only past that. [base] is the row's dim paint (its size the most), [w] the view's width
+         */
+        fun holdHint(text: String, base: Paint, holdW: Float, w: Float): HoldHint {
+            val x0 = SPLIT + 40f; val x1 = w - 56f
+            val hx = x0 + 112f + holdW + 22f + 22f
+            val p = Paint(base)
+            if (shrinkTo(text, p, x1 - hx, HOLD_HINT_INLINE_MIN_PX)) return HoldHint(text, hx, 34f, p.textSize)
+            val lx = x0 + 112f
+            p.textSize = base.textSize
+            shrinkTo(text, p, x1 - lx, HOLD_HINT_MIN_PX)
+            return HoldHint(UiKit.fitEnd(text, p, x1 - lx), lx, HOLD_HINT_LINE, p.textSize)
+        }
+        /** [p] a pixel smaller at a time, not below [minPx], until [text] fits [maxW]; true = it fits */
+        private fun shrinkTo(text: String, p: Paint, maxW: Float, minPx: Float): Boolean {
+            while (p.measureText(text) > maxW && p.textSize > minPx) p.textSize = maxOf(minPx, p.textSize - 1f)
+            return p.measureText(text) <= maxW
+        }
         /** m190: the Hold spell button (touch: Book b80's page-3 code 28 opens the add-on's hold chooser) */
         private const val DOWN_HOLD = 970
     }

@@ -6130,22 +6130,58 @@ object UiKit {
     }
 
     /**
-     * single screen mode's HINT PLATE over the game (the top window's "hint" sub: "Controller back", "Tap the game for the controller"):
-     * the kit's dark plate with its bronze edge and the words in the body font, white with the kit's shadow, Tr'd here
+     * single screen mode's HINT PLATE over the game (the top window's "hint" sub: "Controller back", "Tap the game for the controller",
+     * Home's pad-layer notes while Home's page is not drawn): the kit's dark plate with its bronze edge and the words in the body font,
+     * white with the kit's shadow, Tr'd here, laid by [singleHintFit] ([r] is [SINGLE_HINT_W] x [singleHintH] at the screen's scale)
      */
     fun singleHint(c: Canvas, r: RectF, text: String) {
-        val k = r.height() / 72f
+        val k = r.width() / SINGLE_HINT_W
         val rad = 14f * k
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(232, 13, 12, 14)
         c.drawRoundRect(r, rad, rad, pFlat)
         pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f * k; pFlat.color = Theme.bronze
         c.drawRoundRect(RectF(r).apply { inset(2f * k, 2f * k) }, rad, rad, pFlat)
         pFlat.style = Paint.Style.FILL
-        val tp = bodyPaint(30f * k, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
-        val words = Tr.t(text)
-        while (tp.measureText(words) > r.width() - 40f * k && tp.textSize > 14f * k) tp.textSize -= 1f
-        c.drawText(words, r.centerX(), r.centerY() - (tp.ascent() + tp.descent()) / 2f, tp)
+        val (lines, size) = singleHintFit(text, k)
+        val tp = bodyPaint(size, Color.WHITE).apply { textAlign = Paint.Align.CENTER }
+        val lh = size * SINGLE_HINT_LEAD
+        val y0 = r.centerY() - (lines.size - 1) * lh / 2f - (tp.ascent() + tp.descent()) / 2f
+        val maxW = r.width() - 40f * k
+        for ((i, l) in lines.withIndex()) c.drawText(fitEnd(l, tp, maxW), r.centerX(), y0 + i * lh, tp)
     }
+
+    /** the hint plate's width and its heights for one line / two lines on a 1080-line screen (fork/TopWindow places it at y 216) */
+    const val SINGLE_HINT_W = 640f
+    const val SINGLE_HINT_H = 72f
+    const val SINGLE_HINT_H2 = 104f
+    /** a second line's step (x the text size) */
+    const val SINGLE_HINT_LEAD = 1.15f
+
+    /**
+     * THE HINT PLATE'S WORDS, LAID (the int/1533 review: Home's pad-layer notes - "La Barra de actitudes de WoW está en LT + RT: ..." -
+     * ran up to 759 px wide at the old one line's 14 px floor, cut at both ends in es / fr, and en only fitted at 15 to 18 px): [text]
+     * Tr'd, at the scale [k] (the screen's height / 1080), in the plate's 600 px - ONE line at 30 px down to 22, else TWO lines (the
+     * word break whose longer half is shortest) at 28 px down to the 14 px floor. The lines and the text size (px)
+     */
+    fun singleHintFit(text: String, k: Float): Pair<List<String>, Float> {
+        val words = Tr.t(text)
+        val maxW = (SINGLE_HINT_W - 40f) * k
+        val tp = bodyPaint(30f * k, Color.WHITE)
+        while (tp.measureText(words) > maxW && tp.textSize > 22f * k) tp.textSize -= 1f
+        if (tp.measureText(words) <= maxW) return listOf(words) to tp.textSize
+        val gaps = words.indices.filter { words[it] == ' ' }
+        tp.textSize = 28f * k
+        if (gaps.isEmpty()) {
+            while (tp.measureText(words) > maxW && tp.textSize > 14f * k) tp.textSize -= 1f
+            return listOf(words) to tp.textSize
+        }
+        val at = gaps.minByOrNull { i -> maxOf(tp.measureText(words, 0, i), tp.measureText(words, i + 1, words.length)) }!!
+        val lines = listOf(words.substring(0, at), words.substring(at + 1))
+        while (lines.any { tp.measureText(it) > maxW } && tp.textSize > 14f * k) tp.textSize -= 1f
+        return lines to tp.textSize
+    }
+    /** the plate's height for [text] at the scale [k]: one line's or two lines' */
+    fun singleHintH(text: String, k: Float): Float = (if (singleHintFit(text, k).first.size > 1) SINGLE_HINT_H2 else SINGLE_HINT_H) * k
 
     /** a pencil across [r] (Edit Home's badge pencil: the body, the ferrule, the sharpened tip and its lead), in [colour] with the dark
      *  outline of the kit's marks (the power mark's) */

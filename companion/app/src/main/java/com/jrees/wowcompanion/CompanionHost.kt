@@ -645,6 +645,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         CastSettings.init(this)                             // hold to cast (PadMap m190 / m194): the hold time
         // m194: Settings' Hold time to the add-on (Book b82's codes 29-31); the host held weakly (a replaced host is never kept by it)
         run { val me = java.lang.ref.WeakReference(this); HoldCast.onTicksWanted = { me.get()?.let { h -> h.ui.post { h.lastPadMap?.let { m -> h.holdTicksCheck(m) } } } } }
+        run { val me = java.lang.ref.WeakReference(this); HoldCast.onBumpWanted = { me.get()?.let { h -> h.ui.post { h.lastPadMap?.let { m -> h.holdBumpCheck(m) } } } } }
         bagsView = BagsView(this)
         // bags controller mode (bags session, AGENT_LOG 2026-09-28): the Bags room while the addon holds the controller
         bagsView.onController = { on, why -> onBagsController(on, why) }
@@ -4254,7 +4255,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 lastPadMap = it; if (::settingsView.isInitialized) { settingsView.requestLayout(); settingsView.invalidate() }
                 // m194: the hold time the add-on counts (Book b82's codes); the 1531 audit: posted, so it runs after this padmap's D-pad
                 // checks below (their page-3 batches go first, this one waits them out: TapPad's 0.25 s repeat guard)
-                if (current) ui.post { lastPadMap?.let { m -> if (m === it) holdTicksCheck(m) } }
+                if (current) ui.post { lastPadMap?.let { m -> if (m === it) { holdTicksCheck(m); holdBumpCheck(m) } } }
                 // the k6 review round 2: a realm seen in a current padmap counts against every other realm of its name (before any fold)
                 if (current) RealmFix.saw(CharKey.of(it.dpad?.name, it.dpad?.realm))
                 if (::combatKeep.isInitialized) combatKeep.onMap(it, current)     // the In-combat backup (the user's "Both" ruling)
@@ -5972,7 +5973,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  sender reads this one guard (1531: the mirror / top / cast / swing checks never waited for the hold time's batch) */
     private fun page3Busy(now: Long, mine: String): Boolean =
         listOf("mirror" to mirrorSentAt, "top" to topSentAt, "cast" to castSentAt, "swing" to swingSentAt, "pv" to pvSentAt, "hold" to holdSentAt,
-            "ss" to ssSentAt)
+            "ss" to ssSentAt, "bump" to bumpSentAt)
             .any { (k, t) -> k != mine && t != null && now - t < CAST_AFTER_TOP_MS }
 
     /** TopCombatBar.castWanted ("Cast bar in fights: Top screen" with In fights = Top screen) vs the add-on's `cc`: [topCheck]'s rules
@@ -6099,6 +6100,29 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val sent = padTabTap(PadMapModel.holdTimeCells(send))
         Log.i(HoldCast.TAG, "hold time: $send looks ${if (sent) "sent" else "not sent"}")
         if (++holdTries < HoldCast.SEND_TRIES) ui.postDelayed(holdAgain, TopCombatBar.RESEND_MS + 200L)
+    }
+
+    // ---------------------------------------------------------------- the int/1533 review: THE SESSION'S BUMP TO THE ADD-ON (Book b87, PadMap m202)
+    private var bumpSentAt: Long? = null
+    private var bumpSentWant: Int? = null
+    private var bumpTries = 0
+    private val bumpAgain = Runnable { lastPadMap?.let { holdBumpCheck(it) } }
+
+    /** the launcher's session bump (HoldRelease.bumpSteps: later fires after a SHORT one) vs the add-on's `hold.hb`: [holdTicksCheck]'s
+     *  rules (HoldCast.bumpToSend) - so the top screen's ring fills when the launcher lets the press go; an older add-on: nothing */
+    private fun holdBumpCheck(m: PadMapModel.Map) {
+        val want = HoldCast.release.bumpSteps
+        if (bumpSentWant != want) { bumpSentAt = null; bumpTries = 0 }
+        val now = SystemClock.elapsedRealtime()
+        ui.removeCallbacks(bumpAgain)
+        if (m.holdHb == null || m.holdHb == want) { if (m.holdHb == want) { bumpSentAt = null; bumpSentWant = null; bumpTries = 0 }; return }
+        if (page3Busy(now, "bump")) { ui.postDelayed(bumpAgain, CAST_AFTER_TOP_MS); return }
+        val send = HoldCast.bumpToSend(want, m.holdHb, m.combat || homeView.inFight(), bumpSentAt?.let { now - it }, bumpTries)
+        if (send == null) { if (bumpTries < HoldCast.SEND_TRIES) ui.postDelayed(bumpAgain, TopCombatBar.RESEND_MS); return }
+        bumpSentAt = now; bumpSentWant = want
+        val sent = padTabTap(PadMapModel.bumpCells(send))
+        Log.i(HoldCast.TAG, "hold bump: $send steps ${if (sent) "sent" else "not sent"}")
+        if (++bumpTries < HoldCast.SEND_TRIES) ui.postDelayed(bumpAgain, TopCombatBar.RESEND_MS + 200L)
     }
 
     // ---------------------------------------------------------------- Safety k10 THE STICKY REALM'S ONE-TIME QUESTION (KeyPick)

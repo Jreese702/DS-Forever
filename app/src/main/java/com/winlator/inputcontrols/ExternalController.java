@@ -283,6 +283,15 @@ public class ExternalController {
     }
 
     public boolean updateStateFromMotionEvent(MotionEvent event) {
+        // DS Forever (the int/1533 review, single screen mode): Android's ACTION_CANCEL for a joystick - the keys moved to another
+        // screen's window while the pad was held (a palm on the bottom screen gives Android's launcher there the keys). It carries the
+        // last axis values and no ACTION_MOVE follows here, so the hat's D-pad stayed down for the game until its next motion: let go,
+        // as a cancelled key's up is (the sticks and the triggers keep their values until the next motion). Hold to cast keeps a kept
+        // press down to its fire point itself (HoldCast.canceling, set by XServerScreen around this event)
+        if (isJoystickCancel(event)) {
+            if (!JoyConSupport.isJoyCon(event.getDevice())) java.util.Arrays.fill(this.state.dpad, false);
+            return true;
+        }
         if (isJoystickDevice(event)) {
             if (triggerType == TRIGGER_IS_AXIS && !JoyConSupport.isJoyCon(event.getDevice()))
                 processTriggerButton(event);
@@ -464,6 +473,11 @@ public class ExternalController {
 
     public static boolean isJoystickDevice(MotionEvent event) {
         return (event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && event.getAction() == MotionEvent.ACTION_MOVE;
+    }
+
+    /** DS Forever (the int/1533 review): Android's cancel of a joystick's stream (see updateStateFromMotionEvent) */
+    public static boolean isJoystickCancel(MotionEvent event) {
+        return (event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && event.getActionMasked() == MotionEvent.ACTION_CANCEL;
     }
 
     public static int getButtonIdxByKeyCode(int keyCode) {

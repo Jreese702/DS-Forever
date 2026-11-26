@@ -118,19 +118,23 @@ public class WinHandler {
     }
 
     // DS Forever, hold to cast round 1533: player 1's state as the game gets it - [s] itself, or a copy with the forced controls up
-    // (every other bit, the L2 / R2 bits, the axes and the sticks as they are)
+    // (every other bit, the L2 / R2 bits, the axes and the sticks as they are). The int/1533 review (single screen mode): and with the
+    // KEPT controls down - a kept press whose up Android cancelled (the keys moved to the other screen while it was held) stays down
+    // for the game to its fire point (HoldRelease.cancelUp), same bits as the forced mask
     private static GamepadState holdOut(GamepadState s) {
-        int m;
+        int m, k;
         try {
             m = com.jrees.wowcompanion.HoldCast.forcedMask();
+            k = com.jrees.wowcompanion.HoldCast.keptMask();
         } catch (Throwable t) {
             return s;
         }
-        if (m == 0 || s == null) return s;
+        if ((m == 0 && k == 0) || s == null) return s;
         GamepadState o = new GamepadState();
         o.copy(s);
-        o.buttons = (short) (s.buttons & ~(m & 0x0D));
+        o.buttons = (short) ((s.buttons | (k & 0x0D)) & ~(m & 0x0D));
         for (int i = 0; i < 4; i++) {
+            if ((k & (1 << (4 + i))) != 0) o.dpad[i] = true;
             if ((m & (1 << (4 + i))) != 0) o.dpad[i] = false;
         }
         return o;
