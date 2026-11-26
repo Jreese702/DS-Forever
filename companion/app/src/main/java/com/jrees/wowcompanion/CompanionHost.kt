@@ -46,6 +46,13 @@ interface HostShell {
     /** single screen mode's top window (fork/TopWindow: SingleShell), null = two screens (the bottom Presentation, the app's own
      *  MainActivity, Swap screens' activity: unchanged) */
     fun hostSingle(): SingleShell? = null
+    /** THE BOTTOM SCREEN COMES STRAIGHT BACK (BottomSync, 2026-11-25): the launcher's bottom windows hand a host made again after a
+     *  real rebuild the old host's snapshot (fresh, this game run), null = none (the app's own MainActivity, Swap screens: unchanged) */
+    fun hostRestore(): BottomSync.Snapshot? = null
+    /** one of our activities is over this window's display ([on]; CompanionHost.openOnBottom): the window hidden until it closes, by the
+     *  window itself (the bottom Presentation: never shown while parked); false = not handled (the host sets its decor as before).
+     *  [cls] the activity (round 2: the window stays hidden at a return only while that activity is still up) */
+    fun hostHeld(on: Boolean, cls: Class<*>? = null): Boolean = false
 }
 
 /**
@@ -56,6 +63,12 @@ interface HostShell {
  * EVERY EDIT THAT USED TO GO TO MainActivity.kt GOES HERE (shared file: list it in AGENT_LOG first).
  */
 class CompanionHost(base: Context, private val shell: HostShell) : ContextWrapper(base) {
+    /**
+     * WHAT THIS HOST AND ITS VIEWS LEFT IN THE PROCESS (HostEnds; HostsReleasedTest): the settings' and stores' listeners, the hooks on
+     * the process-wide objects, the memory sources, the controller registrations, the sweep receiver - all taken off at [onDestroy], a
+     * hook only while it is still this host's (a newer host's own is never touched)
+     */
+    internal val ends = HostEnds()
 
     /** SINGLE SCREEN MODE (SingleScreen, 2026-11-25): this host's top window over the game, null = two screens (every single-mode
      *  branch below is `single != null`: two screens run exactly as before) */
@@ -99,7 +112,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  when it is "room" (Interact's doc.fightMode); it replaces SPEC_COMBAT 9 / 10's per-room enter tap and show()'s inline leave */
     private val padOwner = PadOwnerSync()
     private val padOwnerTick = object : Runnable {
-        override fun run() { padOwnerStep(); if (padOwner.mode != null) ui.postDelayed(this, PAD_OWNER_TICK_MS) }
+        override fun run() { if (shell.hostGone()) return; padOwnerStep(); if (padOwner.mode != null) ui.postDelayed(this, PAD_OWNER_TICK_MS) }
     }
     private lateinit var gameMenuLock: GameMenuLock
     /** the capture ids of the room the app last left by its own show(), and when (uptime ms): HomeBack.isOwnLeave */
@@ -273,6 +286,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** issues #243 #262 #263 #264: a world map built while this host is up is read by the Map room then (it read the art at start) */
     private val mapArtDone: (String) -> Unit = { id ->
         if (id == "worldmap") ui.post { if (::worldMapRoom.isInitialized) worldMapRoom.reloadArtIfMissing() }
+    }
+    /** the art step's state in DiagLog (named: the review - an anonymous one was never let go, and held every host made again) */
+    private val artStateLog: (ArtHarvest.State) -> Unit = { s ->
+        val kind = s.javaClass.simpleName + ((s as? ArtHarvest.State.Failed)?.let { ": ${it.why}" } ?: "")
+        if (kind != lastArtKind) { lastArtKind = kind; DiagLog.event("art", kind) }
     }
     private val iconArtState: (ArtHarvest.State) -> Unit = { state ->
         ui.post {
@@ -507,12 +525,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.displayId
         }.getOrNull()
         val decor = shell.hostWindow()?.decorView
-        setClosed { ui.post { decor?.visibility = View.VISIBLE; setClosed(null) } }
+        // the review: through the window when it can (the bottom Presentation: a PARKED one stays hidden whatever the activity does, and
+        // its return keeps it hidden while the activity is still over it); else this window's decor as before
+        fun hide(on: Boolean) { if (!shell.hostHeld(on, cls)) decor?.visibility = if (on) View.GONE else View.VISIBLE }
+        setClosed { ui.post { hide(false); setClosed(null) } }
         val onBottom = displayId != null && runCatching {
             startActivity(i, android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle())
         }.onFailure { android.util.Log.w(tag, "${cls.simpleName} on display $displayId: ${it.message}") }.isSuccess
         if (onBottom) {
-            decor?.visibility = View.GONE
+            hide(true)
             android.util.Log.i(tag, "${cls.simpleName} on display $displayId; the bottom window hidden until it closes")
         } else {
             setClosed(null)
@@ -557,6 +578,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val HITCH_MS = 100L
 
     fun onCreate(savedInstanceState: Bundle?) {
+        live++
         // the problem report's own log (board f-problem-report): DS Forever's events, never a login, names only to hide them
         DiagLog.init(this)
         Tr.init(this)                              // 2026-11-07: Spanish / French (the Thor's language, or Settings > System > Language)
@@ -564,10 +586,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         DesktopAddons.init(this)                   // issue 453: the bundled add-ons' tags (PadMap, ActionBar), to know older PC add-ons
         if (LauncherHooks.pkg != null && !LauncherHooks.gameUp()) GameLife.launcherBack()     // issue #12
         DiagLog.event("app", "bottom screen up (inside the launcher: ${LauncherHooks.pkg != null})")
-        ArtHarvest.onState { s ->
-            val kind = s.javaClass.simpleName + ((s as? ArtHarvest.State.Failed)?.let { ": ${it.why}" } ?: "")
-            if (kind != lastArtKind) { lastArtKind = kind; DiagLog.event("art", kind) }
-        }
+        // BottomSync: a host that comes never finds the taps held by a parked one (GameInput.away); the reader's latest documents are
+        // kept inside the launcher only (DocMemory: memory only, capped), and a host made again takes the old one's snapshot
+        GameInput.away = false
+        DocMemory.on = LauncherHooks.pkg != null && PlayModes.current != PlayMode.STREAM
+        DocMemory.shared.capBytes = if (runCatching { DeviceTier.light8() }.getOrDefault(false)) DocMemory.CAP_LIGHT8 else DocMemory.CAP_BYTES
+        MemWatch.source8("docmemory") { DocMemory.shared.bytes }           // the review: on Light 8's memory line (D5 sees it)
+        // (round 2: a launcher host made after a comeback path closed the window is a rebuild in the report, with or without a snapshot -
+        // never the single screen switch, Streaming's host or Swap screens' return: BottomSync.expectRebuild)
+        restored = shell.hostRestore(); if (LauncherHooks.pkg != null) rebuildMark = BottomSync.hostMade(restored)
+        ArtHarvest.onState(artStateLog)
         ArtHarvest.init(this)                     // the harvested art folder, before any view reads a picture (the art harvest, phase 1)
         ArtHarvest.onState(iconArtState)
         // interiors (Track C): the optional background bake starts with the companion (if it is not running already: it outlives this
@@ -588,12 +616,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             runCatching { RealmFix.keepIn(getSharedPreferences(RealmFix.PREF_BAK, MODE_PRIVATE), file, real, removed, System.currentTimeMillis()) }
                 .getOrDefault(false)
         }
+        ends.own(RealmFix::keepRemoved, null)
         // the k6 review round 2 (items A-C): every fold asks the whole device whether the name is under one realm only
         RealmFix.census = { real -> realmCensus(real) }
+        ends.own(RealmFix::census, null)
         Theme.init(this)                     // the saved theme (Settings > System > Theme), before any view copies a colour
         GameUi.init(this)
         PolestarQol.init(this)
         GameInput.onStatus = { s -> ui.post { status.text = s.take(110) } }
+        ends.own(GameInput::onStatus, {})
         // NOTE: do NOT set FLAG_NOT_FOCUSABLE. It leaves display 4 with no focused window, so
         // the first touch waits 5 s for a focus target and the system ANRs us at 0% CPU. This
         // device has per-display focus, so holding focus here does not take it from the game.
@@ -618,10 +649,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         root.addView(strip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Strip.HEIGHT)
             .apply { topMargin = -Strip.RISE - Strip.TRACKS })
         // the tracking bar in the bottom bar (UI Art's glue, listed in AGENT_LOG e8f3d1c): the numbers stay in the Character room
-        CharacterBars.listen {
+        ends.add(CharacterBars.listen {
             strip.xp = CharacterBars.xp?.takeIf { it.show }?.let { Strip.Track(if (it.rested) "rested" else "xp", it.fill, if (it.rest > 0) it.restReach else 0f) }
             strip.reputation = CharacterBars.watch?.let { Strip.Track(when (it.colour) { "1", "2" -> "red"; "3" -> "orange"; "4" -> "yellow"; "blue" -> "blue"; else -> "green" }, it.fill) }
-        }
+        })
 
         mapView = MapView(this)
         worldMapRoom = WorldMapRoomView(this).apply { loadArt() }
@@ -630,8 +661,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             where = { lastMap },
             // TODO(map session): centre the map on the quest once MapView has a focusOn(x, y)
             onShowOnMap = { _ -> show(Room.MAP) })
-        PoiHarvest.init(this) { refreshServices() }
+        val seedReady: () -> Unit = { refreshServices() }
+        PoiHarvest.init(this, seedReady); ends.add { PoiHarvest.seedReadyOff(seedReady) }
         castView = CastView(this) { key -> GameInput.key(key) }
+        // the Settings stage's DS toolbar is this host's live bar (its pictures, and whether they show): set once here and taken off at
+        // this host's end (the leak fix's review: set again at every full document and never taken off, it kept the last host that got
+        // one - a host let go for memory, the launcher's end - reachable, and the Settings pictures asked a dead CastView meanwhile)
+        PreviewStage.roomBar = { castView.roomBar }; ends.own(PreviewStage::roomBar, { null })
+        PreviewStage.roomBarOn = { castView.roomBarOn }; ends.own(PreviewStage::roomBarOn, { false })
         // feat/wk-itemcast (the user, 2026-11-16: "the cast bar for using Items from my bag or applying enchants is not visible"): while
         // Home's own cast bar is not on screen (any room; a Home module over the band), the rooms' bar draws the player's cast in its
         // tracking band - Bags' Use, Character's Enchant / kit pick / Feed Pet, the Spellbook, Macros, every room the same
@@ -661,11 +698,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the 1528 audit: the host's own static listeners hold it WEAKLY ([weakly]; HomeViewsReleasedTest): a host made again (the bottom
         // screen's DsForeverScreen) is never kept - with its whole Home - by the old one's, and the ones that send the add-on taps send
         // nothing once its screen is gone
-        HomeSettings.onChange(weakly(this) { h -> h.ui.post { h.talkDraw() } })
+        ends.add(HomeSettings.onChange(weakly(this) { h -> h.ui.post { h.talkDraw() } }))
         // movable Home: a new layout (a preset, the swap, another character's) tells the add-on its DS toolbar sides (out of combat)
-        HomeLayoutStore.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.mirrorCheck(it); h.topCheck(it); h.castCheck(it); h.swingCheck(it) } } })
+        ends.add(HomeLayoutStore.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.mirrorCheck(it); h.topCheck(it); h.castCheck(it); h.swingCheck(it) } } }))
         // feat/top-castbar: the Swing timer setting goes to the add-on's top bar too (PadMap m190), on its change as on the layout's
-        HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.swingCheck(it) } } })
+        ends.add(HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.swingCheck(it) } } }))
         characterView = CharacterView(this)
         // B leaves the cursor -> Home (user ruling, every room)
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
@@ -676,6 +713,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // tab 4 (PvP): the PVP session's page inside the room's frame (its PvpRankTab, UI Art's SPEC 6)
         characterView.pvpDrawer = PvpRankTab::draw
         PvpRankTab.onChange = { characterView.invalidate() }
+        ends.own(PvpRankTab::onChange, null)
         // LATER item 11 (the user: "when reloading from the settings, the bottom screen should enter its loading menu and return
         // to home"): the key sent, the start screen covers the bottom screen until the game's new hello, then Home
         val reload = { if (GameInput.reload()) reloadStarted() }
@@ -734,9 +772,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settings.pad.onLeave = { show(Room.HOME) }
         // feat/beautify: General's Theme tile opens themes' Theme maker (its premade gallery a step inside it)
         GeneralTiles.onOpenTheme = { settings.openThemeMaker() }
+        ends.own(GeneralTiles::onOpenTheme, null)
         // the maker's live mini Home in the DRAFT theme (the beautify pass, 2026-11-17): the Settings stage's real Home (PreviewStage, the
         // Bottom screen tiles' renderer) at the player's own look; before the game's first document the drawn mini room stands in
         ThemeMakerPage.homeRender = { spec, b -> PreviewStage.render(this, PreviewStage.playerLook(), false, null, b, spec) != null }
+        ends.own(ThemeMakerPage.Companion::homeRender, null)
         settingsRoom = settings
         // the DS WoW toolbar's switch lives in Home's Settings section since 2026-10-06 (renamed from "D-pad room bar")
         // issue #136 (2026-11-11): the row shows the player's pending choice at once (it showed the add-on's old word, "On", while the
@@ -795,9 +835,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         worldMapRoom.travelScene = { mapView.travelScene() }                              // the travel layer in the room (b-travel-layer)
         // off-thread loads (test56's ANRs): the views drawn again once a zone file or a picture has arrived
         TravelPaint.onArt = { mapView.postInvalidate(); worldMapRoom.postInvalidate() }
-        Terrain.files.onLoaded { mapView.postInvalidate() }
-        Terrain.buildings.onLoaded { mapView.postInvalidate() }
-        Roads.files.onLoaded { mapView.postInvalidate() }
+        ends.own(TravelPaint::onArt, null)
+        ends.add(Terrain.files.onLoaded { mapView.postInvalidate() })
+        ends.add(Terrain.buildings.onLoaded { mapView.postInvalidate() })
+        ends.add(Roads.files.onLoaded { mapView.postInvalidate() })
         mapView.onProbeOptions = { bits -> worldMapRoom.sendProbeOptions(bits) }   // Map: Sparkles to the add-on (Map.lua mp3)
         worldMapRoom.onLeave = { show(Room.HOME) }
         worldMapRoom.onFocusQuest = { id -> mapView.psRelease(); homeView.focusQuest(id) { } }
@@ -884,23 +925,25 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
         MemWatch.fightNow = { homeView.inFight() || lastBook?.combat == true }   // #56: the timed relief waits out a fight (UI thread)
+        ends.own(MemWatch::fightNow, { false })
         // 1529 PERFORMANCE MODE (FramePace, the user's pick 2026-11-24): Home's animations at ~30 Hz while the player moves or fights on
         // Home (no room open); full rate at rest, in the rooms and for a moment after a touch (the root's dispatchTouchEvent)
         FramePace.probe = { room == Room.HOME && homeView.isShown && (homeView.inFight() || lastBook?.combat == true || mapView.movingNow()) }
+        ends.own(FramePace::probe, null)
         // #24 (11-23): the game's exact memory walk only while the add-ons are silent (their silence check reads it); else counters
         MemWatch.gameWalkWanted = { silence.silent }
         MemWatch.start(this)                                              // WCMEM: where the memory goes (the 1.0.17 low-memory kills); 1.0.28: Android's trims
         // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
         RadialMeta.init(this)
-        RadialMeta.onChange(weakly(this) { h -> h.lastPadMap?.let { m -> h.homeView.onPadMap(m); h.controllerView.onPadMap(m); h.spellbookView.onPadMap(m) } })
+        ends.add(RadialMeta.onChange(weakly(this) { h -> h.lastPadMap?.let { m -> h.homeView.onPadMap(m); h.controllerView.onPadMap(m); h.spellbookView.onPadMap(m) } }))
         // the user's pick 2026-11-13: Start over game windows - a change is told to the add-on at once (the next padmap confirms it)
         var pauseOverSeen = HomeSettings.pauseOverGame
-        HomeSettings.onChange(weakly(this) { h -> h.ui.post {
+        ends.add(HomeSettings.onChange(weakly(this) { h -> h.ui.post {
             if (!h.shell.hostGone() && HomeSettings.pauseOverGame != pauseOverSeen) {
                 pauseOverSeen = HomeSettings.pauseOverGame; h.pauseOverSentAt = 0L; h.pauseOverTell(h.lastPadMap, "the setting")
             }
             if (!h.shell.hostGone()) h.petBTell("the setting")                     // B: pet follow, this character's choice
-        } })
+        } }))
         homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document
@@ -998,7 +1041,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // P4: the room bar's order is the layout record's (per character, D5); edit mode drives it from its draft (HomeView.roomBar)
         homeView.roomBar = strip
         strip.showOrder(RoomBar.shown(HomeSettings.layout), 0L)
-        HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.roomBarSync() } })
+        ends.add(HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.roomBarSync() } }))
         // THE ROOM'S COMBAT CUE (Home; the user: "I want the room that I am in to flash red"): over every room, under the bar and every
         // overlay; it takes no touch
         roomCue = RoomCombatCue(this)
@@ -1031,35 +1074,46 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // INSIDE THE ONE APP (the native login.txt sign-in; the user: "injecting the keys is not the way to go"): the row never types -
         // its button saves / updates the login, which the game uses by itself at its next start (NativeLogin)
         StartMenu.onReport = { openReport() }
+        ends.own(StartMenu::onReport, null)
         // 1.0.17: did the last session end badly? (LastRun; the start screen asks, Send = the ordinary report, no typing)
         LastRun.init(this)
         SetupBridge.sendCrash = { why -> ui.post { sendReport("Automatic crash report: $why") } }
+        ends.own(SetupBridge::sendCrash, null)
         StartMenu.autoLogin = { HomeLoginStore.autoLogin(this) }
+        ends.own(StartMenu::autoLogin, { true })
         // the sign-in triage's verify pass (2026-11-16, #399: a login saved at 18:02, gone by the next start, nothing in the log said
         // how): the Menu's Auto login, Forget login and the form's save go in the sign-in log (states only)
         StartMenu.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); NativeLogin.logEvent("sign-in: Auto login ${if (on) "on" else "off"} (the Menu)"); if (!on) NativeLogin.clear() }
+        ends.own(StartMenu::onAutoLogin, null)
         StartMenu.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
+        ends.own(StartMenu::onChangeLogin, null)
         StartMenu.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
         // feat/exit-now (the user, 2026-11-24: "I want our built in close game button to completly close the app immidiatly"): Exit game
         // closes DS Forever at once, Local or Streaming (ExitNow); without the launcher (the companion app alone) the old routes
         StartMenu.onExit = { LauncherHooks.exitNow?.invoke(ExitNow.MENU) ?: (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
         StartMenu.canForget = { HomeLoginStore.has(this) }
+        ends.own(StartMenu::canForget, { false })
         StartMenu.onForgetLogin = { HomeLoginStore.clear(this); Settings.forgetGameAccountPick(); NativeLogin.logEvent("sign-in: the saved login forgotten (the Menu)"); NativeLogin.clear() }
+        ends.own(StartMenu::onForgetLogin, null)
         StartMenu.canRestart = { LauncherHooks.gameUp() }
         StartMenu.onRestart = { settingsRest.onRestart() }
+        ends.own(StartMenu::onRestart, null)
         StartMenu.canSwitch = { SetupBridge.exitStream != null || ModeBridge.canGoBack() }
         StartMenu.onSwitch = { if (SetupBridge.exitStream != null) SetupBridge.exitStream?.invoke() else ModeBridge.back("the Menu") }
         // the Menu's Region: read once (Config.wtf on disk), then the choice; GameConfigWtf.ensure writes it as the portal at the next start
         var regionNow: String? = null
         StartMenu.region = { GameRegion.chosen(this) ?: regionNow ?: runCatching { GameRegion.current(this, GameFiles.gameRoot(this)) }.getOrDefault("us").also { regionNow = it } }
+        ends.own(StartMenu::region, { "us" })
         // (the choice is read first by StartMenu.region: regionNow stays the folder's own, for a Stop that forgets the choice again)
         StartMenu.onRegion = { code -> GameRegion.choose(this, code, GameRegion.BY_MENU) }
+        ends.own(StartMenu::onRegion, null)
         // the Menu's Battle.net sign-in (the user, 2026-11-24): Settings.browserLogin itself, saved by the Menu; the sign-in log says so
         // (states only) and the start screen's lines follow at once (the advice goes, or the Restart game line comes)
         StartMenu.onSignIn = { on ->
             NativeLogin.logEvent("sign-in: Battle.net sign-in set to ${BrowserLogin.words(on)} (the Menu), from the next game start")
             if (::loginWatch.isInitialized) loginShow()
         }
+        ends.own(StartMenu::onSignIn, null)
         // the region card's second line (the user, 2026-11-17): the launcher compares that region's build with the install's
         StartMenu.regionPreview = { code, answer ->
             val check = SetupBridge.regionCheck
@@ -1069,6 +1123,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 ui.post { answer(when (r) { true -> RegionPicker.Preview.DOWNLOAD; false -> RegionPicker.Preview.INSTALL; null -> RegionPicker.Preview.UNKNOWN }) }
             }, "region-card").apply { isDaemon = true }.start()
         }
+        ends.own(StartMenu::regionPreview, null)
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
         // single screen mode's waiting row at the top (the user's ruling 2026-11-25, "Top of the screen"): its strip as high as the row
         startView.onBareNeed = { if (stripKind == SingleNpc.START) stripPlace() }
@@ -1112,30 +1167,37 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         setupPanel = SetupPanel(this)
         chooserPanel = ChooserPanel(this)
         SetupBridge.openReport = { ui.post { if (!shell.hostGone()) openReport() } }
+        ends.own(SetupBridge::openReport, null)
         // the stream's settings on THIS screen (the user, 2026-11-18: they showed on the top screen and the pad went "all wacky"): every
         // route opens Settings > Performance with the Stream settings band; over the waiting screen the stream's top hands the presses
         SetupBridge.openStreamSettings = { ui.post { if (!shell.hostGone()) openStreamSettings() } }
+        ends.own(SetupBridge::openStreamSettings, null)
         SetupBridge.streamPadHolds = { streamLift && room == Room.SETTINGS && settings.perf.openTile == PerformanceTileModel.STREAM }
+        ends.own(SetupBridge::streamPadHolds, { false })
         SetupBridge.streamPad = { k -> ui.post { if (streamLift && !shell.hostGone()) settings.pad.directKey(k) } }
+        ends.own(SetupBridge::streamPad, null)
         settings.perf.onStreamBand = { open -> if (!open) ui.post { streamLiftEnd() } }
         SetupBridge.openSavedReport = { ui.post { if (!shell.hostGone()) openSavedReport() } }
+        ends.own(SetupBridge::openSavedReport, null)
         SetupBridge.reportKey = { code, down ->
             (::reportPage.isInitialized && reportPage.key(code, down)) ||
                 (::reportNotice.isInitialized && reportNotice.asking && (!down || ReportPage.Model.keyName(code)?.let { reportNotice.padKey(it) } == true))
         }
+        ends.own(SetupBridge::reportKey, null)
         // the 5 minutes ran out: the report is saved by itself (no browser mid-game) and its note waits in Settings / the setup screen
         ReportFlow.init(this)
-        DiagLog.onEndedByItself = {
-            val app = applicationContext
-            Thread({ runCatching { ReportFlow.autoSave(app) }.onFailure { Log.w("WCREPORT", "auto-save failed", it) }; SetupBridge.loginSaved() },
-                "report-autosave").start()
-        }
-        DiagLog.onChange(weakly(this) { h -> h.ui.post { h.ui.removeCallbacks(h.recTick); h.recTick.run() } })
+        // (the leak fix's review: process-wide and host-free - it needs only the application - so it stays when this host goes: a
+        // recording that runs out while no host exists, a memory release or a refused reopen, still saves its report)
+        DiagLog.onEndedByItself = reportAutoSave(applicationContext)
+        ends.add(DiagLog.onChange(weakly(this) { h -> h.ui.post { h.ui.removeCallbacks(h.recTick); h.recTick.run() } }))
         SetupBridge.openLoginForm = { loginPrompt.open() }
+        ends.own(SetupBridge::openLoginForm, null)
         // a refused saved login (M3): "Update login" = the same form, then the game restarts by itself with it (test4 ruling)
         SetupBridge.updateLogin = { restartOnSave = true; loginPrompt.open() }
+        ends.own(SetupBridge::updateLogin, null)
         // "Enter it on the game screen": the headline says so, the buttons stay; the keyboard opens on the TOP screen for the user
         SetupBridge.enterOnGame = { signInCheck.type(); SetupBridge.keyboard(true); signInStep() }
+        ends.own(SetupBridge::enterOnGame, null)
         // one WCLOGIN line per sign-in button (bug 2 of test3: one log read must time it); never anything of the login itself
         SetupBridge.log = { NativeLogin.logEvent(it) }
         combatKeep = CombatKeepHost(ui,
@@ -1144,9 +1206,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             bookReady = { lastBook != null },
             fighting = { homeView.inFight() })
         LauncherHooks.cleanExit = { why, done -> ui.post { cleanExit(why, done) } }
+        ends.own(LauncherHooks::cleanExit, null)
         QuestWatchKeep.init(this)
         TaxiNet.init(this)                                // which known flight points connect, per character (b-route-unknown-taxi)                         // the watch list kept per character (the user's "Restore silently")
         AllIcons.busy = { homeView.inFight() }                            // the background icons wait while the player fights
+        ends.own(AllIcons::busy, { false })
         if (LauncherHooks.pkg != null) {
             NativeLogin.onTrafficSample = { rx, tx -> signInCheck.traffic(NativeLogin.firstReadAt, rx, tx) }
             ui.post(signInTick)
@@ -1197,7 +1261,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
             sweepTrigger()
             NativeLogin.onChange = { if (!shell.hostGone()) { loginShow(); downloadLine() } }
+            ends.own(NativeLogin::onChange, null)
             NativeLogin.bottomState = { bottomState() }
+            ends.own(NativeLogin::bottomState, null)
         }
         loginWatch = HomeLoginWatch(
             // the games whose login screen can be up: GameNative's and WoW Forever's logs, each with the package that writes it
@@ -1239,6 +1305,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         pinPicker = BagsPinPicker(this)
         radialView.picker = pinPicker
         PreviewStage.wheelItems = { spell -> radialView.previewItems(spell) }        // f-settings-previews: the wheels' pictures
+        ends.own(PreviewStage::wheelItems, { emptyList() })
         // f-radial-middle: on Home the item / spell wheel takes Home's middle slot (the columns part), mapped into the wheel's view
         radialView.homeSlot = { open ->
             if (!open) { homeView.wheelSlot(false); null }
@@ -1337,6 +1404,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the 1515 merge: edit mode never opens while the key question is up (shown, or waiting for the controller)
         homeView.editBlocked = { !KeyPick.editMayOpen(keyAskOpen) }
         BottomTiles.editHome = { editHome("Settings' Edit Home tile") }
+        ends.own(BottomTiles::editHome, null)
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> slideBarsUp = true; pauseSlideAll(t) }          // feat/pause-power: Home's controller goes up
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button
@@ -1437,11 +1505,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // VOICE TO TEXT (the user's picks 2026-11-16): the microphone question never in a fight; Android's question on THIS screen (the
         // game's never covered: this window hides until it closes); the on-device recognizer's name hints (never logged)
         Voice.inFight = { homeView.inFight() }
+        ends.own(Voice::inFight, { false })
         Voice.askMic = { openOnBottom(VoiceAskActivity::class.java, "Voice") { VoiceMic.onClosed = it } }
+        ends.own(Voice::askMic, null)
         Voice.hints = {
             (chatView.voiceNames() + bagsView.bagItems().map { it.third.optString("name") })
                 .map { it.trim() }.filter { it.length in 2..40 && !it.startsWith("Loading") }.distinct().take(Voice.MAX_HINTS)
         }
+        ends.own(Voice::hints, { emptyList() })
         pauseView.barsBottom = {
             if (room != Room.HOME || !homeView.isShown || homeView.barsBottom() <= 0f) 0f else {
                 val a = IntArray(2); val b = IntArray(2)
@@ -1567,6 +1638,35 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // a new start mark for the input gate before the log is replayed: nothing written before THIS start is current, even
         // when the Activity is recreated in the same process (quests' InputGate, the app-start rule)
         GameInput.gate.restart()
+        // THE BOTTOM SCREEN COMES STRAIGHT BACK (BottomSync, 2026-11-25): a host made again (the display truly gone and back, Android's
+        // own close, a memory release) opens caught up - the reader's latest state documents replayed now (old: the gate's new start
+        // makes them non-current, they draw and never act), then the reader goes on from the old one's place (startTail), no whole-log
+        // replay; no waiting screen while the game is in the world; the room adopted at the first current interact document (Q3)
+        restored?.let { r ->
+            val t0 = SystemClock.uptimeMillis()
+            var n = 0
+            // round 2 (the review: "DocMemory replay can count the newest documents as current and run current-only actions a second
+            // time"): the replay is the OLD host's documents - every one drawn, none current ([replaying]), no tap on any route meanwhile
+            // (GameInput.away), and the gate's rule starts again after it, so the resumed reader's first document starts it
+            replaying = true; GameInput.away = true
+            try { for (m in DocMemory.replay()) handleMessage(m).also { n++ } } finally { replaying = false; GameInput.away = false }
+            GameInput.gate.restart()
+            resumeAt = r.place
+            // (round 2: a relaunch under way is the same game up - the last activity's game screen comes a moment later; the time asleep,
+            // never the time away, shows the waiting screen)
+            if (BottomSync.waitingGone(r, LauncherHooks.gameUp() || BottomSync.relaunchPending(SystemClock.elapsedRealtime()),
+                    SystemClock.elapsedRealtime(), SystemClock.uptimeMillis())) startView.visibility = View.GONE
+            restoreRoom = r.room.takeIf { it != Room.HOME.name }
+            restoreUi = r.ui.room
+            catchUpFrom = SystemClock.uptimeMillis(); catchUpWhat = "the rebuild"; catchUpByte = r.place?.offset ?: -1L
+            // round 2: Home's open layer and Edit Home's session at once (Home is where a rebuild lands); the room's own state with the
+            // room, at the adopt
+            uiRestore(r.ui)
+            DiagLog.event("app", "bottom screen rebuilt (${r.why}): $n documents replayed in ${SystemClock.uptimeMillis() - t0} ms, the log " +
+                (r.place?.let { "read on from byte ${it.offset}" } ?: "read from the start") + ", room ${r.room.lowercase()}" +
+                (if (restoreRoom != null) " if the game still has its window open" else "") +
+                (r.ui.homeLayer?.let { ", Home's $it" } ?: "") + (if (r.ui.edit != null) ", Edit Home" else ""))
+        }
         // WHERE THE GAME IS (GameLocator, one root read off the main thread): our builds follow GameNative + WoW Forever; the PRIVATE
         // share follows only the WoW Forever log the device itself names (no hard-coded paths there)
         Thread {
@@ -1593,19 +1693,23 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         singleCoreWire()
         singlePlayWire()
         singleNpcWire()
-        ui.post(object : Runnable {
-            override fun run() {
-                // Home holds the same map (compact), so it is fed there too
-                if (room == Room.MAP || room == Room.HOME) mapView.update(lastMap,
-                    if (lastMapAt == 0L) 0 else System.currentTimeMillis() - lastMapAt)
-                GameUi.tick()
-                homeView.tick()
-                roomCue.tick()
-                discB("no fresh word")      // on Home a B with no fresh word goes back to the house
-                petBTell("tick")            // B: pet follow - a state change nothing else reported (the report's notice), a lost tell
-                ui.postDelayed(this, 1000)
-            }
-        })
+        ui.post(secondTick)
+    }
+
+    /** the host's once-a-second loop (named: a park stops it, the return starts it again; [repeatingTicks]) */
+    private val secondTick = object : Runnable {
+        override fun run() {
+            if (shell.hostGone()) return  // the review: a host that went is never kept alive (and ticking) by its own loop
+            // Home holds the same map (compact), so it is fed there too
+            if (room == Room.MAP || room == Room.HOME) mapView.update(lastMap,
+                if (lastMapAt == 0L) 0 else System.currentTimeMillis() - lastMapAt)
+            GameUi.tick()
+            homeView.tick()
+            roomCue.tick()
+            discB("no fresh word")      // on Home a B with no fresh word goes back to the house
+            petBTell("tick")            // B: pet follow - a state change nothing else reported (the report's notice), a lost tell
+            ui.postDelayed(this, 1000)
+        }
     }
 
     fun onStart() {
@@ -1620,7 +1724,21 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         barSelect.appBack()
     }
 
-    fun onStop() {
+    /** [gameHidden]: a park (the launcher away or the screen off: nobody sees the game) - the game's own UI is left as it is.
+     *  [giveBack] (round 3): a PARKED host torn down with no host sure to follow on its display (Android's close with the display gone):
+     *  the park's hold goes FIRST, so the game's own UI is given back now, while the input gate may still be live (as base did at the
+     *  sleep itself) - a later return may find no window and no reader to make the gate live again */
+    fun onStop(gameHidden: Boolean = false, giveBack: Boolean = false) {
+        if (giveBack && !gameHidden) unholdPark()
+        // ROUND 2 (the review, 2026-11-26: "A parked host torn down while the user is away now taps the game's UI open, and the new host
+        // taps it shut at the return"): a PARKED host torn down for good (a memory release, Android's close while away, a move or close,
+        // the relaunch a reopen from Cocoon's bottom grid brings) runs its stop UNDER the park's hold - GameUi records "not in view" and
+        // taps nothing (nobody sees the game then) - and the hold goes after. The next host's start finds the game's UI as it was; a
+        // return that finds no bottom window to show gives it back (fork/DsForeverScreen.gameUiBack)
+        try { stopBody(gameHidden) } finally { if (!gameHidden) unholdPark() }
+    }
+
+    private fun stopBody(gameHidden: Boolean) {
         Voice.stopAll()             // no recognizer keeps the microphone while the app is away (a page waiting on Android's question stays)
         if (unpacking) return
         // the sign-in prompt never stays open behind the app's back (its fields are cleared; the review)
@@ -1631,14 +1749,192 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (::targetRadial.isInitialized) targetRadial.shut()
         talkReset("the app went away")                                      // hold to talk: its reader goes, nothing sent
         DirectPad.shutdown()
-        // nothing of the game's UI stays hidden without its replacement in view
-        GameUi.onVisible(false)
+        // nothing of the game's UI stays hidden without its replacement in view (not on a park: the game is not in view either, and a
+        // park must not tap the game's UI open and shut again - BottomSync)
+        if (!gameHidden) GameUi.onVisible(false)
         // Select is the game's again while the app is away (the bar selector asks for it back when it returns)
         barSelect.appAway()
     }
 
-    private fun show(r: Room, byB: Boolean = false, motion: Boolean = true) {
+    // ---------------------------------------------------------------- THE BOTTOM SCREEN KEPT WHILE AWAY (BottomSync, 2026-11-25)
+    // the user: "Coming back after a drop: When the bottom screen goes blank or restarts, DS Forever should come straight back on it, in
+    // the same room, already caught up with the game, with no app restart"; "Like most of the time the drops happen from minimizing the
+    // game or closing my thor to sleep". The launcher's bottom window is PARKED then (fork/DsForeverScreen.hide): this same host away
+    // and back, every view, room, tab, scroll, NPC window and edit mode kept; only the wheels and the sign-in prompt close (Q1)
+
+    /** uptime / wall / elapsedRealtime ms of the park (0 = not parked; round 2: elapsedRealtime - uptime = the time asleep since) */
+    private var parkedAt = 0L
+    private var parkedWall = 0L
+    private var parkedElapsed = 0L
+    /** round 2: the old host's documents are being replayed ([onCreate]: never current, they draw and never act) */
+    private var replaying = false
+    /** round 2: a reader asked for while parked (startTail): it starts at the return, never while away */
+    private var tailWanted = false
+    /** round 2: the restored room's own state (RoomKeep), laid on it when it comes back by the adopt rule */
+    private var restoreUi: Map<String, String> = emptyMap()
+    /** round 2: the comeback path this host was made after (BottomSync.hostMade), given back by a failed open ([abandon]) */
+    private var rebuildMark: String? = null
+    /** the repeating ticks that ran at the park (started again at the return) */
+    private var parkTicks: List<Runnable> = emptyList()
+    /** GameUi's tap hold before the park (given back at the return) */
+    private var tapHoldBefore = 0L
+    /** since when (uptime) the first current document is waited for, after a return / a rebuild ([catchUpWhat]): its line, once */
+    private var catchUpFrom = 0L
+    private var catchUpWhat = ""
+    /** the reader's byte place then (the bytes it read to catch up: the line), -1 = unknown */
+    private var catchUpByte = -1L
+    /** a rebuilt host's snapshot (BottomSync), its room waiting for the first current interact document, the reader's place */
+    private var restored: BottomSync.Snapshot? = null
+    private var restoreRoom: String? = null
+    private var resumeAt: LogTail.Place? = null
+    val parked: Boolean get() = parkedAt != 0L
+
+    /** every repeating ui runnable this host owns (a park stops the ones that run, the return starts them again) */
+    private fun repeatingTicks(): List<Runnable> =
+        listOf(secondTick, guardTick, silenceTick, padOwnerTick, castAskTick, castTabTick, keyAskTick, signInTick, rootCheck, recTick,
+            psStepTick, talkTick, playTick, singlePoll)
+
+    /**
+     * AWAY (the launcher's minimize, Recents, another app over it, the screen off): onStop's body without the game's UI (the wheels and the
+     * sign-in prompt close, voice off, the pad's reader shut, Select the game's), the reader paused (its place kept), every repeating
+     * tick stopped, every tap held (GameInput.away, GameUi's hold), the indoor maps free to build (#568 / #573). The window itself is
+     * hidden by its owner (no surface, no touch, no focus, no keep-screen-on). Main thread
+     */
+    fun park(why: String) {
+        if (parkedAt != 0L) return
+        parkedAt = SystemClock.uptimeMillis(); parkedWall = System.currentTimeMillis(); parkedElapsed = SystemClock.elapsedRealtime()
+        onStop(gameHidden = true)
+        tail?.pause()
+        parkTicks = repeatingTicks().filter { ui.hasCallbacks(it) }
+        for (r in parkTicks) ui.removeCallbacks(r)
+        guardOff()
+        tapHoldBefore = GameUi.tapHold(); GameUi.holdTaps(Long.MAX_VALUE)
+        GameInput.away = true
+        IndoorSchedulerStep.companionGone()
+        if (::chatView.isInitialized) chatView.pauseWatch()               // the review: Chat's twice-a-second watch stops too
+        catchUpFrom = 0L
+        BottomSync.parked()
+        DiagLog.event("app", "bottom screen kept while away (room ${room.name.lowercase()}, ${parkTicks.size} ticks stopped; $why)")
+    }
+
+    /**
+     * BACK, exactly as it was: the taps free again, the indoor maps' companion up, the reader on from its place (only what the add-on
+     * wrote while away), the ticks that ran started again, onStart's body (GameUi.onVisible(true) is a no-op then: it never went). The
+     * first current document after it is logged with its time ([catchUpFrom]). Main thread
+     */
+    fun unpark(why: String) {
+        if (parkedAt == 0L) return
+        val t0 = SystemClock.uptimeMillis()
+        val awayMs = (System.currentTimeMillis() - parkedWall).coerceAtLeast(t0 - parkedAt)
+        parkedAt = 0L
+        GameInput.away = false
+        GameUi.holdTaps(tapHoldBefore)
+        IndoorSchedulerStep.companionUp(this)
+        silence.resumed(awayMs)
+        // round 2: a reader asked for while away (the locate thread's start, a game folder or source change) starts now, else the paused
+        // one reads on from its place
+        if (tailWanted) { tailWanted = false; startTail() }
+        tail?.resume()
+        for (r in parkTicks) { ui.removeCallbacks(r); ui.post(r) }
+        parkTicks = emptyList()
+        if (::chatView.isInitialized) chatView.resumeWatch()
+        onStart()
+        catchUpFrom = SystemClock.uptimeMillis(); catchUpWhat = "the return"; catchUpByte = tail?.place()?.offset ?: -1L
+        val work = SystemClock.uptimeMillis() - t0
+        BottomSync.back(awayMs, work)
+        DiagLog.event("app", "bottom screen shown again after ${awayMs / 1000} s away, $work ms (room ${room.name.lowercase()}; $why)")
+    }
+
+    /** the park's hold and away let go (the return's own way is [unpark]; this is a parked host's teardown: [onStop], [onDestroy]) */
+    private fun unholdPark() {
+        if (parkedAt == 0L) return
+        parkedAt = 0L
+        GameUi.holdTaps(tapHoldBefore)
+        GameInput.away = false
+    }
+
+    /**
+     * what a host made again after this one needs (BottomSync; fields only, inside the launcher only). The review: elapsedRealtime (a
+     * long sleep counts against the restore's age), and a restored host that has not settled yet (no current document since it came)
+     * carries its restore forward ([BottomSync.snapshotOf]: the room waiting for the adopt rule, in the world, the reader's place)
+     */
+    fun snapshot(why: String): BottomSync.Snapshot? {
+        if (LauncherHooks.pkg == null || unpacking) return null
+        // round 2 (the review: "A snapshot taken while parked marks the game out of the world after 2 min away"): a PARKED host says
+        // whether the game was in the world at the PARK (its reader paused then, no document could come since), and hands on the deep
+        // sleep it has been through meanwhile - the new host shows the waiting screen after a long sleep only, never after a minimize
+        val now = SystemClock.elapsedRealtime(); val nowUp = SystemClock.uptimeMillis()
+        val slept = if (parkedAt != 0L) BottomSync.asleep(parkedElapsed, parkedAt, now, nowUp) else 0L
+        return BottomSync.snapshotOf(restored, docLiveAt > 0L, room.name, restoreRoom,
+            BottomSync.inWorld(docLiveAt, if (parkedAt != 0L) parkedWall else System.currentTimeMillis()),
+            tail?.place(), now, LauncherHooks.gameStartSec, why, nowUp = nowUp, sleptNow = slept, ui = uiKeep())
+    }
+
+    /**
+     * ROUND 2 (the review, 2026-11-26: "Returning from Cocoon's bottom grid always rebuilds the host ... Home's open layer, every room's
+     * tab and scroll, and the Edit Home draft are lost"): what this host shows beyond its room, for a host made again - Home's open layer
+     * (on Home), the shown room's own state (RoomKeep), Edit Home's live session. Fields only
+     */
+    private fun uiKeep(): BottomSync.HostUi = runCatching {
+        if (!::homeView.isInitialized) return@runCatching BottomSync.HostUi()
+        BottomSync.HostUi(homeLayer = if (room == Room.HOME) homeView.layerKeep() else null,
+            room = roomKeeper(room)?.keepUi().orEmpty(), edit = homeView.editKeep())
+    }.getOrDefault(BottomSync.HostUi())
+
+    /** the rooms that keep a small state of their own across a rebuild (their tab, page, scroll); the others come back as they land.
+     *  Round 3 (the review, 2026-11-26): Chat (what is written, the type, the board), Professions (the search, its filters and keyboard),
+     *  the Spellbook and the Controller room (their tabs and PadTabPage's own), Bags (the clean view, the search, the scroll) too */
+    private fun roomKeeper(r: Room): RoomKeep? = when (r) {
+        Room.QUESTS -> if (::questsView.isInitialized) questsView else null
+        Room.SOCIAL -> if (::socialView.isInitialized) socialView else null
+        Room.GROUPFINDER -> if (::groupFinderView.isInitialized) groupFinderView else null
+        Room.CALENDAR -> if (::calendarView.isInitialized) calendarView else null
+        Room.TALENTS -> if (::talentsView.isInitialized) talentsView else null
+        Room.CHAT -> if (::chatView.isInitialized) chatView else null
+        Room.PROFESSIONS -> if (::professionsView.isInitialized) professionsView else null
+        Room.SPELLBOOK -> if (::spellbookView.isInitialized) spellbookView else null
+        Room.CONTROLLER -> if (::controllerView.isInitialized) controllerView else null
+        Room.BAGS -> if (::bagsView.isInitialized) bagsView else null
+        else -> null
+    }
+
+    /**
+     * round 2: what a rebuilt host lays back at once - Edit Home's session (it closes a module itself), else Home's open layer - by
+     * the routes a finger takes (HomeView.editRestore / layerRestore); posted, so Home is laid first. Only while Home shows
+     */
+    private fun uiRestore(u: BottomSync.HostUi) {
+        if (u.edit == null && u.homeLayer == null) return
+        ui.post {
+            if (shell.hostGone() || room != Room.HOME) return@post
+            val edited = u.edit?.let { homeView.editRestore(it) } == true
+            if (!edited) u.homeLayer?.let { homeView.layerRestore(it) }
+        }
+    }
+
+    /**
+     * a host whose window never came up (TopWindow's abandon: the window manager refused the display after its onCreate; the bottom
+     * Presentation makes its host only once it is shown: HostPresentation.begin). The review: the snapshot it took and its rebuild mark
+     * go back for the watchdog's next try (never used up by a failed open), uncounted; then the old teardown. Its gate restarted at its
+     * onCreate and no document reached it, so its stop taps nothing on the top screen
+     */
+    fun abandon() {
+        if (LauncherHooks.pkg != null) BottomSync.hostAbandoned(restored, rebuildMark)
+        restored = null; rebuildMark = null
+        // (the leak fix's review: a stop that throws - a host whose start failed part way - never skips the teardown)
+        try { onStop() } finally { onDestroy() }
+    }
+
+    /** a start that threw part way ([made]): the abandon's teardown, and whatever it registered taken off even if that teardown throws */
+    private fun failedStart(t: Throwable) {
+        Log.w("WCLOG", "host: its start failed (${t.javaClass.simpleName}: ${t.message}): taken down again", t)
+        runCatching { abandon() }.onFailure { Log.w("WCLOG", "host: the failed start's teardown: ${it.message}", it) }
+        ends.end()
+    }
+
+    /** [adopt] (BottomSync's rebuild, Q3): the game still holds the controller for [r] with its window open - shown with no entry tap */
+    private fun show(r: Room, byB: Boolean = false, motion: Boolean = true, adopt: Boolean = false) {
         MemWatch.room = r.name.lowercase()                                // WCMEM: what is on show
+        if (!adopt) restoreRoom = null                                    // BottomSync: a pick meanwhile wins over the restore
         if (r != Room.HOME) glanceHub = false                             // single screen mode: a room ends Home's glance (B -> the game)
         if (r != Room.HOME) talkReset("room $r")                          // hold to talk: a room change ends a hold, nothing sent
         flushBLeave(entering = r)
@@ -1732,7 +2028,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (r != was && ::lbView.isInitialized && lbView.isShown2) lbEval()
         // Chat's cursor only where presses reach it: the Chat room, not Home's borrowed full-screen chat (chat session's switch)
         chatView.cursorOnShow = r == Room.CHAT
-        if (enterProfessions) { enterProfessions = false; professionsView.post { professionsView.enter() } }
+        if (enterProfessions && !adopt) { enterProfessions = false; professionsView.post { professionsView.enter() } } else if (adopt) enterProfessions = false
         if (questsIn) questsView.onShown()
         if (mapIn) worldMapRoom.onShown()
         if (chatIn) { chatHold(0); chatView.post { chatView.onBackChanged(chatView.bLeadsHome()) } }
@@ -1777,7 +2073,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (macIn) macrosView.onShown()
         // ... and the same rooms take the controller here, for every route that brings them up (each tap guarded on the room not
         // holding already: a room the GAME opened holds before its jump lands here, so nothing is tapped then - the trainer lend too)
-        touchRoomsEnter(was, r)
+        if (!adopt) touchRoomsEnter(was, r)
         // in a fight the pad follows the room shown now (PadOwnerSync)
         padOwnerStep()
         GameUi.onRoom(r)
@@ -2407,6 +2703,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the top panel runs up to 120 Hz: Home's frames (the docked map's trail above all) paced while moving / fighting with Home's rest
         // being the game, not only while Home's page shows (the two-screen probe above stays as it was)
         FramePace.probe = playProbe
+        ends.own(FramePace::probe, null)
         // the host's first look (onCreate's show(Room.HOME), before this wiring: no docks yet) given to the docks now - else they would
         // wait for the look's next change (a fresh host after the switch starts on PLAY and stays there)
         singleLookNow?.let { singlePlayLook(it) }
@@ -3097,7 +3394,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // HOLD TO TALK (HoldTalk): FIRST, while a hold lasts (Left's release, A / B on its line); the chat guest the Hub held in the
         // router's click keeps the game from every press meanwhile, and the Chat room's own registration (same keys) never gets them
         // push to talk (hub58): the held button may be any of them, the sticks too; its release ends the hold, as Left's does
-        DirectPad.register(DirectPad.Reg("talk", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK", "PADFORWARD",
+        ends.add(DirectPad.register(DirectPad.Reg("talk", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK", "PADFORWARD",
             "PADLSTICK", "PADRSTICK"), wantsRelease = true, active = { holdTalk.takesPad }) { k, down, _ ->
             when {
                 k == holdTalk.src && !down -> talkUp()
@@ -3106,28 +3403,29 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 holdTalk.st == HoldTalk.St.PENDING -> padUnclaimed(k, true)
                 else -> talkAct(holdTalk.key(SystemClock.uptimeMillis(), k), "press $k")
             }
-        })
+        }))
         // pg1: + LB / RB (the Polestar tab's switch, from anywhere in the room; the direct route only)
-        DirectPad.register(DirectPad.Reg("quests", DirectPadKeys.EIGHT + lr, repeat = setOf("PADDUP", "PADDDOWN"), active = live("quests")) { k, down, rp ->
-            if (down) questsView.onDirect(k, rp) })
-        DirectPad.register(DirectPad.Reg("settings", DirectPadKeys.EIGHT + lr, active = live("settings"), onKey = synth("settings") { settings.pad.onPad(it) }))
-        DirectPad.register(DirectPad.Reg("chat", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"), active = live("chat"), onKey = synth("chat") { chatView.onPad(it) }))
+        ends.add(DirectPad.register(DirectPad.Reg("quests", DirectPadKeys.EIGHT + lr, repeat = setOf("PADDUP", "PADDDOWN"), active = live("quests")) { k, down, rp ->
+            if (down) questsView.onDirect(k, rp) }))
+        ends.add(DirectPad.register(DirectPad.Reg("settings", DirectPadKeys.EIGHT + lr, active = live("settings"), onKey = synth("settings") { settings.pad.onPad(it) })))
+        ends.add(DirectPad.register(DirectPad.Reg("chat", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"), active = live("chat"), onKey = synth("chat") { chatView.onPad(it) })))
         // the Map room: + L3 (the game's map pin) and Start (Show:), the user's context controls (Map.lua mr3 holds them too)
-        DirectPad.register(DirectPad.Reg("map", DirectPadKeys.EIGHT + lr + setOf("PADLSTICK", "PADBACK"),
-            active = { live("map")() || (guestShown("map") && capHolder == "map") }, onKey = synth("map") { worldMapRoom.onPad(it) }))
+        ends.add(DirectPad.register(DirectPad.Reg("map", DirectPadKeys.EIGHT + lr + setOf("PADLSTICK", "PADBACK"),
+            active = { live("map")() || (guestShown("map") && capHolder == "map") }, onKey = synth("map") { worldMapRoom.onPad(it) })))
         // b98: the bar opened early on the app's own D-pad Down (the game's hub took its hold in that click) is live at once
-        DirectPad.register(DirectPad.Reg("bar", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"),
-            active = { live("bar")() || (barSelect.open && barSelect.early) }, onKey = synth("bar") { barSelect.onPad(it) }))
+        ends.add(DirectPad.register(DirectPad.Reg("bar", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"),
+            active = { live("bar")() || (barSelect.open && barSelect.early) }, onKey = synth("bar") { barSelect.onPad(it) })))
         // b98: D-pad Down that no room takes, on Home with nobody holding: the bar comes up at once (the game's command confirms it)
         DirectPad.unclaimed = { k, down -> padUnclaimed(k, down) }
+        ends.own(DirectPad::unclaimed, null)
         // 1518: edit mode's B on this feed is read press AND release (held = Discard, HomeView.editB); every other key as before
         val homeKey = synth("home") { if (setupPad) setupView.padKey(it.optString("k")) else homeView.auraPad(it) }
-        DirectPad.register(DirectPad.Reg("home", DirectPadKeys.EIGHT + lr + setOf("PADBACK"), wantsRelease = true, active = live("home")) { k, down, rep ->
+        ends.add(DirectPad.register(DirectPad.Reg("home", DirectPadKeys.EIGHT + lr + setOf("PADBACK"), wantsRelease = true, active = live("home")) { k, down, rep ->
             if (k == "PAD2" && !setupPad && room == Room.HOME && homeView.editing) homeView.editB(down) else homeKey(k, down, rep)
-        })
+        }))
         // the Track Pad & Keyboard: LB / RB the tabs, ZL / ZR the clicks (the user, 2026-10-16)
-        DirectPad.register(DirectPad.Reg("tool", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT), active = live("tool"),
-            onKey = synth("tool") { homeView.toolPad(it) }))
+        ends.add(DirectPad.register(DirectPad.Reg("tool", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT), active = live("tool"),
+            onKey = synth("tool") { homeView.toolPad(it) })))
         // THE ROOMS' TABS ON TOP (the user, 2026-11-25: "On all of the rooms that have the tabs on the right side we need to move the test
         // to the top and make them so that L and R shift the tabs left and right"): in Character, Group Finder, Professions and Social
         // L / R come from the app's own reader and step the room's tab row (RoomTabRow); the same in the rooms whose tabs were on top
@@ -3136,10 +3434,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // target / bar paging, so a bumper meant for the room never also targets or pages in the game. Each press is decided ONCE, there
         // (RoomTabsPad.decide): the reader acts on it only when it was held for the room (RoomTabsPad.take); a press the game got reaches
         // the room only as its relayed copy (Group Finder's / Social's / Professions' capture extras: gfpad / socialpad / profpad), as before
-        DirectPad.register(DirectPad.Reg(RoomTabsPad.ID, lr,
+        ends.add(DirectPad.register(DirectPad.Reg(RoomTabsPad.ID, lr,
             active = { roomTabsLive() || RoomTabsPad.heldWaiting(SystemClock.uptimeMillis()) }) { k, down, _ ->
             if (down && RoomTabsPad.take(k, roomTabsLive(), SystemClock.uptimeMillis())) roomTabsShoulder(k == DirectPadKeys.RB)
-        })
+        }))
         // the launcher's key callback asks (main thread); the host only weakly (a static never keeps it: Weakly.kt)
         val me = java.lang.ref.WeakReference(this)
         SetupBridge.roomShoulders = { me.get()?.let { h -> !h.shell.hostGone() && DirectPad.healthy && h.roomTabsLive() } == true }
@@ -3565,8 +3863,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun handleMessage(msg: JSONObject) {
         // the problem report's log: the document summarized (types and flags, never its words; names only to hide them)
         runCatching { DiagLog.doc(msg) }
-        // first, for every document: is the game live, and is a text box open over there
-        val current = GameInput.note(msg)
+        // first, for every document: is the game live, and is a text box open over there (BottomSync round 2: a replayed document of the
+        // old host's is never current - it was handled there; it draws here and acts on nothing)
+        val current = GameInput.note(msg) && !replaying
         docCurrent = current
         if (current) lastAddonAt = SystemClock.elapsedRealtime()           // the clean exit's "past the login screen"
         if (current) docLiveAt = System.currentTimeMillis()                // StartRoute: the add-ons speak in this game run
@@ -3575,6 +3874,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (current && LauncherHooks.pkg != null) NativeLogin.worldSeen()
         // smoothness A: an answer document's arrival, for the latency chain (inside the launcher only)
         if (LatLog.on) msg.optString("type").let { t -> if (t.endsWith("ack") || t.endsWith("use")) LatLog.mark("doc", "$t gt=${msg.optLong("_gt", -1L)}") }
+        // BottomSync: the first current document after a return / a rebuild - caught up (the problem report reads the time)
+        if (current && catchUpFrom != 0L) {
+            val ms = SystemClock.uptimeMillis() - catchUpFrom
+            catchUpFrom = 0L
+            BottomSync.caughtUp(ms)
+            val read = tail?.place()?.offset?.let { at -> if (catchUpByte >= 0L && at >= catchUpByte) ", ${at - catchUpByte} bytes read" else "" } ?: ""
+            DiagLog.event("app", "bottom screen caught up $ms ms after $catchUpWhat (${msg.optString("type")}$read)")
+        }
         if (current && !docFlowSeen) {
             docFlowSeen = true; Log.i("WCHOME", "docs: first current document (${msg.optString("type")})")
             // the add-ons speak after all: their notice goes
@@ -3667,7 +3974,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (castAskOpen && homeView.inFight()) castBarAsk()          // a fight: the cast bar question goes at once (back after)
                 if (keyAskOpen && homeView.inFight()) keyAskTick.run()       // Safety k10: the key question too (asked again after it)
                 if (current) PreviewStage.feedFull(msg)                     // f-settings-previews: the Settings panel's live miniatures
-                PreviewStage.roomBar = { castView.roomBar }; PreviewStage.roomBarOn = { castView.roomBarOn }
                 msg.optJSONObject("bags")?.let { bagsView.update(it, current); pinPicker.update(it); characterView.updateBags(it)
                     if (::interactView.isInitialized) interactView.updateBags(it)      // feat/vendor-bag-slots: the vendor's free bag / ammo slots
                     it.optJSONObject("equipped")?.let { eq -> homeView.durability(eq.optJSONObject("durw")) }; if (ProfessionsStore.onBags(it)) professionsView.refresh() }   // old = no room switch, no tap (bags)
@@ -4044,6 +4350,20 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val holderNow = if (current) msg.optString("holder") else ""
                 if (current) { if (holderNow != capHolder) capHolderAt = SystemClock.uptimeMillis(); capHolder = holderNow }
                 if (current) singleHeal(holderNow)                    // single screen mode: a guest the old window left holding
+                // BottomSync (the user's pick Q3): a rebuilt host's room, decided ONCE at its first current interact document - the same
+                // room only while the game still holds the controller for it (its window open: adopted, no entry tap), else Home
+                if (current) restoreRoom?.let { want ->
+                    restoreRoom = null
+                    val got = BottomSync.roomAfter(want, holderNow, HomeBack::roomsOf)
+                    DiagLog.event("app", "bottom screen restored: " + (got?.let { "room ${it.lowercase()} (its game window is still open)" }
+                        ?: "Home (the ${want.lowercase()} window is not open in the game)"))
+                    // (round 2: and that room's own state - its tab, page, scroll - laid on it: the game's window is still on that tab)
+                    got?.let { if (room == Room.HOME) { show(Room.valueOf(it), adopt = true); roomKeeper(Room.valueOf(it))?.restoreUi(restoreUi) } }
+                    // (round 3: Professions' search keyboard was up in the old host and its room is not laid back - the add-on still
+                    // keeps B the room's for it: told "nokbd" once)
+                    if (got == null && want == Room.PROFESSIONS.name && restoreUi["kb"] == "1") ProfessionsView.kbdOff(this)
+                    restoreUi = emptyMap()
+                }
                 if (current) hiddenSince.keys.retainAll { it == holderNow }
                 // after HIDDEN_GRACE only (batch 19's log: a holder doc written just before a guest's own free landed was read after
                 // its room closed, and freed it a second time)
@@ -4622,6 +4942,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** (re)starts following the game's log at [gameLog] when it is a new path (a new chosen root stops the old follow first) */
     private var tailLog: String? = null
     private fun startTail() {
+        // BottomSync (round 2: "A park before the host's reader starts leaves an unpaused LogTail reading while away"): never a reader
+        // started while parked (the locate thread's start, a game folder or a source change) - it starts at the return ([unpark])
+        if (parkedAt != 0L) { tailWanted = true; return }
         // Streaming (S2): the PC's log through the Desktop bridge (PlayModes.pick); Local: the game's own log, as before
         val streaming = PlayModes.current == PlayMode.STREAM && PlayModes.bridgeLog != null
         val log = if (streaming) "bridge:${PlayModes.bridgeKey}" else gameLog()
@@ -4640,15 +4963,19 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         Log.i("WCLOG", "game log: $log (located ${game?.root ?: "none"}, share ${BuildConfig.SHARE}, mode ${PlayModes.current})")
         // each message carries WHERE it came from (the settings fix 2026-11-18): a PC document handled after a switch back to Local
         // must never be taken for the Thor's own (before 1489 the PC's svkeep replaced the Thor's kept copy whole)
-        val onMessage: (org.json.JSONObject) -> Unit = { msg -> if (streaming) runCatching { msg.put(SRC_KEY, SRC_PC) }; ui.post { handleMessage(msg) } }
-        val onStatus: (String) -> Unit = { s -> ui.post {
+        // BottomSync: inside the launcher the latest state documents are kept on this reader thread, before the hand-off (DocMemory)
+        // (the review: only with the game up - the start screens read the last session's log from byte 0, another character's even;
+        // round 2: a relaunch under way is the same game up - what the resumed reader reads before the last activity's game screen counts)
+        val onMessage: (org.json.JSONObject) -> Unit = { msg -> if (streaming) runCatching { msg.put(SRC_KEY, SRC_PC) } else if (LauncherHooks.gameUp() || BottomSync.relaunchPending(android.os.SystemClock.elapsedRealtime())) DocMemory.note(msg); ui.post { handleMessage(msg) } }
+        // (DocMemory: a truncated log - the client restarted - keeps nothing of the old client's documents; the reader thread, first)
+        val onStatus: (String) -> Unit = { s -> if (!streaming) DocMemory.readerSaid(s); ui.post {
             status.text = s.take(110)
             // the other game started: is IT set up for the companion?
             // (not inside the launcher: there the second candidate is the same game's private log, never another game)
             if (s.startsWith("following the game's log") && LauncherHooks.pkg == null) ui.postDelayed({ setupCheck() }, 3_000L)
         } }
         tail = PlayModes.pick(PlayModes.current, PlayModes.bridgeLog, onMessage, onStatus) {
-            LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow)
+            LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow, resume = resumeAt.also { resumeAt = null })
         }.also { it.start() }
         // m129: the combat log is no longer read (no health on the bottom); the files our older add-ons made still go
         if (!streaming) java.io.File(log).parentFile?.let { dir ->
@@ -4722,28 +5049,48 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     fun onDestroy() {
-        Voice.stopAll()
-        ui.removeCallbacks(singlePoll)
-        singlePlayEnd()
-        if (SingleScreen.fightNow === singleFight) SingleScreen.fightNow = { false }
-        Theme.removeListener(themeChanged)
-        ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
-        ui.removeCallbacks(silenceTick)
-        ArtHarvest.offState(iconArtState)
-        ArtHarvest.offStepDone(mapArtDone)
-        // #568 / #573: NOT a stop - this host goes whenever the launcher goes to the background or the screen turns off, the only
-        // times the indoor maps may build after a game; the step lets go by itself when the game starts (IndoorSchedulerStep.on)
-        IndoorSchedulerStep.companionGone()
-        ui.removeCallbacks(signInTick)
-        NativeLogin.onTrafficSample = null
-        MemWatch.gameWalkWanted = { true }                              // #24 (11-23): no host, the walk as before
-        SetupBridge.keyboard(false)
-        ui.removeCallbacks(rootCheck)
-        if (PlayModes.onChanged === sourceChanged) PlayModes.onChanged = null
-        tail?.stop()
-        getSharedPreferences(GameFiles.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(gameRootChanged)
-        GameRegion.listeners.remove(regionChanged)
-        if (::loginWatch.isInitialized) loginWatch.stop()
+        // (the leak fix's review: a step that throws on the way - a host whose start failed part way - never skips the last one)
+        try {
+            live--
+            // BottomSync: a parked host that goes (a memory release, Android's close while away) never leaves the taps held
+            unholdPark()
+            GameInput.away = false
+            // round 3: an Edit Home session handed to a host made again (snapshot) is the new Home's alone from now on
+            if (::homeView.isInitialized) homeView.editLetGo()
+            // the review: every repeating tick off the main looper (the once-a-second loop reposted itself for ever: each host made again kept
+            // the old one - its rooms, its map - alive and ticking)
+            for (r in repeatingTicks()) ui.removeCallbacks(r)
+            Voice.stopAll()
+            ui.removeCallbacks(singlePoll)
+            singlePlayEnd()
+            if (SingleScreen.fightNow === singleFight) SingleScreen.fightNow = { false }
+            Theme.removeListener(themeChanged)
+            ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
+            ui.removeCallbacks(silenceTick)
+            ArtHarvest.offState(iconArtState)
+            ArtHarvest.offState(artStateLog)
+            ArtHarvest.offStepDone(mapArtDone)
+            // #568 / #573: NOT a stop - this host goes whenever the launcher goes to the background or the screen turns off, the only
+            // times the indoor maps may build after a game; the step lets go by itself when the game starts (IndoorSchedulerStep.on)
+            IndoorSchedulerStep.companionGone()
+            ui.removeCallbacks(signInTick)
+            NativeLogin.onTrafficSample = null
+            MemWatch.gameWalkWanted = { true }                              // #24 (11-23): no host, the walk as before
+            SetupBridge.keyboard(false)
+            ui.removeCallbacks(rootCheck)
+            if (PlayModes.onChanged === sourceChanged) PlayModes.onChanged = null
+            tail?.stop()
+            // BottomSync: the reader's place joins this host's snapshot (if one was kept for a rebuild): the next reader goes on from there
+            if (LauncherHooks.pkg != null) BottomSync.place(tail?.place(), LauncherHooks.gameStartSec)
+            getSharedPreferences(GameFiles.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(gameRootChanged)
+            GameRegion.listeners.remove(regionChanged)
+            if (::loginWatch.isInitialized) loginWatch.stop()
+            // HostEnds (HostsReleasedTest): the bottom-screen hitch watch's frame callback re-posted itself for ever while recording, and
+            // everything this host and its views registered process-wide goes now (a replaced host was kept whole by them before)
+            android.view.Choreographer.getInstance().removeFrameCallback(hitch); hitchOn = false
+        } finally {
+            ends.end()
+        }
     }
 
     /**
@@ -5360,11 +5707,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * THE KEY SWEEP'S TRIGGER (Quests' pad10c probe; the user: "the sweep only on your word"): ONE broadcast from the PC, sent only when
      * tracking relays the user's "sweep" - `adb shell am broadcast -a app.dsforever.companion.KEYSWEEP -p app.dsforever.companion`.
      * The sweep presses only Quests' test keys (CTRL-SHIFT row keys alone, the keytest row's columns), which do nothing in the game;
-     * live keys stay off (TapBridge.KEYS_ON). Registered once per app life, inside the launcher only.
+     * live keys stay off (TapBridge.KEYS_ON). Inside the launcher only. HostEnds (feat/bottom-sync): once per HOST, taken off at its end -
+     * it was once per app life, so the first host's receiver held that host for good and, the host gone, answered nobody's sweep
      */
     private fun sweepTrigger() {
-        if (sweepRegistered) return
-        sweepRegistered = true
+        if (sweepMine) return
+        sweepMine = true
         val r = object : android.content.BroadcastReceiver() {
             override fun onReceive(c: Context, i: android.content.Intent) {
                 if (i.action != SWEEP_ACTION || shell.hostGone()) return
@@ -5375,7 +5723,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val f = android.content.IntentFilter(SWEEP_ACTION)
         if (android.os.Build.VERSION.SDK_INT >= 33) applicationContext.registerReceiver(r, f, Context.RECEIVER_EXPORTED)
         else applicationContext.registerReceiver(r, f)
+        // HostEnds: the application's receiver list held this host (and through it every room) for good
+        ends.add { runCatching { applicationContext.unregisterReceiver(r) } }
     }
+    private var sweepMine = false
 
     /**
      * THE ROW INSIDE THE ONE APP, ONLY WHEN NEEDED (the user 2026-10-08: "It still shows battle.net login on the bottom screen. How can
@@ -6648,6 +6999,32 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     companion object {
+        /** BottomSync's "never two hosts": the CompanionHosts made and not yet destroyed in this process (the tests read it) */
+        @Volatile var live = 0
+            private set
+
+        /**
+         * a host made by its window ([shell]) on [base]: its onCreate, then (with [start]) its onStart. ONE WHOSE START THROWS PART WAY
+         * IS TAKEN DOWN (the leak fix's review, 2026-11-26: a decode's OutOfMemoryError while it is made again right after a memory release
+         * on an 8 GB unit; HostsReleasedTest): the window never got it, so nobody ever ended it - everything it had registered stayed in
+         * the process' lists for good, firing into a half-made host, one more at every try of the watchdog. Now its abandon runs (the
+         * snapshot back for the next try, its stop and destroy) and every registration goes (HostEnds), then the throw goes on to the
+         * window as before (openBottom's catch, TopWindow's, the activity's)
+         */
+        fun made(base: Context, shell: HostShell, saved: Bundle?, start: Boolean = true): CompanionHost {
+            val h = CompanionHost(base, shell)
+            try { h.onCreate(saved); if (start) h.onStart() } catch (t: Throwable) { h.failedStart(t); throw t }
+            return h
+        }
+
+        /** the 5 minutes ran out: the report saved by itself on [app] (DiagLog.onEndedByItself). Made HERE, with no host in scope: inside
+         *  the host even a `runCatching { }` takes the host as its receiver, and the lambda kept it (HostsReleasedTest) */
+        private fun reportAutoSave(app: Context): () -> Unit = {
+            Thread({
+                try { ReportFlow.autoSave(app) } catch (t: Throwable) { Log.w("WCREPORT", "auto-save failed", t) }
+                SetupBridge.loginSaved()
+            }, "report-autosave").start()
+        }
         /** a message's source, set by [startTail] on everything the stream bridge delivers (the PC's add-ons) */
         const val SRC_KEY = "_dsf_src"
         const val SRC_PC = "pc"
@@ -6659,7 +7036,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         const val PS_STEP_TICK_MS = 500L
         const val PS_STEP_TICKS = 20
         const val SWEEP_ACTION = "app.dsforever.companion.KEYSWEEP"
-        @Volatile private var sweepRegistered = false
         /** a holder seen with its room hidden this long is freed (the one rule for every room; see freeHidden) */
         private const val HIDDEN_GRACE = 3_000L
         /** combat_nav Step 3: PadOwnerSync's look while a fight lasts (a surface opening or closing needs no hook of its own) */

@@ -816,12 +816,12 @@ class MapView(context: Context) : View(context) {
     // fourteen of them at once. Counting entries says "8" and means 47 MB, and this device's
     // lowmemorykiller has already taken the game once.
     private var planBytes = 0L
-    init { MemWatch.source("plans") { planBytes } }
+    init { context.atHostEnd(MemWatch.source("plans") { planBytes }) }
     private val PLAN_BUDGET = 24L * 1024 * 1024
     // memory work #56 (D2, the user's yes 2026-11-19): the plans were never trimmed (0 - 24 MB in the reports). Android's pressure and
     // the reliefs keep at most the two newest while the map is on screen (the storey and its ghost) and none while it is not; a plan
     // drawn again is decoded again (off the UI thread, as before). Never recycled here: a draw may still hold one this frame
-    init { MemWatch.onTrim("plans") { level -> trimPlans(level) } }
+    init { context.atHostEnd(MemWatch.onTrim("plans") { level -> trimPlans(level) }) }
     private fun trimPlans(level: Int): Long {
         val keep = LowMemCuts.plansKept(level, isShown) ?: return 0L
         var b = 0L
@@ -1282,7 +1282,7 @@ class MapView(context: Context) : View(context) {
     private val ZOOM_EASE_TAU = 0.18f              // seconds
 
     init {
-        Settings.onChange(weakly(this) { v -> v.applySettings() })      // weakly: a map made again never keeps this one ([weakly])
+        context.atHostEnd(Settings.onChange(weakly(this) { v -> v.applySettings() }))      // weakly: a map made again never keeps this one ([weakly])
     }
 
     /** Settings changed (from the Settings room): take them on now. */
@@ -5236,7 +5236,7 @@ class MapView(context: Context) : View(context) {
         val px = m.optDouble("x", Double.NaN); val py = m.optDouble("y", Double.NaN)
         if (px.isNaN() || py.isNaN() || mapId == 0) return null
         ShippedNets.init(context)
-        if (!shipListen) { shipListen = true; ShippedNets.files.onLoaded { invalidate() } }   // a zone's network read: plan on it
+        if (!shipListen) { shipListen = true; context.atHostEnd(ShippedNets.files.onLoaded { invalidate() }) }   // a zone's network read: plan on it
         val mine = TransportRoutes.factionOf(m.optString("fac", null))
         val got = ShippedNets.section(mapId, mine)
             ?: return if (ShippedNets.none(mapId)) shipOff(q, "no shipped network for map $mapId") else Shipped(null)   // loading: straight meanwhile

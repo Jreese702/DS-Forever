@@ -50,7 +50,7 @@ class SubPageStrip(context: Context, private val title: String, private val onBa
     private var downX = 0f
     private var downY = 0f
 
-    init { Theme.onChange { postInvalidate() } }
+    init { context.atHostEnd(Theme.onChange { postInvalidate() }) }
 
     /** the back chip's box (touch only) */
     fun chip(): RectF = RectF(16f, 6f, 16f + CHIP, 6f + CHIP)

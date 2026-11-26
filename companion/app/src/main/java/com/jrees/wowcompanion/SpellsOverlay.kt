@@ -163,7 +163,7 @@ class SpellsOverlay(
     }
     private var pad: PadInput? = null
 
-    init { CastSettings.init(context); HomeSettings.init(context); CastStripModel.Live.onChange { postInvalidate() } }
+    init { CastSettings.init(context); HomeSettings.init(context); context.atHostEnd(CastStripModel.Live.onChange { postInvalidate() }) }
 
     private fun style(): SpellsModel.PadStyle = when (CastSettings.buttonLayout) {
         CastSettings.ButtonLayout.XBOX -> SpellsModel.PadStyle.LTR

@@ -553,13 +553,13 @@ object LayoutModel {
     // ---------------------------------------------------------------- the latest document (CompanionHost feeds it)
     object Live {
         @Volatile var doc: Doc? = null; private set
-        private val listeners = ArrayList<() -> Unit>()
+        private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
         fun note(msg: JSONObject) {
             val d = parse(msg, doc) ?: return
             doc = d
             for (l in listeners.toList()) l()
         }
-        fun onChange(l: () -> Unit) { listeners.add(l) }
+        fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
         /** split-hud (the review): the wall clock for [editorBusy] (tests set their own) */
         @Volatile var clock: () -> Long = { System.currentTimeMillis() }
         @Volatile private var editorAt = Long.MIN_VALUE / 4

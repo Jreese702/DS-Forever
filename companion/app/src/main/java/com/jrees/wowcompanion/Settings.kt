@@ -12,7 +12,7 @@ import android.content.SharedPreferences
  */
 object Settings {
     private var prefs: SharedPreferences? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     /** the values the indoor / outdoor steppers move through, yards across the map */
     val ZOOM_STEPS_YD = intArrayOf(20, 30, 40, 60, 80, 120, 160, 250, 400, 600, 1000, 1600)
@@ -355,7 +355,8 @@ object Settings {
         return ZOOM_STEPS_YD[i]
     }
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    /** returns the listener's removal (HostEnds: a host takes its own off at its end) */
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }
     private fun changed() { for (l in listeners) l() }
     /** Reset settings (ResetRun) removed saved values: every room reads them again */
     fun resetDone() = changed()

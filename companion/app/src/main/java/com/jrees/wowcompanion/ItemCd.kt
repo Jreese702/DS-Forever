@@ -51,7 +51,7 @@ object ItemCd {
     private const val ANON = "?anon"
 
     private val listeners = ArrayList<() -> Unit>()
-    fun onChange(l: () -> Unit) { synchronized(listeners) { listeners.add(l) } }
+    fun onChange(l: () -> Unit): () -> Unit { synchronized(listeners) { listeners.add(l) }; return { synchronized(listeners) { listeners.remove(l) } } }   // its removal: HostEnds
     private fun changed() { val ls = synchronized(listeners) { listeners.toList() }; for (l in ls) l() }
 
     fun init(c: Context) {

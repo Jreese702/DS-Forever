@@ -27,7 +27,15 @@ import android.view.View
 class TalentsView(
     context: Context,
     private val onTap: (row: String, col: Int) -> Unit,
-) : View(context), BLeadsHome {
+) : View(context), BLeadsHome, RoomKeep {
+
+    /** BottomSync round 2 (RoomKeep): the school shown and the tree's scroll, for a host made again (the add-on's `sch` still wins) */
+    override fun keepUi(): Map<String, String> = mapOf("school" to school.toString(), "scroll" to scroll.toString())
+    override fun restoreUi(k: Map<String, String>) {
+        k["school"]?.toIntOrNull()?.takeIf { it in 1..3 }?.let { school = it }
+        k["scroll"]?.toFloatOrNull()?.let { scroll = it.coerceAtLeast(0f) }
+        invalidate()
+    }
 
     private var tree: TalentsModel.Tree? = null
     private var detail: TalentsModel.Detail? = null

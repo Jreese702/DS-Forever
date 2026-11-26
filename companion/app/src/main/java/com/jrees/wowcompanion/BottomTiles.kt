@@ -307,6 +307,8 @@ object BottomTiles {
  */
 class BottomTilesView(context: Context, val group: SettingsTabs.Group, private val dpad: () -> PadMapModel.Dpad?,
                       private val onDpad: (Boolean) -> Unit, private val who: () -> String? = { GameUi.character }) : View(context), BandPart {
+    /** the pictures' redraw hook this view sets at its draw (one lambda, so its host's end can take its own off) */
+    private val artHook: () -> Unit = { postInvalidate() }
     /** a tile's band opened (or moved): the room closes the others and follows it */
     var onOpen: ((BottomTilesView) -> Unit)? = null
     /** the tiles came or went (the room shows / hides the group) */
@@ -335,8 +337,10 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
     private val changed: () -> Unit = { post { requestLayout(); invalidate(); onContent?.invoke() } }
 
     init {
-        HomeSettings.onChange(changed); Settings.onChange(changed)
-        Theme.onChange { postInvalidate() }
+        context.atHostEnd(HomeSettings.onChange(changed)); context.atHostEnd(Settings.onChange(changed))
+        context.atHostEnd(Theme.onChange { postInvalidate() })
+        // HostEnds: the pictures' hook (set at every draw) back to none at the host's end while it is still this view's
+        context.atHostEnd { if (BottomPictures.onArt === artHook) BottomPictures.onArt = null }
     }
 
     fun env() = BottomTiles.Env(dpad(), who())
@@ -464,7 +468,7 @@ class BottomTilesView(context: Context, val group: SettingsTabs.Group, private v
         val e = env()
         val l = layout(width.toFloat())
         val look = BottomPictures.Look(e, zoomIndoor = lineFocus == "in")
-        BottomPictures.onArt = { postInvalidate() }
+        BottomPictures.onArt = artHook
         for ((i, id) in l.slots.withIndex()) drawTile(c, l.grid.tiles[i], id, e, look, id == selected, abs(i - focusIdx) + 1)
         val open = l.slots.indexOf(selected)
         val band = l.band

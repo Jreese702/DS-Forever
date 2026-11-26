@@ -360,6 +360,20 @@ class PadTabPage(
 
     /** the tab on show, for [ControllerView] */
     fun currentView(): String = view
+    /**
+     * BottomSync round 3 (the review, 2026-11-26: "the Spellbook / Controller tab ... come back without their state" on the bottom-grid
+     * return, a rebuild; the add-on's padtabctl is never kept by DocMemory): the tab, the set, the chosen button and the radial's page,
+     * for a host made again. Laid back as the add-on's own (no echo window, no tap: the game's window is still on them, and the add-on's
+     * next document wins as always)
+     */
+    fun keepUi(): Map<String, String> = mapOf("view" to view, "set" to set.toString(), "pos" to pos.toString(), "rpage" to rpage.toString())
+    fun restoreUi(k: Map<String, String>) {
+        k["view"]?.takeIf { it.isNotEmpty() }?.let { view = it; viewUntil = 0L }
+        k["set"]?.toIntOrNull()?.let { set = it }
+        k["pos"]?.toIntOrNull()?.let { pos = it }
+        k["rpage"]?.toIntOrNull()?.let { rpage = it }
+        host.invalidate()
+    }
     /** a finger chose a tab: shown at once; the addon's echo (its padtab pick) follows */
     fun showTabLocal(v: String) {
         view = v; viewUntil = SystemClock.uptimeMillis() + ECHO_MS; tChooser = null; tBox = null

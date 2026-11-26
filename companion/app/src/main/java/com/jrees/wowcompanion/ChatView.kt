@@ -147,7 +147,31 @@ private const val SEND_W = 220
  * THE LOG IS KEPT HERE, NOT IN THE ADDON. Chat.lua re-sends its whole ring with every document; lines are appended by (session,
  * line number), so a /reload keeps the history.
  */
-class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Unit = {}) : LinearLayout(c) {
+class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Unit = {}) : LinearLayout(c), RoomKeep {
+
+    /**
+     * BottomSync round 3 (RoomKeep; the review, 2026-11-26: "Chat's keyboard and typed text ... come back without their state" on the
+     * bottom-grid return, a rebuild): what is written, where it goes (the type, the whisper's person) and the board, for a host made
+     * again. Laid back after the room's own landing (its onShown sets the log first: posted after it), with no game action but the
+     * add-on told the type again (as every landing does)
+     */
+    override fun keepUi(): Map<String, String> = buildMap {
+        if (typed.isNotEmpty()) put("typed", typed)
+        put("type", type)
+        if (whisperName.isNotEmpty()) put("whisper", whisperName)
+        if (board != Board.NONE) put("board", board.name)
+    }
+    override fun restoreUi(k: Map<String, String>) {
+        post {
+            k["whisper"]?.let { w -> if (ChatNames.canWhisper(w)) whisperName = w }
+            k["type"]?.let { t -> if (t != "WHISPER" || whisperName.isNotEmpty()) type = t }
+            k["typed"]?.let { typed = it }
+            applyType()
+            val b = k["board"]?.let { n -> Board.values().firstOrNull { it.name == n } } ?: Board.NONE
+            if (b != Board.NONE) { setBoard(b, animate = false); pad.focus = if (b == Board.QUICK) pad.quickFocus(scene()) else Focus.Field }
+            showTyped(); invalidate()
+        }
+    }
 
     /** Whether the module may send: only while the game is provably in the world. */
     private var sendEnabled = false
@@ -159,9 +183,13 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             sendEnabled = GameInput.live()
             stream.tick()
             if (noticeUntil in 1..System.currentTimeMillis()) { noticeUntil = 0; invalidate() }
-            if (isAttachedToWindow) postDelayed(this, 500)
+            if (isAttachedToWindow && !watchPaused) postDelayed(this, 500)
         }
     }
+    /** the bottom screen kept while away (CompanionHost.park, the review): the watch stops until [resumeWatch] (its window stays added) */
+    private var watchPaused = false
+    fun pauseWatch() { watchPaused = true; removeCallbacks(watch) }
+    fun resumeWatch() { watchPaused = false; if (isAttachedToWindow) { removeCallbacks(watch); post(watch) } }
 
     // ---- the controller
     private val pad = ChatPad()
@@ -424,14 +452,14 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             override fun write(s: String) { prefs.edit().putString("all", s).apply() }
         })
         // (the static listeners hold this view weakly: [weakly])
-        ChatFilter.onChange(weakly(this) { v -> if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) v.filterChanged() else v.main.post { v.filterChanged() } })
+        context.atHostEnd(ChatFilter.onChange(weakly(this) { v -> if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) v.filterChanged() else v.main.post { v.filterChanged() } }))
         // hold to talk's last used chat, per character (the user's pick, 2026-11-16: "Remember per character"); never the words
         val talkPrefs = c.applicationContext.getSharedPreferences("chat_talk", Context.MODE_PRIVATE)
         TalkKeep.init(object : TalkKeep.Store {
             override fun read(): String? = talkPrefs.getString("all", null)
             override fun write(s: String) { talkPrefs.edit().putString("all", s).apply() }
         })
-        TalkKeep.onChange(weakly(this) { v -> v.main.post { v.onTalkChannel() } })
+        context.atHostEnd(TalkKeep.onChange(weakly(this) { v -> v.main.post { v.onTalkChannel() } }))
         applySendState()
     }
 
@@ -463,7 +491,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         fonts()
         padField()
         removeCallbacks(watch)
-        post(watch)
+        if (!watchPaused) post(watch)
     }
 
     override fun onDetachedFromWindow() {
@@ -1220,6 +1248,13 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         super.onVisibilityChanged(changedView, visibility)
         // Android's microphone question (the voice page's Allow) hides the whole window and shows it again: the board stays as it was
         if (keyboard.voiceAsking) return
+        // BottomSync round 2: a park or a return flips the whole window (a minimize, the lid) - no room left: the board, the menus, the
+        // cursor and the top screen's chat stay as they were (the review: "while typing" came back with the keyboard closed); back, the
+        // caret blinks again and the add-on (it may have reloaded meanwhile) learns the type again (no game action)
+        if (BottomSync.flipping) {
+            if (visibility == View.VISIBLE && isShown) { post { invalidate(); restartBlink() }; tellType() }
+            return
+        }
         if (visibility == View.VISIBLE && isShown) {
             unread.removeAll { ChatFilter.ticked(it) }
             head.invalidate()

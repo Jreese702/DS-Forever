@@ -21,7 +21,7 @@ import org.json.JSONObject
 object GameUi {
     private var prefs: SharedPreferences? = null
     private var appCtx: Context? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     /** split-hud: the layout bit of the "hud" element carries the three parts' riding mode ([hudBitMode]) */
     private val policy = GameUiPolicy({ tracking }) { id -> if (id == HudSplit.CONTROLLER_ID) hudBitMode() else effMode(id) }
@@ -105,6 +105,8 @@ object GameUi {
      */
     fun holdTaps(untilMs: Long) { tapHoldUntil = untilMs }
     fun tapsHeld(now: Long): Boolean = now < tapHoldUntil
+    /** the hold now (wall ms): a parked bottom screen holds every tap and gives this back at its return (CompanionHost.park) */
+    fun tapHold(): Long = tapHoldUntil
     @Volatile private var tapHoldUntil = 0L
     const val SWITCHING = "Switching screens"
 
@@ -903,6 +905,9 @@ object GameUi {
         changed()
     }
 
+    /** BottomSync round 3: the game's UI is as the modes want it now (nothing left to tap: fork/DsForeverScreen's give-back reader ends) */
+    fun inPlace(): Boolean = last == UiStep.InPlace
+
     /** once a second: the game becoming live, and a reply that never came */
     fun tick() {
         val before = last
@@ -1063,7 +1068,7 @@ object GameUi {
 
     private fun roomOf(name: String): Room? = try { Room.valueOf(name) } catch (_: Throwable) { null }
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     private fun changed() { for (l in listeners) l() }
     /** a reset (ResetRun) removed saved switches: the game is told the defaults where it differs, the rows read them again */
     fun resetDone() { runCatching { reconcile() }; changed() }

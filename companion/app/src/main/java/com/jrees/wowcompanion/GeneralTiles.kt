@@ -242,14 +242,14 @@ class GeneralTilesView(context: Context, private val host: SettingsView, val gro
     private var voiceNeeds = false
 
     init {
-        Theme.onChange { postInvalidate() }
-        Settings.onChange { post { relayout() } }
+        context.atHostEnd(Theme.onChange { postInvalidate() })
+        context.atHostEnd(Settings.onChange { post { relayout() } })
         ReportFlow.init(context)
-        ReportFlow.onChange { postInvalidate() }
-        WindowsId.onChange { post { relayout() } }
-        BrowserLogin.onChange { post { relayout() } }
-        GraphicsDriver.onChange { post { relayout() } }
-        if (group == SettingsTabs.Group.HELP) StatusLine.onChange = { post { invalidate() } }
+        context.atHostEnd(ReportFlow.onChange { postInvalidate() })
+        context.atHostEnd(WindowsId.onChange { post { relayout() } })
+        context.atHostEnd(BrowserLogin.onChange { post { relayout() } })
+        context.atHostEnd(GraphicsDriver.onChange { post { relayout() } })
+        if (group == SettingsTabs.Group.HELP) { StatusLine.onChange = { post { invalidate() } }; context.hostOwn(StatusLine::onChange, null) }
     }
 
     /** the room left: the Swap screens picture's decoded crop goes (a later draw decodes it again); the Theme tile's Home crop goes with

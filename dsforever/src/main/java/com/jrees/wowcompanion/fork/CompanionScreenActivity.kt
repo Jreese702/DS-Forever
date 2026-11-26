@@ -63,7 +63,7 @@ class CompanionScreenActivity : Activity(), HostShell {
         )
         // #230: named as the Presentation is, so an input ANR line says which window stopped answering
         com.jrees.wowcompanion.WinTitle.apply(window, com.jrees.wowcompanion.WinTitle.BOTTOM)
-        host = CompanionHost(this, this).also { it.onCreate(null) }
+        host = CompanionHost.made(this, this, null, start = false)
         // display 0 has system bars (the Presentation's screen has none): hidden, a swipe shows them for a moment
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) window.insetsController?.let {
             it.hide(WindowInsets.Type.systemBars())

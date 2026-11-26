@@ -25,6 +25,8 @@ internal class SubWindow(activity: Activity, private val id: String, private val
     private var bounds = intArrayOf(0, 0, 0, 0)
     private var on = false
     private var touch = true
+    /** the top window kept while away (TopWindow.park, BottomSync): GONE whatever [shown] says */
+    private var parked = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,8 +78,15 @@ internal class SubWindow(activity: Activity, private val id: String, private val
 
     override fun shown(on: Boolean) {
         this.on = on
-        if (!added) { if (on) { added = true; show() }; return }
-        window?.decorView?.visibility = if (on) View.VISIBLE else View.GONE
+        if (!added) { if (on && !parked) { added = true; show() }; return }
+        window?.decorView?.visibility = if (on && !parked) View.VISIBLE else View.GONE
+    }
+
+    /** kept while away ([on]) or back: back as [shown] last said */
+    fun park(on: Boolean) {
+        parked = on
+        if (!added) { if (!on && this.on) { added = true; show() }; return }
+        window?.decorView?.visibility = if (!on && this.on) View.VISIBLE else View.GONE
     }
 
     override fun touchable(on: Boolean) {

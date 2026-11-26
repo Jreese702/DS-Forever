@@ -25,7 +25,8 @@ object MemWatch {
     @Volatile private var thread: HandlerThread? = null
 
     /** a picture cache (or anything holding memory) reports its bytes under [name]; the last registration of a name wins */
-    @Synchronized fun source(name: String, bytes: () -> Long) { sources[name] = bytes }
+    /** returns its removal (HostEnds: a host's view takes its own off at the host's end, only while it is still the one named) */
+    @Synchronized fun source(name: String, bytes: () -> Long): () -> Unit { sources[name] = bytes; return { synchronized(this) { if (sources[name] === bytes) sources.remove(name) } } }
 
     /**
      * LIGHT 8'S COUNTING (LIGHT8_PLAN.md change 1; the 8 GB Thors only, DeviceTier.light8 read at every line): the caches no line
@@ -33,10 +34,10 @@ object MemWatch {
      * are on the line after the others, only while Light 8 is on; every other Thor's line is test build 1516's, byte for byte
      */
     private val sources8 = LinkedHashMap<String, () -> Long>()
-    @Synchronized fun source8(name: String, bytes: () -> Long) { sources8[name] = bytes }
+    @Synchronized fun source8(name: String, bytes: () -> Long): () -> Unit { sources8[name] = bytes; return { synchronized(this) { if (sources8[name] === bytes) sources8.remove(name) } } }
     /** Light 8 only: [f] gives memory back for a trim level (and every relief), as [onTrim]; never called on another Thor */
     private val trimmers8 = LinkedHashMap<String, (Int) -> Long>()
-    @Synchronized fun onTrim8(name: String, f: (Int) -> Long) { trimmers8[name] = f }
+    @Synchronized fun onTrim8(name: String, f: (Int) -> Long): () -> Unit { trimmers8[name] = f; return { synchronized(this) { if (trimmers8[name] === f) trimmers8.remove(name) } } }
     /** Light 8 now (the tests' seam) */
     @Volatile internal var light8Now: () -> Boolean = { DeviceTier.light8() }
     private fun light8(): Boolean = runCatching { light8Now() }.getOrDefault(false)
@@ -312,7 +313,7 @@ object MemWatch {
     const val LOW_MEMORY = 1000
     private val trimmers = LinkedHashMap<String, (Int) -> Long>()
     /** [f] gives memory back for a trim level and says how many bytes it let go; the last registration of a name wins */
-    @Synchronized fun onTrim(name: String, f: (Int) -> Long) { trimmers[name] = f }
+    @Synchronized fun onTrim(name: String, f: (Int) -> Long): () -> Unit { trimmers[name] = f; return { synchronized(this) { if (trimmers[name] === f) trimmers.remove(name) } } }
     /** a cache of something not on screen lets go at Android's running-low or worse (and at every background level) */
     fun hiddenLetsGo(level: Int, shown: Boolean): Boolean = !shown && level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW
     @Volatile private var trimLevel = -1

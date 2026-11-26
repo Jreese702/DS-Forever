@@ -191,7 +191,7 @@ object ThirdPartyAddons {
     /** Settings' one-time QuestTrail mark ([Settings.takeQuestTrailRetire]); the off-device tests set their own */
     @Volatile internal var takeQuestTrailRetire: () -> Boolean = { Settings.takeQuestTrailRetire() }
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     private fun changed() { for (l in listeners) runCatching { l() } }
 
     /**

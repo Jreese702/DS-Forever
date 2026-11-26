@@ -33,10 +33,27 @@ import org.json.JSONObject
  * tick (the game's own setting). Choosing a day, turning among the four months, opening a page and scrolling are the app's alone.
  * B that leaves the room goes HOME (user). The game's own calendar window is never opened, closed or hidden from here.
  */
-class CalendarView(context: Context) : View(context), BLeadsHome {
+class CalendarView(context: Context) : View(context), BLeadsHome, RoomKeep {
 
     /** B that leaves the room: the activity shows Home */
     var onLeave: () -> Unit = {}
+
+    /** BottomSync round 2 (RoomKeep): the month, the chosen day, the open page and the scrolls, for a host made again */
+    override fun keepUi(): Map<String, String> = buildMap {
+        put("month", "$monthY-$monthM"); chosenDay?.let { put("day", it.toString()) }
+        pageRef?.let { put("page", it); put("entry", pageEntry.toString()) }
+        put("list", listScroll.toString()); put("note", noteScroll.toString())
+    }
+    /** the app's own choices back (nothing is tapped: a page whose event went is dropped by the next document, as always) */
+    override fun restoreUi(k: Map<String, String>) {
+        k["month"]?.split('-')?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 2 }?.let { (y, m) -> monthY = y; monthM = m }
+        chosenDay = k["day"]?.toIntOrNull()
+        pageRef = k["page"]; pageEntry = k["entry"]?.toIntOrNull() ?: 0
+        k["list"]?.toFloatOrNull()?.let { listScroll = it }
+        k["note"]?.toFloatOrNull()?.let { noteScroll = it }
+        focus = if (pageRef == null) dayKey(chosenDay) else null                  // (a page's own glow settles on its draw)
+        invalidate()
+    }
 
     var state: State? = null
         private set

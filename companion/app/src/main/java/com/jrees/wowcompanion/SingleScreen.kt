@@ -50,7 +50,7 @@ object SingleScreen {
     }
 
     /** hosts register with weakly(...): the listener list outlives every host */
-    fun onChange(l: () -> Unit) { if (l !in listeners) listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { if (l !in listeners) listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     fun offChange(l: () -> Unit) { listeners.remove(l) }
 
     /** a switch happened within [ms] of [now] (the new host's defensive heal, CompanionHost) */

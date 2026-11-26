@@ -55,11 +55,11 @@ object CharacterBars {
     @Volatile var watch: Watch? = null
         private set
 
-    private val listeners = mutableListOf<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     /** [fn] runs after a bar changed, on the thread that called [update] (MainActivity's UI thread). The bottom
      *  bar (Strip.kt) listens; so will the Character room. */
-    fun listen(fn: () -> Unit) { listeners += fn }
+    fun listen(fn: () -> Unit): () -> Unit { listeners += fn; return { listeners.remove(fn) } }   // its removal: HostEnds
 
     private fun tell() { for (fn in listeners.toList()) fn() }
 

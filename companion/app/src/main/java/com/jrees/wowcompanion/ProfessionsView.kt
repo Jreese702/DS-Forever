@@ -41,7 +41,28 @@ import com.jrees.wowcompanion.ProfessionsModel as M
  * glow target with the same action, so A does exactly what a tap does. X = Create, Y = Track, B = back (a page to the book; the
  * book out of the room, to HOME: user ruling 2026-09-28 23:12). The glow is drawn only while the addon says it holds the controller.
  */
-class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
+class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome, RoomKeep {
+
+    /**
+     * BottomSync round 3 (RoomKeep; the review, 2026-11-26: "Professions' search ... comes back without its state" on the bottom-grid
+     * return, a rebuild): the search's words, the two filters and whether its keyboard was up, for a host made again. Laid back after
+     * the room's own landing; a keyboard that was up opens again by its own route (openKb: the add-on told "kbd" again - B stays the
+     * room's, as it was), so what the add-on keeps and what shows agree
+     */
+    override fun keepUi(): Map<String, String> = buildMap {
+        (search.text?.toString() ?: "").takeIf { it.isNotEmpty() }?.let { put("search", it) }
+        if (onlyMakeable) put("makeable", "1")
+        if (onlySkillUp) put("skillup", "1")
+        if (kbOpen) put("kb", "1")
+    }
+    override fun restoreUi(k: Map<String, String>) {
+        post {
+            onlyMakeable = k["makeable"] == "1"; onlySkillUp = k["skillup"] == "1"
+            k["search"]?.let { t -> search.setText(t); search.setSelection(t.length) }
+            if (k["kb"] == "1") openKb(voice = false)
+            board.invalidate(); invalidate()
+        }
+    }
 
     // ------------------------------------------------------------ the room's own state (nothing of it reaches the game)
     /** 0 = the book; otherwise the profession (skill line) whose page is shown */
@@ -362,6 +383,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         // Android's microphone question (the voice page's Allow) hides the whole window until it closes: the search keyboard and its
         // voice page stay for the answer (as Chat's board does), never closed as a room left
         if (visibility != VISIBLE && kb.voiceAsking) { padNow.setActive(isShown); return }
+        // BottomSync round 2: a park or a return flips the whole window (a minimize, the lid) - no room left: the filter list and the
+        // search keyboard stay as they were (the press feedback still follows what shows)
+        if (BottomSync.flipping) { padNow.setActive(isShown); return }
         if (visibility == VISIBLE) refresh() else { filterOpen = false; search.clearFocus(); closeKb() }
         padNow.setActive(isShown)
     }
@@ -1267,6 +1291,14 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
 
     // ------------------------------------------------------------ small helpers
     companion object {
+        /**
+         * BottomSync round 3 (the review, 2026-11-26): a rebuilt host whose Professions room is NOT laid back (the game's window closed
+         * meanwhile: the adopt rule's Home) while the old one's search keyboard was up - the add-on still keeps B "the room's" (ctl kbd,
+         * Professions.lua p24) for a keyboard no view draws any more: told "nokbd" once (its static ctl cell, no game action; the live
+         * gate as every tap). True = the tap went out
+         */
+        fun kbdOff(ctx: Context): Boolean = M.kbdTap(ProfessionsStore.overview, false)?.let { t -> GameInput.tap(ctx, ProfessionsStore.pad(), t.row, t.col) } == true
+
         const val SPLIT = 600f
         private const val TAG = "WCPROF"
         private const val MESSAGE_MS = 3000L

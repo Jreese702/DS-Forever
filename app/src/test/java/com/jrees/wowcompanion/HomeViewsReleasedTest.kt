@@ -83,7 +83,12 @@ class HomeViewsReleasedTest {
         HomeSettings.swingTimer = !HomeSettings.swingTimer
         settle()
         for (i in 0 until 20) {
+            // (test 1533's full suite: one red in a 20-class batch - the "cast-art" decoder's answer, posted to the main looper after this
+            // loop had ended, held the CastView and through it every page; GC order, not a holder). Both waits, as test 1533 and
+            // feat/bottom-sync each fixed it: CastView's own ART_EXEC drained three times with a 10 s bound (HomeEditShotsTest.drainArt),
+            // then every other worker of the companion's let finish too (HostHolders.quietWorkers)
             drainArt()
+            HostHolders.quietWorkers(rounds = 2) { settle(2) }
             System.gc(); System.runFinalization()
             settle(2)
             if (refs.all { it.get() == null }) break

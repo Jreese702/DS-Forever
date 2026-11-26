@@ -64,10 +64,10 @@ object PvpModel {
     @Volatile var version: String = ""
         private set
 
-    private val listeners = mutableListOf<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     /** [fn] runs after the rank or the queues changed, on the thread that called [update] (MainActivity's UI thread). */
-    fun listen(fn: () -> Unit) { listeners += fn }
+    fun listen(fn: () -> Unit): () -> Unit { listeners += fn; return { listeners.remove(fn) } }   // its removal: HostEnds
 
     private fun tell() { for (fn in listeners.toList()) fn() }
 

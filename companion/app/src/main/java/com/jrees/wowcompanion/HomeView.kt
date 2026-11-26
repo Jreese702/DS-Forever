@@ -133,11 +133,11 @@ class HomeView(
         flow.setRest(HomeSettings.rest)
         // every static listener here holds this Home WEAKLY ([weakly], the 1528 blocker): a Home made again never keeps the old one
         HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }   // m194: the hold's flash on the add-on's word (its release)
-        HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } })  // GitHub #43: the tap-to-cast bar's own choices
+        context.atHostEnd(HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } }))  // GitHub #43: the tap-to-cast bar's own choices
         // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
-        HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } })
+        context.atHostEnd(HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } }))
         partyView.boxShown = { !editLive() }                              // fix round 1: never a second gold box beside edit mode's
-        HomeSettings.onChange(weakly(this) { v -> v.post { v.homeSettingsChanged() } })
+        context.atHostEnd(HomeSettings.onChange(weakly(this) { v -> v.post { v.homeSettingsChanged() } }))
         homeInitRest()
     }
 
@@ -2205,11 +2205,11 @@ class HomeView(
     private var laidPartyModule = false
     init {
         // QOL > Party > Party mode flipped: the module comes or goes at once
-        GameUi.onChange(weakly(this) { v -> v.post {
+        context.atHostEnd(GameUi.onChange(weakly(this) { v -> v.post {
             if (v.PARTY_MODULE != v.laidPartyModule) v.partyChanged()
             // EDIT TABS: the Party mode tab comes and goes with QOL > Party (open on it when it goes: Out of combat)
             v.edit?.let { m -> if (m.tabs.contains(HomeTab.PARTY) != v.PARTY_MODULE) v.editRun(m.tabsAre(v.PARTY_MODULE)) }
-        } })   // weakly: [weakly]
+        } }))   // weakly: [weakly]
     }
 
     /** a party document (or a box) changed what Home draws: re-placed when the module's size changed, else redrawn */
@@ -3723,6 +3723,82 @@ class HomeView(
     }
 
     /**
+     * THE BOTTOM SCREEN COMES STRAIGHT BACK, ROUND 2 (the review, 2026-11-26: "Edit Home with an unsaved draft ... lost on every
+     * bottom-grid return"): the LIVE session as a host made again takes it back ([editRestore]) - the model (its draft, cursor, lift,
+     * menus, tab, and the record Discard puts back), the record it was read under, the last write. Null = none, or parked by a fight or
+     * a room (Home is Home then; every settled change is saved already)
+     */
+    fun editKeep(): HomeEditKeep? = edit?.takeIf { !it.parked }?.let { editHanded = true; HomeEditKeep(it, editOwner, editPersisted, editLate) }
+
+    /**
+     * ROUND 3 (the review, 2026-11-26: "HomeEditKeep hands the SAME mutable HomeEditModel to the new HomeView while the dead host's
+     * HomeView still holds it and still runs its owner listener on it"): a session handed to a host made again ([editKeep]) is let go
+     * here at this host's end - no write, no guest tap, nothing posted left - so only the new Home acts on it (its owner changes, its
+     * rebase, its end). The host's end also takes this view's store listeners off (CompanionHost's ends)
+     */
+    fun editLetGo() {
+        if (!editHanded) return
+        editHanded = false
+        editUi.removeCallbacksAndMessages(null)
+        edit = null; editOwner = null; editPersisted = null; editLate = null
+    }
+    private var editHanded = false
+
+    /**
+     * a kept session back on this (new) Home, as [editOpen] opens one - only on the record it was read under (another character's now:
+     * nothing, as edit mode ends then), never in a fight or with the key question up. The store's record as it is now is laid under the
+     * draft ([editRebase]: a change made meanwhile kept). True = edit mode is open again
+     */
+    fun editRestore(k: HomeEditKeep): Boolean {
+        if (edit != null || fightShown() || editBlocked?.invoke() == true) return false
+        if (k.owner != HomeLayoutStore.owner()) { Log.i(TAG, "home edit: not laid back (another record is active now)"); return false }
+        if (flow.full != null && !flow.takeover && flow.close()) changed()
+        mailCard(false); auraPane.close(); closeTypeTool()
+        if (classOpen) classLayerShow(false)
+        chromeModel = null
+        val m = k.model
+        editBandFeed(m)
+        edit = m
+        editOwner = k.owner
+        editPersisted = k.persisted; editLate = k.late
+        editAway = false
+        editView.visibility = View.VISIBLE
+        chromeFade(1f, HomeEditModel.CHROME_IN)
+        editGuest(true)
+        onEditChrome?.invoke(editView)
+        Log.i(TAG, "home edit: laid back on ${m.cursor.name.lowercase()} (a rebuilt bottom screen), ${HomeLayoutJson.json(m.draft)}")
+        editMotionStart(m.cursor)
+        editRebase(m)
+        liveDraft = m.draft
+        editRelay(Motion.MODULE_OPEN, force = true)
+        onEditChanged?.invoke(true)
+        onEditLive?.invoke(true)
+        onStateChanged?.invoke()
+        return true
+    }
+
+    /**
+     * ROUND 2 (2026-11-26: "Home's open layer ... lost on every bottom-grid return"; SPEC 4.4 step 5's restoreLayer): Home's open layer
+     * for a host made again - a full-screen module ("module:CHAT" / "module:MAP" / "module:BARS") or the Keyboard & Trackpad tool
+     * ("tool:<its tab>"); null = at rest. [layerRestore] opens it again by the routes a finger takes
+     */
+    fun layerKeep(): String? = when {
+        typeWanted -> "tool:${typeTool.tabNow}"
+        flow.full != null -> "module:${flow.full?.name}"
+        else -> null
+    }
+    fun layerRestore(id: String?): Boolean {
+        if (id == null || edit != null) return false
+        val ok = when {
+            id.startsWith("module:") -> runCatching { HomeModule.valueOf(id.removePrefix("module:")) }.getOrNull()?.let { touchOpen(it) } == true
+            id.startsWith("tool:") -> { openTypeTool(id.removePrefix("tool:").toIntOrNull() ?: 0); typeWanted }
+            else -> false
+        }
+        Log.i(TAG, "home: the layer $id laid back${if (ok) "" else ": not opened"}")
+        return ok
+    }
+
+    /**
      * 1518, THE AUTOSAVE: the draft as last written ([editPersist]: the base of the next write, so only the fields a change changed are
      * laid on the record the store holds - a change made meanwhile is kept)
      */
@@ -5179,7 +5255,7 @@ class HomeView(
 
         fun refresh() { cache.keys.retainAll(chat.all.toSet()); invalidate() }
 
-        init { ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() }) }       // weakly: [weakly]
+        init { context.atHostEnd(ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() })) }       // weakly: [weakly]
 
         override fun onDraw(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat()
