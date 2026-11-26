@@ -3719,6 +3719,68 @@ class HomeView(
     }
 
     /**
+     * THE BOTTOM SCREEN COMES STRAIGHT BACK, ROUND 2 (the review, 2026-11-26: "Edit Home with an unsaved draft ... lost on every
+     * bottom-grid return"): the LIVE session as a host made again takes it back ([editRestore]) - the model (its draft, cursor, lift,
+     * menus, tab, and the record Discard puts back), the record it was read under, the last write. Null = none, or parked by a fight or
+     * a room (Home is Home then; every settled change is saved already)
+     */
+    fun editKeep(): HomeEditKeep? = edit?.takeIf { !it.parked }?.let { HomeEditKeep(it, editOwner, editPersisted, editLate) }
+
+    /**
+     * a kept session back on this (new) Home, as [editOpen] opens one - only on the record it was read under (another character's now:
+     * nothing, as edit mode ends then), never in a fight or with the key question up. The store's record as it is now is laid under the
+     * draft ([editRebase]: a change made meanwhile kept). True = edit mode is open again
+     */
+    fun editRestore(k: HomeEditKeep): Boolean {
+        if (edit != null || fightShown() || editBlocked?.invoke() == true) return false
+        if (k.owner != HomeLayoutStore.owner()) { Log.i(TAG, "home edit: not laid back (another record is active now)"); return false }
+        if (flow.full != null && !flow.takeover && flow.close()) changed()
+        mailCard(false); auraPane.close(); closeTypeTool()
+        if (classOpen) classLayerShow(false)
+        chromeModel = null
+        val m = k.model
+        editBandFeed(m)
+        edit = m
+        editOwner = k.owner
+        editPersisted = k.persisted; editLate = k.late
+        editAway = false
+        editView.visibility = View.VISIBLE
+        chromeFade(1f, HomeEditModel.CHROME_IN)
+        editGuest(true)
+        onEditChrome?.invoke(editView)
+        Log.i(TAG, "home edit: laid back on ${m.cursor.name.lowercase()} (a rebuilt bottom screen), ${HomeLayoutJson.json(m.draft)}")
+        editMotionStart(m.cursor)
+        editRebase(m)
+        liveDraft = m.draft
+        editRelay(Motion.MODULE_OPEN, force = true)
+        onEditChanged?.invoke(true)
+        onEditLive?.invoke(true)
+        onStateChanged?.invoke()
+        return true
+    }
+
+    /**
+     * ROUND 2 (2026-11-26: "Home's open layer ... lost on every bottom-grid return"; SPEC 4.4 step 5's restoreLayer): Home's open layer
+     * for a host made again - a full-screen module ("module:CHAT" / "module:MAP" / "module:BARS") or the Keyboard & Trackpad tool
+     * ("tool:<its tab>"); null = at rest. [layerRestore] opens it again by the routes a finger takes
+     */
+    fun layerKeep(): String? = when {
+        typeWanted -> "tool:${typeTool.tabNow}"
+        flow.full != null -> "module:${flow.full?.name}"
+        else -> null
+    }
+    fun layerRestore(id: String?): Boolean {
+        if (id == null || edit != null) return false
+        val ok = when {
+            id.startsWith("module:") -> runCatching { HomeModule.valueOf(id.removePrefix("module:")) }.getOrNull()?.let { touchOpen(it) } == true
+            id.startsWith("tool:") -> { openTypeTool(id.removePrefix("tool:").toIntOrNull() ?: 0); typeWanted }
+            else -> false
+        }
+        Log.i(TAG, "home: the layer $id laid back${if (ok) "" else ": not opened"}")
+        return ok
+    }
+
+    /**
      * 1518, THE AUTOSAVE: the draft as last written ([editPersist]: the base of the next write, so only the fields a change changed are
      * laid on the record the store holds - a change made meanwhile is kept)
      */

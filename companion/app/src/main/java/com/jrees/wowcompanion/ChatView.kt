@@ -1224,6 +1224,13 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         super.onVisibilityChanged(changedView, visibility)
         // Android's microphone question (the voice page's Allow) hides the whole window and shows it again: the board stays as it was
         if (keyboard.voiceAsking) return
+        // BottomSync round 2: a park or a return flips the whole window (a minimize, the lid) - no room left: the board, the menus, the
+        // cursor and the top screen's chat stay as they were (the review: "while typing" came back with the keyboard closed); back, the
+        // caret blinks again and the add-on (it may have reloaded meanwhile) learns the type again (no game action)
+        if (BottomSync.flipping) {
+            if (visibility == View.VISIBLE && isShown) { post { invalidate(); restartBlink() }; tellType() }
+            return
+        }
         if (visibility == View.VISIBLE && isShown) {
             unread.removeAll { ChatFilter.ticked(it) }
             head.invalidate()

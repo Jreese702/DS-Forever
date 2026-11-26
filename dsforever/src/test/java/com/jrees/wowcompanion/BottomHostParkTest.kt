@@ -29,7 +29,7 @@ class BottomHostParkTest {
         assertTrue("no taps while parked", park.contains("GameInput.away = true") && park.contains("GameUi.holdTaps(Long.MAX_VALUE)"))
         assertTrue("the exit guard's reader goes", park.contains("guardOff()"))
         assertTrue(park.contains("DiagLog.event(\"app\", \"bottom screen kept"))
-        val stop = fn("fun onStop(gameHidden: Boolean = false) {")
+        val stop = fn("private fun stopBody(gameHidden: Boolean) {")         // (round 2: onStop runs it, the park's hold let go after)
         assertTrue("the game's UI only on a real stop", stop.contains("if (!gameHidden) GameUi.onVisible(false)"))
         // Q1: the wheels and the sign-in prompt close (a wheel holds the controller in the game)
         for (w in listOf("loginPrompt.close()", "radialView.shut()", "pauseView.shut()", "targetRadial.shut()", "DirectPad.shutdown()"))
@@ -75,7 +75,7 @@ class BottomHostParkTest {
         val gate = create.indexOf("GameInput.gate.restart()")
         val replay = create.indexOf("for (m in DocMemory.replay()) handleMessage(m)")
         assertTrue("the documents replayed after the gate's new start (non-current) and before the reader starts", gate in 0 until replay)
-        assertTrue(create.contains("BottomSync.waitingGone(r, LauncherHooks.gameUp(), SystemClock.elapsedRealtime())"))
+        assertTrue(create.contains("BottomSync.waitingGone(r, LauncherHooks.gameUp() || BottomSync.relaunchPending(SystemClock.elapsedRealtime()),"))
         // the room by the adopt route: decided at the first CURRENT interact document, no entry tap
         val interact = host.substringAfter("            \"interact\" -> {").substringBefore("\n            \"cappad\"")
         assertTrue(interact.contains("BottomSync.roomAfter(want, holderNow, HomeBack::roomsOf)"))

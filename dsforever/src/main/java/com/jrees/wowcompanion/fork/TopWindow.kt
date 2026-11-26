@@ -87,25 +87,29 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         if (parkedNow) return true
         if (typing) typer.focusable(false)
         parkedNow = true
-        showDecor(false)
         window?.setFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
         touchNow = false
         window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        for (s in subs.values) s.park(true)
+        // round 2 (the review: "Parking toggles the decor's View visibility, so rooms reset as if left"): the host away FIRST, then the
+        // decor and its small windows GONE inside BottomSync.flip (a room's visibility handler keeps its state: a park is no room exit)
         host?.park(why)
+        com.jrees.wowcompanion.BottomSync.flip { showDecor(false); for (s in subs.values) s.park(true) }
         return true
     }
 
     override fun unpark(why: String) {
         if (!parkedNow || !up) return
-        parkedNow = false
-        for (s in subs.values) s.park(false)
-        // the look it had (or the plain window, before any look): its decor, its dim, its touch
-        val l = lookNow
-        if (l != null) { lookNow = null; look(l) }
-        else { showDecor(true); window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE); touchNow = true }
-        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // round 2: the host back FIRST (a look it asks for meanwhile waits: still parked), then the decor inside the flip
         host?.unpark(why)
+        parkedNow = false
+        com.jrees.wowcompanion.BottomSync.flip {
+            for (s in subs.values) s.park(false)
+            // the look it had (or the plain window, before any look): its decor, its dim, its touch
+            val l = lookNow
+            if (l != null) { lookNow = null; look(l) }
+            else { showDecor(true); window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE); touchNow = true }
+        }
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // the review: the browser sign-in page open at the park takes the keys again (the park made the window not focusable, and a touch
         // on the page never gives it back: BottomPageSlot), as the bottom Presentation's return does
         if (pageSlot.up) typer.focusable(true)
@@ -210,7 +214,8 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     override fun onStop() {
         // Android closed it by itself (never our close): a snapshot for the window made again, and the way back
         if (!closing) {
-            if (com.jrees.wowcompanion.LauncherHooks.gameUp()) host?.let { com.jrees.wowcompanion.BottomSync.keep(it.snapshot("closed by Android")) }
+            if (com.jrees.wowcompanion.LauncherHooks.gameUp() || com.jrees.wowcompanion.BottomSync.relaunchPending(android.os.SystemClock.elapsedRealtime()))
+                host?.let { com.jrees.wowcompanion.BottomSync.keep(it.snapshot("closed by Android")) }
             com.jrees.wowcompanion.DiagLog.event("app", "one screen window closed by Android")
             screen.lost(this, "closed by Android")
         }

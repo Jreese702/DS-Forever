@@ -184,8 +184,10 @@ class BottomComebackTest {
         assertTrue(u.contains("bottom screen failed to open on display") && u.contains("reopenSoon("))
         assertTrue(f.substringAfter("private fun openTop(").substringBefore("\n    }\n").contains("reopenSoon("))
         // the watchdog's look goes on until a window is up, and stops while away / stopped / in single screen / Swap screens
+        // (round 2: the look's own update asks again - twoScreens -> reopenSoon - only while a listed screen has no window up)
         val r = f.substringAfter("private val reopenLook: Runnable = Runnable {").substringBefore("\n    }\n")
-        assertTrue(r.contains("reopenDelay(reopenTries, cancels.slow("))
+        assertTrue(r.contains("update()") && r.contains("reopenTries++"))
+        assertTrue(f.substringAfter("private fun reopenSoon(").substringBefore("\n    }\n").contains("reopenDelay(reopenTries, cancels.slow("))
     }
 
     @Test fun theWatchdogIsWantedOnlyWhileTheBottomScreenShouldBeUp() {
@@ -300,7 +302,7 @@ class BottomComebackTest {
         val hide = f.substringAfter("fun hide(").substringBefore("\n    }\n")
         assertTrue(hide.contains("BottomAct.PARK ->"))
         assertTrue("Swap screens' activity is closed as before", hide.contains("shown?.close(); shown = null; companionGone()"))
-        assertTrue("onDisplayChanged is not empty", f.contains("override fun onDisplayChanged(displayId: Int) { main.removeCallbacks(displaySettle); main.postDelayed(displaySettle, DISPLAY_SETTLE_MS) }"))
+        assertTrue("onDisplayChanged is not empty", f.contains("override fun onDisplayChanged(displayId: Int) { openFails = 0; topFails = 0; main.removeCallbacks(displaySettle); main.postDelayed(displaySettle, DISPLAY_SETTLE_MS) }"))
         // no top-screen change from a park, an unpark or the step: no activity started, no task moved
         for (fn in listOf("fun hide(", "private fun twoScreens(", "private fun release(", "internal fun lost(", "private val reopenLook", "private val verifyRun"))
             for (bad in listOf("startActivity", "moveTaskToFront", "toFront(")) assertFalse("$fn: $bad", f.substringAfter(fn).substringBefore("\n    }\n").contains(bad))

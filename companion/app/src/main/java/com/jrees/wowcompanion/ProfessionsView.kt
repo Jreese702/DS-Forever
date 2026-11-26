@@ -362,6 +362,9 @@ class ProfessionsView(c: Context) : FrameLayout(c), BLeadsHome {
         // Android's microphone question (the voice page's Allow) hides the whole window until it closes: the search keyboard and its
         // voice page stay for the answer (as Chat's board does), never closed as a room left
         if (visibility != VISIBLE && kb.voiceAsking) { padNow.setActive(isShown); return }
+        // BottomSync round 2: a park or a return flips the whole window (a minimize, the lid) - no room left: the filter list and the
+        // search keyboard stay as they were (the press feedback still follows what shows)
+        if (BottomSync.flipping) { padNow.setActive(isShown); return }
         if (visibility == VISIBLE) refresh() else { filterOpen = false; search.clearFocus(); closeKb() }
         padNow.setActive(isShown)
     }

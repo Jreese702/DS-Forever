@@ -44,7 +44,11 @@ class QuestsView(
     // No button uses it since 2026-09-30 (the user: "instead of a map button I want to change that function to focus").
     // Kept so MainActivity's wiring does not have to change with it.
     @Suppress("unused") private val onShowOnMap: (JSONObject) -> Unit,
-) : View(context) {
+) : View(context), RoomKeep {
+
+    /** BottomSync round 2 (RoomKeep): the tab (Quests / Polestar), for a host made again - the room opens on Quests otherwise */
+    override fun keepUi(): Map<String, String> = if (tab != 0) mapOf("tab" to tab.toString()) else emptyMap()
+    override fun restoreUi(k: Map<String, String>) { k["tab"]?.toIntOrNull()?.let { switchTab(it) } }
 
     // ---------------------------------------------------------------- state
     private var doc: JSONObject? = null

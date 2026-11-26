@@ -50,8 +50,9 @@ interface HostShell {
      *  real rebuild the old host's snapshot (fresh, this game run), null = none (the app's own MainActivity, Swap screens: unchanged) */
     fun hostRestore(): BottomSync.Snapshot? = null
     /** one of our activities is over this window's display ([on]; CompanionHost.openOnBottom): the window hidden until it closes, by the
-     *  window itself (the bottom Presentation: never shown while parked); false = not handled (the host sets its decor as before) */
-    fun hostHeld(on: Boolean): Boolean = false
+     *  window itself (the bottom Presentation: never shown while parked); false = not handled (the host sets its decor as before).
+     *  [cls] the activity (round 2: the window stays hidden at a return only while that activity is still up) */
+    fun hostHeld(on: Boolean, cls: Class<*>? = null): Boolean = false
 }
 
 /**
@@ -520,7 +521,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val decor = shell.hostWindow()?.decorView
         // the review: through the window when it can (the bottom Presentation: a PARKED one stays hidden whatever the activity does, and
         // its return keeps it hidden while the activity is still over it); else this window's decor as before
-        fun hide(on: Boolean) { if (!shell.hostHeld(on)) decor?.visibility = if (on) View.GONE else View.VISIBLE }
+        fun hide(on: Boolean) { if (!shell.hostHeld(on, cls)) decor?.visibility = if (on) View.GONE else View.VISIBLE }
         setClosed { ui.post { hide(false); setClosed(null) } }
         val onBottom = displayId != null && runCatching {
             startActivity(i, android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle())
@@ -585,8 +586,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         DocMemory.on = LauncherHooks.pkg != null && PlayModes.current != PlayMode.STREAM
         DocMemory.shared.capBytes = if (runCatching { DeviceTier.light8() }.getOrDefault(false)) DocMemory.CAP_LIGHT8 else DocMemory.CAP_BYTES
         MemWatch.source8("docmemory") { DocMemory.shared.bytes }           // the review: on Light 8's memory line (D5 sees it)
-        // (the review: every launcher host after the run's first is counted as a rebuild in the report, with or without a snapshot)
-        restored = shell.hostRestore(); if (LauncherHooks.pkg != null) BottomSync.hostMade(restored)
+        // (round 2: a launcher host made after a comeback path closed the window is a rebuild in the report, with or without a snapshot -
+        // never the single screen switch, Streaming's host or Swap screens' return: BottomSync.expectRebuild)
+        restored = shell.hostRestore(); if (LauncherHooks.pkg != null) rebuildMark = BottomSync.hostMade(restored)
         ArtHarvest.onState(artStateLog)
         ArtHarvest.init(this)                     // the harvested art folder, before any view reads a picture (the art harvest, phase 1)
         ArtHarvest.onState(iconArtState)
@@ -1591,14 +1593,27 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         restored?.let { r ->
             val t0 = SystemClock.uptimeMillis()
             var n = 0
-            for (m in DocMemory.replay()) handleMessage(m).also { n++ }
+            // round 2 (the review: "DocMemory replay can count the newest documents as current and run current-only actions a second
+            // time"): the replay is the OLD host's documents - every one drawn, none current ([replaying]), no tap on any route meanwhile
+            // (GameInput.away), and the gate's rule starts again after it, so the resumed reader's first document starts it
+            replaying = true; GameInput.away = true
+            try { for (m in DocMemory.replay()) handleMessage(m).also { n++ } } finally { replaying = false; GameInput.away = false }
+            GameInput.gate.restart()
             resumeAt = r.place
-            if (BottomSync.waitingGone(r, LauncherHooks.gameUp(), SystemClock.elapsedRealtime())) startView.visibility = View.GONE
+            // (round 2: a relaunch under way is the same game up - the last activity's game screen comes a moment later; the time asleep,
+            // never the time away, shows the waiting screen)
+            if (BottomSync.waitingGone(r, LauncherHooks.gameUp() || BottomSync.relaunchPending(SystemClock.elapsedRealtime()),
+                    SystemClock.elapsedRealtime(), SystemClock.uptimeMillis())) startView.visibility = View.GONE
             restoreRoom = r.room.takeIf { it != Room.HOME.name }
+            restoreUi = r.ui.room
             catchUpFrom = SystemClock.uptimeMillis(); catchUpWhat = "the rebuild"; catchUpByte = r.place?.offset ?: -1L
+            // round 2: Home's open layer and Edit Home's session at once (Home is where a rebuild lands); the room's own state with the
+            // room, at the adopt
+            uiRestore(r.ui)
             DiagLog.event("app", "bottom screen rebuilt (${r.why}): $n documents replayed in ${SystemClock.uptimeMillis() - t0} ms, the log " +
                 (r.place?.let { "read on from byte ${it.offset}" } ?: "read from the start") + ", room ${r.room.lowercase()}" +
-                if (restoreRoom != null) " if the game still has its window open" else "")
+                (if (restoreRoom != null) " if the game still has its window open" else "") +
+                (r.ui.homeLayer?.let { ", Home's $it" } ?: "") + (if (r.ui.edit != null) ", Edit Home" else ""))
         }
         // WHERE THE GAME IS (GameLocator, one root read off the main thread): our builds follow GameNative + WoW Forever; the PRIVATE
         // share follows only the WoW Forever log the device itself names (no hard-coded paths there)
@@ -1659,9 +1674,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** [gameHidden]: a park (the launcher away or the screen off: nobody sees the game) - the game's own UI is left as it is */
     fun onStop(gameHidden: Boolean = false) {
-        // a PARKED host torn down for good (a memory release, Android's close while away, a move or close, a relaunch): the park's hold
-        // goes first, so this stop gives the game's own UI back as a real stop does (the review: it was swallowed by the hold)
-        if (!gameHidden) unholdPark()
+        // ROUND 2 (the review, 2026-11-26: "A parked host torn down while the user is away now taps the game's UI open, and the new host
+        // taps it shut at the return"): a PARKED host torn down for good (a memory release, Android's close while away, a move or close,
+        // the relaunch a reopen from Cocoon's bottom grid brings) runs its stop UNDER the park's hold - GameUi records "not in view" and
+        // taps nothing (nobody sees the game then) - and the hold goes after. The next host's start finds the game's UI as it was; a
+        // return that finds no bottom window to show gives it back (fork/DsForeverScreen.gameUiBack)
+        try { stopBody(gameHidden) } finally { if (!gameHidden) unholdPark() }
+    }
+
+    private fun stopBody(gameHidden: Boolean) {
         Voice.stopAll()             // no recognizer keeps the microphone while the app is away (a page waiting on Android's question stays)
         if (unpacking) return
         // the sign-in prompt never stays open behind the app's back (its fields are cleared; the review)
@@ -1685,9 +1706,18 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     // game or closing my thor to sleep". The launcher's bottom window is PARKED then (fork/DsForeverScreen.hide): this same host away
     // and back, every view, room, tab, scroll, NPC window and edit mode kept; only the wheels and the sign-in prompt close (Q1)
 
-    /** uptime / wall ms of the park (0 = not parked) */
+    /** uptime / wall / elapsedRealtime ms of the park (0 = not parked; round 2: elapsedRealtime - uptime = the time asleep since) */
     private var parkedAt = 0L
     private var parkedWall = 0L
+    private var parkedElapsed = 0L
+    /** round 2: the old host's documents are being replayed ([onCreate]: never current, they draw and never act) */
+    private var replaying = false
+    /** round 2: a reader asked for while parked (startTail): it starts at the return, never while away */
+    private var tailWanted = false
+    /** round 2: the restored room's own state (RoomKeep), laid on it when it comes back by the adopt rule */
+    private var restoreUi: Map<String, String> = emptyMap()
+    /** round 2: the comeback path this host was made after (BottomSync.hostMade), given back by a failed open ([abandon]) */
+    private var rebuildMark: String? = null
     /** the repeating ticks that ran at the park (started again at the return) */
     private var parkTicks: List<Runnable> = emptyList()
     /** GameUi's tap hold before the park (given back at the return) */
@@ -1716,7 +1746,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     fun park(why: String) {
         if (parkedAt != 0L) return
-        parkedAt = SystemClock.uptimeMillis(); parkedWall = System.currentTimeMillis()
+        parkedAt = SystemClock.uptimeMillis(); parkedWall = System.currentTimeMillis(); parkedElapsed = SystemClock.elapsedRealtime()
         onStop(gameHidden = true)
         tail?.pause()
         parkTicks = repeatingTicks().filter { ui.hasCallbacks(it) }
@@ -1745,6 +1775,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         GameUi.holdTaps(tapHoldBefore)
         IndoorSchedulerStep.companionUp(this)
         silence.resumed(awayMs)
+        // round 2: a reader asked for while away (the locate thread's start, a game folder or source change) starts now, else the paused
+        // one reads on from its place
+        if (tailWanted) { tailWanted = false; startTail() }
         tail?.resume()
         for (r in parkTicks) { ui.removeCallbacks(r); ui.post(r) }
         parkTicks = emptyList()
@@ -1771,18 +1804,59 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      */
     fun snapshot(why: String): BottomSync.Snapshot? {
         if (LauncherHooks.pkg == null || unpacking) return null
-        return BottomSync.snapshotOf(restored, docLiveAt > 0L, room.name, restoreRoom, BottomSync.inWorld(docLiveAt, System.currentTimeMillis()),
-            tail?.place(), SystemClock.elapsedRealtime(), LauncherHooks.gameStartSec, why)
+        // round 2 (the review: "A snapshot taken while parked marks the game out of the world after 2 min away"): a PARKED host says
+        // whether the game was in the world at the PARK (its reader paused then, no document could come since), and hands on the deep
+        // sleep it has been through meanwhile - the new host shows the waiting screen after a long sleep only, never after a minimize
+        val now = SystemClock.elapsedRealtime(); val nowUp = SystemClock.uptimeMillis()
+        val slept = if (parkedAt != 0L) BottomSync.asleep(parkedElapsed, parkedAt, now, nowUp) else 0L
+        return BottomSync.snapshotOf(restored, docLiveAt > 0L, room.name, restoreRoom,
+            BottomSync.inWorld(docLiveAt, if (parkedAt != 0L) parkedWall else System.currentTimeMillis()),
+            tail?.place(), now, LauncherHooks.gameStartSec, why, nowUp = nowUp, sleptNow = slept, ui = uiKeep())
     }
 
     /**
-     * a host whose window never came up (the window manager refused the display after its onCreate: HostPresentation / TopWindow
-     * abandon). The review: the snapshot it took goes back for the watchdog's next try (never used up by a failed open), uncounted; then
-     * the old teardown. Its gate restarted at its onCreate and no document reached it, so its stop taps nothing on the top screen
+     * ROUND 2 (the review, 2026-11-26: "Returning from Cocoon's bottom grid always rebuilds the host ... Home's open layer, every room's
+     * tab and scroll, and the Edit Home draft are lost"): what this host shows beyond its room, for a host made again - Home's open layer
+     * (on Home), the shown room's own state (RoomKeep), Edit Home's live session. Fields only
+     */
+    private fun uiKeep(): BottomSync.HostUi = runCatching {
+        if (!::homeView.isInitialized) return@runCatching BottomSync.HostUi()
+        BottomSync.HostUi(homeLayer = if (room == Room.HOME) homeView.layerKeep() else null,
+            room = roomKeeper(room)?.keepUi().orEmpty(), edit = homeView.editKeep())
+    }.getOrDefault(BottomSync.HostUi())
+
+    /** the rooms that keep a small state of their own across a rebuild (their tab, page, scroll); the others come back as they land */
+    private fun roomKeeper(r: Room): RoomKeep? = when (r) {
+        Room.QUESTS -> if (::questsView.isInitialized) questsView else null
+        Room.SOCIAL -> if (::socialView.isInitialized) socialView else null
+        Room.GROUPFINDER -> if (::groupFinderView.isInitialized) groupFinderView else null
+        Room.CALENDAR -> if (::calendarView.isInitialized) calendarView else null
+        Room.TALENTS -> if (::talentsView.isInitialized) talentsView else null
+        else -> null
+    }
+
+    /**
+     * round 2: what a rebuilt host lays back at once - Edit Home's session (it closes a module itself), else Home's open layer - by
+     * the routes a finger takes (HomeView.editRestore / layerRestore); posted, so Home is laid first. Only while Home shows
+     */
+    private fun uiRestore(u: BottomSync.HostUi) {
+        if (u.edit == null && u.homeLayer == null) return
+        ui.post {
+            if (shell.hostGone() || room != Room.HOME) return@post
+            val edited = u.edit?.let { homeView.editRestore(it) } == true
+            if (!edited) u.homeLayer?.let { homeView.layerRestore(it) }
+        }
+    }
+
+    /**
+     * a host whose window never came up (TopWindow's abandon: the window manager refused the display after its onCreate; the bottom
+     * Presentation makes its host only once it is shown: HostPresentation.begin). The review: the snapshot it took and its rebuild mark
+     * go back for the watchdog's next try (never used up by a failed open), uncounted; then the old teardown. Its gate restarted at its
+     * onCreate and no document reached it, so its stop taps nothing on the top screen
      */
     fun abandon() {
-        if (LauncherHooks.pkg != null) BottomSync.hostAbandoned(restored)
-        restored = null
+        if (LauncherHooks.pkg != null) BottomSync.hostAbandoned(restored, rebuildMark)
+        restored = null; rebuildMark = null
         onStop(); onDestroy()
     }
 
@@ -3714,8 +3788,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun handleMessage(msg: JSONObject) {
         // the problem report's log: the document summarized (types and flags, never its words; names only to hide them)
         runCatching { DiagLog.doc(msg) }
-        // first, for every document: is the game live, and is a text box open over there
-        val current = GameInput.note(msg)
+        // first, for every document: is the game live, and is a text box open over there (BottomSync round 2: a replayed document of the
+        // old host's is never current - it was handled there; it draws here and acts on nothing)
+        val current = GameInput.note(msg) && !replaying
         docCurrent = current
         if (current) lastAddonAt = SystemClock.elapsedRealtime()           // the clean exit's "past the login screen"
         if (current) docLiveAt = System.currentTimeMillis()                // StartRoute: the add-ons speak in this game run
@@ -4208,7 +4283,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     val got = BottomSync.roomAfter(want, holderNow, HomeBack::roomsOf)
                     DiagLog.event("app", "bottom screen restored: " + (got?.let { "room ${it.lowercase()} (its game window is still open)" }
                         ?: "Home (the ${want.lowercase()} window is not open in the game)"))
-                    got?.let { if (room == Room.HOME) show(Room.valueOf(it), adopt = true) }
+                    // (round 2: and that room's own state - its tab, page, scroll - laid on it: the game's window is still on that tab)
+                    got?.let { if (room == Room.HOME) { show(Room.valueOf(it), adopt = true); roomKeeper(Room.valueOf(it))?.restoreUi(restoreUi) } }
+                    restoreUi = emptyMap()
                 }
                 if (current) hiddenSince.keys.retainAll { it == holderNow }
                 // after HIDDEN_GRACE only (batch 19's log: a holder doc written just before a guest's own free landed was read after
@@ -4788,6 +4865,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** (re)starts following the game's log at [gameLog] when it is a new path (a new chosen root stops the old follow first) */
     private var tailLog: String? = null
     private fun startTail() {
+        // BottomSync (round 2: "A park before the host's reader starts leaves an unpaused LogTail reading while away"): never a reader
+        // started while parked (the locate thread's start, a game folder or a source change) - it starts at the return ([unpark])
+        if (parkedAt != 0L) { tailWanted = true; return }
         // Streaming (S2): the PC's log through the Desktop bridge (PlayModes.pick); Local: the game's own log, as before
         val streaming = PlayModes.current == PlayMode.STREAM && PlayModes.bridgeLog != null
         val log = if (streaming) "bridge:${PlayModes.bridgeKey}" else gameLog()
@@ -4807,8 +4887,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // each message carries WHERE it came from (the settings fix 2026-11-18): a PC document handled after a switch back to Local
         // must never be taken for the Thor's own (before 1489 the PC's svkeep replaced the Thor's kept copy whole)
         // BottomSync: inside the launcher the latest state documents are kept on this reader thread, before the hand-off (DocMemory)
-        // (the review: only with the game up - the start screens read the last session's log from byte 0, another character's even)
-        val onMessage: (org.json.JSONObject) -> Unit = { msg -> if (streaming) runCatching { msg.put(SRC_KEY, SRC_PC) } else if (LauncherHooks.gameUp()) DocMemory.note(msg); ui.post { handleMessage(msg) } }
+        // (the review: only with the game up - the start screens read the last session's log from byte 0, another character's even;
+        // round 2: a relaunch under way is the same game up - what the resumed reader reads before the last activity's game screen counts)
+        val onMessage: (org.json.JSONObject) -> Unit = { msg -> if (streaming) runCatching { msg.put(SRC_KEY, SRC_PC) } else if (LauncherHooks.gameUp() || BottomSync.relaunchPending(android.os.SystemClock.elapsedRealtime())) DocMemory.note(msg); ui.post { handleMessage(msg) } }
         // (DocMemory: a truncated log - the client restarted - keeps nothing of the old client's documents; the reader thread, first)
         val onStatus: (String) -> Unit = { s -> if (!streaming) DocMemory.readerSaid(s); ui.post {
             status.text = s.take(110)

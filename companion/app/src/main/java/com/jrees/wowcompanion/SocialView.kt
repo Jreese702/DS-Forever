@@ -30,9 +30,25 @@ import org.json.JSONObject
  * sent only when the addon's pick names the chosen player. When the pick has gone stale, the one touch sends a fresh pick
  * first and the act as soon as the addon names the player (the pick is no game action: the lock's "pick before the act").
  */
-class SocialView(context: Context) : View(context), BLeadsHome {
+class SocialView(context: Context) : View(context), BLeadsHome, RoomKeep {
 
     val model = SocialModel()
+
+    /** BottomSync round 2 (RoomKeep): the page (and the Ignore list) and each list's scroll, for a host made again */
+    override fun keepUi(): Map<String, String> = buildMap {
+        put("page", page.name)
+        if (ignoreOpen) put("ignore", "1")
+        for ((k, v) in scroll) put("scroll.$k", v.toString())
+    }
+    /** that page again (its view tap: no game action - the add-on lists its rows), the scrolls laid back */
+    override fun restoreUi(k: Map<String, String>) {
+        val p = k["page"]?.let { n -> Page.values().firstOrNull { it.name == n } } ?: return
+        goTo(p)
+        if (k["ignore"] == "1" && page == Page.FRIENDS && !ignoreOpen) { ignoreOpen = true; chosen.remove(Tab.IGNORE); sendView() }
+        for ((key, v) in k) if (key.startsWith("scroll.")) v.toFloatOrNull()?.let { scroll[key.removePrefix("scroll.")] = it }
+        if (!menuOpen && confirm == null) focus = Fk.Tab(page.ordinal)
+        invalidate()
+    }
     /** B that leaves the room, and the page's own way out: the activity shows Home */
     var onLeave: () -> Unit = {}
     /** Whisper: the Chat room with the name ready (the chat session's `whisperTo`); nothing is sent to the game */

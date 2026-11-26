@@ -52,7 +52,21 @@ import org.json.JSONObject
  * filter and scrolling are no game action. Send Message shows the Chat room with the name ready (the chat session's
  * `whisperTo`); nothing is sent to the game for it.
  */
-class GroupFinderView(context: Context) : View(context), BLeadsHome {
+class GroupFinderView(context: Context) : View(context), BLeadsHome, RoomKeep {
+
+    /** BottomSync round 2 (RoomKeep): the tab, the browser's category and the list's scroll, for a host made again */
+    override fun keepUi(): Map<String, String> = buildMap {
+        put("tab", tab.toString()); put("scroll", listScroll.toString())
+        category?.let { put("category", it.toString()) }
+    }
+    /** the tab the game's window is still on (no tap: [showTab] is the room's own), the browser's category and the scroll */
+    override fun restoreUi(k: Map<String, String>) {
+        val t = k["tab"]?.toIntOrNull()?.takeIf { it in LISTING..WHO } ?: return
+        showTab(t)
+        k["category"]?.toIntOrNull()?.let { category = it }
+        k["scroll"]?.toFloatOrNull()?.let { listScroll = it }
+        invalidate()
+    }
 
     /** B that leaves the room: the activity shows Home */
     var onLeave: () -> Unit = {}

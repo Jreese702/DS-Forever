@@ -66,10 +66,10 @@ class BottomSyncTest {
     }
 
     @Test fun theWaitingScreenStartsGoneOnlyInTheWorld() {
-        assertTrue(BottomSync.waitingGone(snap(inWorld = true), gameUp = true, now = 2_000L))
-        assertFalse(BottomSync.waitingGone(snap(inWorld = false), gameUp = true, now = 2_000L))
-        assertFalse(BottomSync.waitingGone(snap(inWorld = true), gameUp = false, now = 2_000L))
-        assertFalse(BottomSync.waitingGone(null, gameUp = true, now = 2_000L))
+        assertTrue(BottomSync.waitingGone(snap(inWorld = true), gameUp = true, now = 2_000L, nowUp = 2_000L))
+        assertFalse(BottomSync.waitingGone(snap(inWorld = false), gameUp = true, now = 2_000L, nowUp = 2_000L))
+        assertFalse(BottomSync.waitingGone(snap(inWorld = true), gameUp = false, now = 2_000L, nowUp = 2_000L))
+        assertFalse(BottomSync.waitingGone(null, gameUp = true, now = 2_000L, nowUp = 2_000L))
         assertTrue(BottomSync.inWorld(lastCurrentAt = 10_000L, now = 10_000L + BottomSync.IN_WORLD_MS - 1))
         assertFalse(BottomSync.inWorld(lastCurrentAt = 10_000L, now = 10_000L + BottomSync.IN_WORLD_MS))
         assertFalse(BottomSync.inWorld(lastCurrentAt = 0L, now = 5L))

@@ -57,7 +57,8 @@ class LogTailResumeTest {
         assertFalse(park.contains("startTail()") || park.contains("tail?.stop()"))
         val unpark = host.substringAfter("fun unpark(why: String) {").substringBefore("\n    }\n")
         assertTrue(unpark.contains("tail?.resume()"))
-        assertFalse(unpark.contains("startTail()") || unpark.contains("LogTail("))
+        // (round 2: only a reader that was asked for while parked - never started, or its game folder / source changed - starts here)
+        assertFalse(unpark.replace("if (tailWanted) { tailWanted = false; startTail() }", "").contains("startTail()") || unpark.contains("LogTail("))
         // the old host's place goes to the snapshot once its reader stopped
         val d = host.substringAfter("fun onDestroy() {").substringBefore("\n    }\n")
         assertTrue(d.indexOf("tail?.stop()") in 0 until d.indexOf("BottomSync.place("))

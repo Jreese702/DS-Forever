@@ -78,10 +78,10 @@ class BottomSyncReviewTest {
         assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 1 (test 1)"))
         // the windows' abandon goes through the host's (the snapshot back BEFORE its teardown joins the reader's place)
         val p = source().substringAfter("private class HostPresentation(")
-        assertTrue(p.substringAfter("fun abandon() {").substringBefore("\n    }\n").contains("host?.abandon()"))
+        assertTrue(p.substringAfter("fun abandon(shownOk: Boolean = false) {").substringBefore("\n    }\n").contains("host?.abandon()"))
         assertTrue(source("TopWindow.kt").substringAfter("fun abandon() {").substringBefore("\n    }\n").contains("host?.abandon()"))
         val ab = host().substringAfter("    fun abandon() {").substringBefore("\n    }\n")
-        assertTrue(ab.indexOf("BottomSync.hostAbandoned(restored)") in 0 until ab.indexOf("onDestroy()"))
+        assertTrue(ab.indexOf("BottomSync.hostAbandoned(restored, rebuildMark)") in 0 until ab.indexOf("onDestroy()"))
     }
 
     // ---- a second rebuild before the first settled (finding 9)
@@ -141,16 +141,20 @@ class BottomSyncReviewTest {
     // ---- the snapshot's age counts deep sleep (finding 11)
 
     @Test fun theSnapshotAgeCountsDeepSleep() {
-        assertTrue(BottomSync.waitingGone(snap(at = 1_000L), gameUp = true, now = 1_000L + BottomSync.IN_WORLD_MS - 1))
-        assertFalse("an old snapshot shows the waiting screen until the first current document",
-            BottomSync.waitingGone(snap(at = 1_000L), gameUp = true, now = 1_000L + BottomSync.IN_WORLD_MS))
-        assertFalse(BottomSync.waitingGone(snap(inWorld = false), true, 1_000L))
-        assertFalse(BottomSync.waitingGone(snap(), false, 1_000L))
-        // elapsedRealtime (it counts the sleep) wherever a snapshot is stamped or aged; never uptime there
+        // round 2 (2026-11-26): the time ASLEEP since (elapsedRealtime less uptime) decides the waiting screen, never the time away -
+        // a minimize of any length (the game ran on) shows none, a sleep of IN_WORLD_MS does
+        val m = BottomSync.IN_WORLD_MS * 5
+        assertTrue(BottomSync.waitingGone(snap(at = 1_000L), gameUp = true, now = 1_000L + m, nowUp = 1_000L + m))
+        assertTrue(BottomSync.waitingGone(snap(at = 1_000L), gameUp = true, now = 1_000L + BottomSync.IN_WORLD_MS - 1, nowUp = 1_000L))
+        assertFalse("a long sleep shows the waiting screen until the first current document",
+            BottomSync.waitingGone(snap(at = 1_000L), gameUp = true, now = 1_000L + BottomSync.IN_WORLD_MS, nowUp = 1_000L))
+        assertFalse(BottomSync.waitingGone(snap(inWorld = false), true, 1_000L, 1_000L))
+        assertFalse(BottomSync.waitingGone(snap(), false, 1_000L, 1_000L))
+        // elapsedRealtime (it counts the sleep) wherever a snapshot is stamped or aged; uptime beside it only to measure the sleep
         val h = host()
         val snapFn = h.substringAfter("    fun snapshot(why: String): BottomSync.Snapshot? {").substringBefore("\n    }\n")
-        assertTrue(snapFn.contains("SystemClock.elapsedRealtime()") && !snapFn.contains("uptimeMillis"))
-        assertTrue(h.contains("BottomSync.waitingGone(r, LauncherHooks.gameUp(), SystemClock.elapsedRealtime())"))
+        assertTrue(snapFn.contains("val now = SystemClock.elapsedRealtime(); val nowUp = SystemClock.uptimeMillis()"))
+        assertTrue(h.contains("SystemClock.elapsedRealtime(), SystemClock.uptimeMillis())) startView.visibility = View.GONE"))
         for ((name, s) in listOf("DsForeverScreen.kt" to source(), "TopWindow.kt" to source("TopWindow.kt"))) {
             val restore = s.substringAfter("override fun hostRestore() = ").substringBefore("\n")
             assertTrue(name, restore.contains("BottomSync.take(android.os.SystemClock.elapsedRealtime()"))
@@ -171,9 +175,13 @@ class BottomSyncReviewTest {
         assertTrue(BottomSync.line(), BottomSync.line().contains("caught up in 90 ms"))
         BottomSync.hostMade(null)                                  // the run's first host: no rebuild
         assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 0"))
-        BottomSync.hostMade(null)                                  // a host made again with no snapshot (an old one, another run)
+        BottomSync.hostMade(null)                                  // round 2: no comeback path closed the window (the single screen switch)
+        assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 0"))
+        BottomSync.expectRebuild("closed by Android")
+        BottomSync.hostMade(null)                                  // a host made again with no snapshot (the game not up, another run)
         assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 1 (no snapshot 1)"))
-        assertFalse("a rebuild's time is its own", BottomSync.line().contains("caught up"))
+        assertFalse("a rebuild's time is its own", BottomSync.line().contains("rebuild caught up"))
+        assertTrue("the last return's stays in its brackets", BottomSync.line().contains("caught up in 90 ms)"))
         BottomSync.hostMade(snap())
         assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 2 (no snapshot 1, test 1)"))
         assertTrue(host().substringAfter("restored = shell.hostRestore()").substringBefore("\n").contains("BottomSync.hostMade(restored)"))
@@ -200,7 +208,8 @@ class BottomSyncReviewTest {
         assertEquals(2, Regex("onStatus\\(RESTARTED\\)").findAll(t).count())
         val h = host()
         val st = h.substringAfter("private fun startTail() {").substringBefore("\n    }\n")
-        assertTrue("only with the game up (the start screens read the last session's log)", st.contains("else if (LauncherHooks.gameUp()) DocMemory.note(msg)"))
+        assertTrue("only with the game up (the start screens read the last session's log; round 2: a relaunch's game is up)",
+            st.contains("else if (LauncherHooks.gameUp() || BottomSync.relaunchPending(android.os.SystemClock.elapsedRealtime())) DocMemory.note(msg)"))
         assertTrue("on the reader thread, before the hand-off", st.contains("if (!streaming) DocMemory.readerSaid(s); ui.post {"))
         assertTrue("on Light 8's memory line", h.contains("MemWatch.source8(\"docmemory\") { DocMemory.shared.bytes }"))
     }
@@ -220,12 +229,12 @@ class BottomSyncReviewTest {
 
     @Test fun anActivityOverTheBottomScreenNeverShowsAParkedWindow() {
         val h = host()
-        assertTrue(h.contains("fun hostHeld(on: Boolean): Boolean = false"))
+        assertTrue(h.contains("fun hostHeld(on: Boolean, cls: Class<*>? = null): Boolean = false"))
         val open = h.substringAfter("private fun openOnBottom(").substringBefore("\n    }\n")
-        assertTrue(open.contains("if (!shell.hostHeld(on)) decor?.visibility"))
+        assertTrue(open.contains("if (!shell.hostHeld(on, cls)) decor?.visibility"))
         assertFalse("never the raw decor shown from the hook", open.contains("ui.post { decor?.visibility = View.VISIBLE"))
         val p = source().substringAfter("private class HostPresentation(")
-        val held = p.substringAfter("override fun hostHeld(on: Boolean): Boolean {").substringBefore("\n    }\n")
+        val held = p.substringAfter("override fun hostHeld(on: Boolean, cls: Class<*>?): Boolean {").substringBefore("\n    }\n")
         assertTrue(held.contains("if (up && !parkedNow)"))
         val unpark = p.substringAfter("override fun unpark(").substringBefore("\n    }\n")
         assertTrue(unpark.contains("decorView?.visibility = if (held) View.GONE else View.VISIBLE"))
@@ -234,9 +243,13 @@ class BottomSyncReviewTest {
     // ---- a parked host that goes gives the game's UI back (finding 4)
 
     @Test fun aParkedHostThatGoesGivesTheGamesUiBack() {
+        // round 2 (2026-11-26): the other way round - a parked host that goes records "not in view" UNDER the park's hold (nothing tapped
+        // on the top screen while nobody sees it), and the hold goes after, whatever the body does (the unpack return included); the game's
+        // UI comes back from DsForeverScreen when a return finds no bottom window (BottomSyncRound2Test.aParkedHostThatGoesTapsNothing)
         val stop = host().substringAfter("fun onStop(gameHidden: Boolean = false) {").substringBefore("\n    }\n")
-        assertTrue("the park's hold goes before the game's UI step", stop.indexOf("if (!gameHidden) unholdPark()") in 0 until stop.indexOf("if (!gameHidden) GameUi.onVisible(false)"))
-        assertTrue("before the unpack return too", stop.indexOf("unholdPark()") < stop.indexOf("if (unpacking) return"))
+        assertTrue(stop.contains("try { stopBody(gameHidden) } finally { if (!gameHidden) unholdPark() }"))
+        val body = host().substringAfter("private fun stopBody(gameHidden: Boolean) {").substringBefore("\n    }\n")
+        assertTrue(body.indexOf("if (unpacking) return") in 0 until body.indexOf("if (!gameHidden) GameUi.onVisible(false)"))
         val un = host().substringAfter("private fun unholdPark() {").substringBefore("\n    }\n")
         assertTrue(un.contains("GameUi.holdTaps(tapHoldBefore)") && un.contains("GameInput.away = false") && un.contains("parkedAt = 0L"))
     }

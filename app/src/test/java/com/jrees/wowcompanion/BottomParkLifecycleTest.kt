@@ -320,13 +320,22 @@ class BottomParkLifecycleTest {
         settle(500)
         assertEquals("back: shown (the activity is gone)", View.VISIBLE, win.decorView.visibility)
 
-        // again, but the activity still open at the return: it stays in view, the window hidden until it closes
+        // again, but the activity still open at the return: it stays in view, the window hidden until it closes (round 2: really up -
+        // alive, and its task shows on a screen: Android's own word, ActivityManager.AppTask's TaskInfo.isVisible)
         assertTrue(open.invoke(host(), VoiceAskActivity::class.java, "Voice", setClosed) as Boolean)
+        val ask = Robolectric.buildActivity(VoiceAskActivity::class.java).create()
+        val task = org.robolectric.shadows.ShadowAppTask.newInstance()
+        val info = android.app.ActivityManager.RecentTaskInfo().apply { taskId = ask.get().taskId }
+        android.app.TaskInfo::class.java.getDeclaredField("isVisible").apply { isAccessible = true }.setBoolean(info, true)
+        org.robolectric.shadow.api.Shadow.extract<org.robolectric.shadows.ShadowAppTask>(task).setTaskInfo(info)
+        val am = app.getSystemService(android.app.ActivityManager::class.java)
+        org.robolectric.shadow.api.Shadow.extract<org.robolectric.shadows.ShadowActivityManager>(am).setAppTasks(listOf(task))
         c.get().onUserLeaveHint(); c.pause().stop(); settle(300)
         c.start().resume(); settle(500)
         assertEquals("the activity still over it: hidden", View.GONE, win.decorView.visibility)
         closed!!.invoke(); settle(300)
         assertEquals(View.VISIBLE, win.decorView.visibility)
+        runCatching { ask.destroy() }
         c.pause().stop().destroy()
         settle(300)
     }
