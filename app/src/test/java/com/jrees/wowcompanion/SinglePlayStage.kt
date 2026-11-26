@@ -18,7 +18,8 @@ import java.time.Duration
  * party of four, ten chat lines, a focused quest, the Elwynn map) lent to the REAL SingleDocks, whose top-screen windows are
  * [FakeShell]'s: each sub a FrameLayout placed by its bounds in a 1920 x 1080 "screen" (as fork/SubWindow places its window).
  */
-class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1920, val h: Int = 1080, laid: Boolean = true) {
+class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1920, val h: Int = 1080, laid: Boolean = true,
+                      castBar: Boolean = false) {
     val holder = FrameLayout(app)
     val map = MapView(app)
     val cast = CastView(app) { }
@@ -110,7 +111,9 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
         app.getSharedPreferences("home", 0).edit().clear().commit()
         HomeSettings.init(app); Settings.init(app); Tr.init(app)
         HomeLayoutStore.character(null)
-        HomeLayoutStore.set(HomeLayout())
+        HomeLayoutStore.set(if (castBar) HomeLayout(cast = HomeLayout.CastDock.UNDER_CHAT) else HomeLayout())
+        if (castBar) HomeSettings.castBarCombat = CastStripModel.Combat.STAY      // (the 1535 corner button's bar: shown in fights too)
+        CastStripModel.Live.pos = 0f; CastStripModel.Live.side = null
         setField(PartyModel.live, "party", null)
         if (partyOn) PartyModel.live.onParty(PartyModel.parseParty(partyDoc(true))!!, true, System.currentTimeMillis())
         holder.addView(map); holder.addView(cast); holder.addView(chat)
@@ -130,6 +133,10 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
         val lines = JSONArray()
         for ((i, l) in chatLines.withIndex()) lines.put(JSONObject().put("i", i + 1).put("ch", l.first).put("text", l.second))
         home.onChat(JSONObject().put("v", "chat40").put("s", 1).put("n", chatLines.size).put("lines", lines))
+        if (castBar) {
+            val bar = CastStripModel.parse(JSONObject(CAST_DOC))!!
+            CastStripModel.Live.set(bar); home.onCastBar(bar)
+        }
         home.partyChanged()
         home.tick()
         ShadowLooper.idleMainLooper()
@@ -153,24 +160,26 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
     }
 
     /** the PLAY state as CompanionHost's PLAY wiring lays it: Home's views lent, the docks up, the arrangement for [arr] */
-    fun play(arr: SinglePlayLayout.Arr, animate: Boolean = false): SinglePlayLayout.Plan {
-        home.lendToDocks(docks.chat, docks.party, docks.map, docks.quest)
+    fun play(arr: SinglePlayLayout.Arr, animate: Boolean = false, castOpen: Boolean = false, rowAsk: Boolean? = null): SinglePlayLayout.Plan {
+        home.lendToDocks(docks.chat, docks.party, docks.map, docks.quest, docks.castBar)
+        docks.btnR.art = { c, cx, cy, d -> strip.drawDiscAt(c, cx, cy, d) }
         if (strip.parent !== docks.row) {
             (strip.parent as? android.view.ViewGroup)?.removeView(strip)
             docks.row.addView(strip, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         }
         docks.show(true)
-        val p = plan(arr)
+        val p = plan(arr, castOpen, rowAsk)
         val laid = home.dockLaid()
         docks.arrange(p, animate, SinglePlayLayout.hidden(null, false, laid.chat, laid.map, laid.quest))
         return p
     }
 
     /** the arrangement CompanionHost.playStep lays for [arr] now (the party list's and the quest card's own heights) */
-    fun plan(arr: SinglePlayLayout.Arr): SinglePlayLayout.Plan {
+    fun plan(arr: SinglePlayLayout.Arr, castOpen: Boolean = false, rowAsk: Boolean? = null): SinglePlayLayout.Plan {
         val laid = home.dockLaid()
         return SinglePlayLayout.plan(arr, laid.party, SinglePlayLayout.Hud(), w, h, home.dockPartyH(),
-            questH = home.dockQuestH(fold = arr == SinglePlayLayout.Arr.IN))
+            questH = home.dockQuestH(fold = arr == SinglePlayLayout.Arr.IN),
+            castH = if (castOpen) (home.dockCastH() ?: SinglePlayLayout.CAST_H_DEF) else null, rowAsk = rowAsk, castBtn = laid.cast)
     }
 
     /** the top screen's windows laid as the window manager would (each at its bounds) */
@@ -187,4 +196,12 @@ class SinglePlayStage(private val app: Context, partyOn: Boolean, val w: Int = 1
     }
 
     fun sub(p: SinglePlayLayout.Piece): FakeSub? = shell.subs[p.sub]
+
+    companion object {
+        /** a tap-to-cast bar of eight (HomeTopBarShotsTest's) */
+        const val CAST_DOC = """{"type":"castbar","v":"cb6","n":8,"pick":8,"pp":[39,19],"e":[
+        {"s":1,"id":403,"i":136048,"c":0},{"s":2,"id":8042,"i":136026,"c":1},{"s":3,"id":331,"i":136052,"c":2},
+        {"s":4,"id":324,"i":136051,"c":3},{"s":5,"id":8017,"i":136086,"c":4},{"s":6,"id":2484,"i":136102,"c":5},
+        {"s":7,"id":8018,"i":136015,"c":6},{"s":8,"id":5730,"i":135824,"c":7}]}"""
+    }
 }

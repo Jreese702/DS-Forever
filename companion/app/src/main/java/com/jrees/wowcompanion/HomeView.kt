@@ -6087,10 +6087,17 @@ class HomeView(
     val dockedNow: Boolean get() = dockLoans.isNotEmpty()
 
     /** what Home's rest page lays now - the pieces the docks show: its chat, Party mode's list, the map (Home holding it) */
-    data class DockLaid(val chat: Boolean, val party: Boolean, val map: Boolean, val quest: Boolean = false)
+    data class DockLaid(val chat: Boolean, val party: Boolean, val map: Boolean, val quest: Boolean = false, val cast: Boolean = false)
     fun dockLaid(): DockLaid = DockLaid(chatPane.visibility == View.VISIBLE && now.containsKey(Part.CHAT),
         partyView.visibility == View.VISIBLE && now.containsKey(Part.PARTY), lent(mapView) && mapSlot.visibility == View.VISIBLE,
-        quest = homeCard() != null)
+        quest = homeCard() != null, cast = castSideNow() != CastStripModel.Side.OFF)
+
+    /** the 1535 polish (the corner button's tap-to-cast bar): the bar's height as Home lays it (its own rows), else null */
+    fun dockCastH(): Int? = now[Part.STRIP]?.height()?.toInt()?.takeIf { it > 0 }
+
+    /** the tap-to-cast bar's own lay while it stands in the corner's window (Home's side and half, given back with it) */
+    private var castLoanSide: CastStripModel.Side? = null
+    private var castLoanHalf = 0
 
     /** the 1535 polish (the user: "instead it should show our focused quest box like it does on the bottom screen"): the focused quest's
      *  card's height for the quest dock - its title row only when [fold] (a fight) or minimized as on Home; null = no focused quest */
@@ -6109,10 +6116,18 @@ class HomeView(
     }
 
     /** Home's chat pane, party list and map into the docks' slots [chat], [party], [map] (each the slot's only child) */
-    fun lendToDocks(chat: ViewGroup, party: ViewGroup, map: ViewGroup, quest: ViewGroup? = null) {
+    fun lendToDocks(chat: ViewGroup, party: ViewGroup, map: ViewGroup, quest: ViewGroup? = null, cast: ViewGroup? = null) {
         dockLend(chatPane, chat)
         dockLend(partyView, party)
         if (quest != null) { dockLend(questPane, quest); questPane.translationZ = 0f }
+        // the 1535 polish: the tap-to-cast bar (Home's own, its slots, scroll, cooldowns and fight rule) into the corner's window, as
+        // one scrolling bar (LEFT: four in view) whatever Home's split; its touches its own (TapBridge on the add-on's castbar row)
+        if (cast != null && !docked(castStrip)) {
+            castLoanSide = castStrip.side; castLoanHalf = castStrip.splitHalf
+            dockLend(castStrip, cast)
+            castStrip.splitHalf = 0; castStrip.side = CastStripModel.Side.LEFT
+            castStrip.visibility = View.VISIBLE
+        }
         // the 1535 polish (the user: "The party mode box and text box bot have solid backgrounds and it needs to be way more see through")
         chatPane.dockGround = true; partyView.dockGround = true; questPane.docked = quest != null
         if (lent(mapView) && mapView.parent === mapSlot) {
@@ -6136,6 +6151,7 @@ class HomeView(
     /** every lent view back where it came from (last lent first), as it was; Home lays its page again */
     fun reclaimFromDocks() {
         chatPane.dockGround = false; partyView.dockGround = false; questPane.docked = false; questPane.dockFold = false
+        castLoanSide?.let { castStrip.side = it; castStrip.splitHalf = castLoanHalf; castLoanSide = null }
         questPane.translationZ = restZ(Part.QUESTS)
         if (dockLoans.isEmpty()) return
         while (dockLoans.isNotEmpty()) {

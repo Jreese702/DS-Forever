@@ -43,7 +43,7 @@ class SinglePlayShotsTest {
     private fun save(s: SinglePlayStage, name: String, p: SinglePlayLayout.Plan, party: Boolean, talk: Boolean = false): Bitmap {
         val b = s.draw()
         val j = JSONObject().put("arr", p.arr.name).put("party", party).put("talk", talk).put("chatLines", p.chatLines)
-        for (k in listOf(Piece.MAP, Piece.PARTY, Piece.CHAT, Piece.QUEST, Piece.ROW)) j.put(k.name.lowercase(), arr(s.docks.boxNow(k)))
+        for (k in listOf(Piece.MAP, Piece.PARTY, Piece.CHAT, Piece.QUEST, Piece.ROW, Piece.CAST, Piece.BTN_L, Piece.BTN_R)) j.put(k.name.lowercase(), arr(s.docks.boxNow(k)))
         if (talk) j.put("talkBox", arr(p.talk))
         val ks = JSONArray()
         for (k in SinglePlayLayout.keepOuts(p.arr, party)) ks.put(JSONArray().put(k.name).put(k.box.l).put(k.box.t).put(k.box.r).put(k.box.b))
@@ -80,7 +80,7 @@ class SinglePlayShotsTest {
         // the 1535 polish: the focused quest's card under the map, the room row at the bottom centre, the chat on the right
         assertTrue("the quest card drawn; Party mode on: no room row (Hub's rows keep the HUD's place)", painted(bo, o.quest) && o.row == null)
         assertTrue("the chat on the right", o.chat.l > 960)
-        assertTrue("nothing of ours outside them", clearOutside(bo, listOf(o.map, o.party, o.chat, o.quest, o.row)))
+        assertTrue("nothing of ours outside them", clearOutside(bo, listOf(o.map, o.party, o.chat, o.quest, o.row, o.btnL, o.btnR)))
         // the docks see-through (the user: "way more see through"): a pixel inside the chat's well, away from its words, lets the game through
         assertTrue("the chat's ground is see-through: alpha ${bo.getPixel(o.chat.l + 20, o.chat.t + 20) ushr 24}",
             (bo.getPixel(o.chat.l + 20, o.chat.t + 20) ushr 24) < 120)
@@ -118,7 +118,7 @@ class SinglePlayShotsTest {
     }
 
     @Test fun withoutPartyMode() {
-        val s = SinglePlayStage(app, partyOn = false)
+        val s = SinglePlayStage(app, partyOn = false, castBar = true)
         val o = s.play(Arr.OUT)
         warm(s)
         val bo = save(s, "dock_out_solo", o, party = false)
@@ -131,6 +131,14 @@ class SinglePlayShotsTest {
         frame.invoke(s.docks, Piece.ROW, o.row, SinglePlayLayout.below(o.row!!), Motion.curve().getInterpolation(0.5f))
         save(s, "dock_row_half", i0, party = false)
         s.settle(20)
+        // the corner buttons (the user: "touch buttons in the bottome left and right"): in a fight, the swirl asks the row up and the left
+        // button opens the tap-to-cast bar
+        val asked = s.play(Arr.IN, castOpen = true, rowAsk = true)
+        s.settle(20)
+        val ba = save(s, "dock_corners_open", asked, party = false)
+        assertTrue("the tap-to-cast bar open over the left button", painted(ba, asked.cast))
+        assertTrue("the row up on the swirl's ask in a fight", painted(ba, asked.row))
+        assertTrue("both corner buttons drawn", painted(ba, asked.btnL) && painted(ba, asked.btnR))
         s.fight(false)
         s.docks.arrange(o, animate = false)
         s.fight(true)

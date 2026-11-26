@@ -92,12 +92,42 @@ class SinglePlayLayoutTest {
     }
 
     @Test fun theDockPiecesNeverMeetEachOther() {
-        for (a in Arr.values()) for (party in listOf(true, false)) for (q in listOf(null, 80, 196, 400)) for (y in -470..-170 step 50) {
-            val p = SinglePlayLayout.plan(a, party, Hud(y, 280, 100), questH = q)
+        for (a in Arr.values()) for (party in listOf(true, false)) for (q in listOf(null, 80, 196, 400)) for (y in -470..-170 step 50)
+        for (cast in listOf(null, 120)) for (ask in listOf(null, true)) {
+            val p = SinglePlayLayout.plan(a, party, Hud(y, 280, 100), questH = q, castH = cast, rowAsk = ask)
             val pcs = p.boxes().entries.filter { it.value != null }
             for (i in pcs.indices) for (j in i + 1 until pcs.size)
                 assertFalse("$a party $party quest $q hud $y: ${pcs[i]} meets ${pcs[j]}", pcs[i].value!!.hits(pcs[j].value!!))
         }
+    }
+
+    /** the 1535 polish (the user: "touch buttons in the bottome left and right. In the bottom left it should slide open our touch to cast
+     *  menu and then the bottom right we could have our spiral button and slide open the home menu bar when touched") */
+    @Test fun theCornerButtonsAndWhatTheyOpen() {
+        for (a in Arr.values()) for (party in listOf(true, false)) {
+            val p = SinglePlayLayout.plan(a, party, castH = 120)
+            assertEquals("bottom left, 72 px, 24 from the edges", Box(24, 984, 96, 1056), p.btnL)
+            assertEquals("bottom right", Box(1824, 984, 1896, 1056), p.btnR)
+            for (k in keeps(a, party)) for (b in listOf(p.btnL!!, p.btnR!!)) assertFalse("$a ${k.name} $b", b.hits(k.box))
+            assertTrue("clear of the Wings' widest reach and their rest", p.btnL!!.r < SinglePlayLayout.K4.l && p.btnR!!.l > SinglePlayLayout.K4.r &&
+                p.btnL!!.r < SinglePlayLayout.K3.l && p.btnR!!.l > SinglePlayLayout.K3.r)
+            assertEquals("the tap-to-cast bar over the left button, 560 wide", Box(24, 846, 584, 966), p.cast)
+            assertTrue("never over the chat", !p.cast!!.hits(p.chat))
+        }
+        assertNull("no tap-to-cast bar set up: no left button", SinglePlayLayout.plan(Arr.OUT, true, castBtn = false).btnL)
+        assertNull("closed", SinglePlayLayout.plan(Arr.OUT, true).cast)
+        // the swirl's ask: the row up in a fight and in Party mode, down out of a fight
+        assertNotNull(SinglePlayLayout.plan(Arr.IN, false, rowAsk = true).row)
+        assertNotNull(SinglePlayLayout.plan(Arr.OUT, true, rowAsk = true).row)
+        assertNull(SinglePlayLayout.plan(Arr.OUT, false, rowAsk = false).row)
+        // the bar slides in from the left edge and out the same way (whole: no fade)
+        val shut = SinglePlayLayout.plan(Arr.OUT, false); val open = SinglePlayLayout.plan(Arr.OUT, false, castH = 120)
+        val inn = SinglePlayLayout.steps(shut.boxes(), open.boxes(), Arr.OUT).filter { it.piece == Piece.CAST }
+        val g = inn[1] as Step.Glide
+        assertTrue("from wholly past the left edge: ${g.from}", g.from!!.r < 0 && g.to == open.cast)
+        val out = SinglePlayLayout.steps(open.boxes(), shut.boxes(), Arr.OUT).filter { it.piece == Piece.CAST }
+        assertEquals(Step.Place(Piece.CAST, null), out[2])
+        assertTrue(Piece.CAST in SinglePlayLayout.hidden(null, true, true, true))
     }
 
     @Test fun theFocusedQuestCardUnderTheMap() {
@@ -144,6 +174,7 @@ class SinglePlayLayoutTest {
             for ((piece, b) in p.boxes()) {
                 b ?: continue
                 if (piece == Piece.MAP) assertTrue("the map right of the Wings: $b", b.l > 1540 || b.b < 550)
+                else if (piece == Piece.BTN_R) assertTrue("the swirl button right of the Wings' widest reach: $b", b.l > SinglePlayLayout.K4.r)
                 else assertTrue("$piece above y 550 or left of x 152: $b", b.b <= 550 || b.r <= 152)
             }
         }
@@ -192,8 +223,8 @@ class SinglePlayLayoutTest {
             assertEquals(out.box(p), glide.from); assertEquals(inn.box(p), glide.to)
         }
         assertEquals("two window updates a piece a fight edge (the map, the list, the chat)", 6, st.count { it is Step.Place })
-        val solo = SinglePlayLayout.steps(SinglePlayLayout.plan(Arr.OUT, false).boxes(), SinglePlayLayout.plan(Arr.IN, false).boxes(), Arr.IN)
-        assertEquals("solo: the map, the chat and the room row", 6, solo.count { it is Step.Place })
+        val soloSteps = SinglePlayLayout.steps(SinglePlayLayout.plan(Arr.OUT, false).boxes(), SinglePlayLayout.plan(Arr.IN, false).boxes(), Arr.IN)
+        assertEquals("solo: the map, the chat and the room row", 6, soloSteps.count { it is Step.Place })
         val back = SinglePlayLayout.steps(inn.boxes(), out.boxes(), Arr.OUT)
         assertEquals("out of it: COMBAT_SHRINK", Motion.COMBAT_SHRINK, (back.first { it is Step.Glide } as Step.Glide).ms)
         assertTrue("nothing moves: no step", SinglePlayLayout.steps(out.boxes(), out.boxes(), Arr.OUT).isEmpty())
@@ -223,8 +254,8 @@ class SinglePlayLayoutTest {
             val area = p.boxes().values.filterNotNull().sumOf { it.area }
             assertTrue("$a party $party: ${area / 1e6} MP of docks", area <= SinglePlayLayout.AREA_MAX)
         }
-        assertTrue("about a quarter of the top screen at most", SinglePlayLayout.AREA_MAX <= 1920L * 1080 * 2 / 7)
-        val all = SinglePlayLayout.plan(Arr.OUT, true, questH = SinglePlayLayout.QUEST_MAX_H)
+        assertTrue("under a third of the top screen with everything open", SinglePlayLayout.AREA_MAX <= 1920L * 1080 / 3)
+        val all = SinglePlayLayout.plan(Arr.OUT, true, questH = SinglePlayLayout.QUEST_MAX_H, castH = 200, rowAsk = true)
         assertTrue("with the card and the row: ${all.boxes().values.filterNotNull().sumOf { it.area }}",
             all.boxes().values.filterNotNull().sumOf { it.area } <= SinglePlayLayout.AREA_MAX)
     }

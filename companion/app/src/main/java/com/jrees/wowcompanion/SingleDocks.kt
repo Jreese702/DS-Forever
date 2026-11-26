@@ -41,6 +41,13 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
     val map = Slot(context, Piece.MAP, edge = true)
     val quest = Slot(context, Piece.QUEST, edge = false)
     val row = Slot(context, Piece.ROW, edge = false).also { it.scale = SinglePlayLayout.ROW_K }
+    /** the 1535 polish's corner buttons (the user: "touch buttons in the bottome left and right"): the tap-to-cast bar's (Home's own
+     *  CastStripView, lent into [castBar] while it is open) and the swirl's (the room row on demand) */
+    val castBar = Slot(context, Piece.CAST, edge = false)
+    val btnL = CornerButton(context, swirl = false)
+    val btnR = CornerButton(context, swirl = true)
+    private val btnLSlot = Slot(context, Piece.BTN_L, edge = false).also { it.addView(btnL) }
+    private val btnRSlot = Slot(context, Piece.BTN_R, edge = false).also { it.addView(btnR) }
     val talk = TalkDock(context, cast)
 
     /** each piece's window bounds now (screen px), its box now (where the piece is drawn), its alpha (a fade in / out) */
@@ -58,6 +65,7 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
 
     private fun slot(p: Piece): View = when (p) {
         Piece.MAP -> map; Piece.PARTY -> party; Piece.CHAT -> chat; Piece.TALK -> talk; Piece.QUEST -> quest; Piece.ROW -> row
+        Piece.CAST -> castBar; Piece.BTN_L -> btnLSlot; Piece.BTN_R -> btnRSlot
     }
 
     private fun sub(p: Piece): SingleSub = shell.sub(p.sub).also { it.put(slot(p)) }
@@ -178,6 +186,61 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
     // ---------------------------------------------------------------- the views
 
     /**
+     * A CORNER BUTTON (the 1535 polish): the bottom screen's own round button - the game's circle slot ring (the band's frame_circle art,
+     * its pressed / selected states) round a dark well and its picture: the tap-to-cast bar's (the Spellbook room's icon) or, [swirl],
+     * Home's own stone disc ([art]: the Strip's drawing). A tap = [onTap]; [lit] = what it opens is open (the ring's selected gold);
+     * the press sinks it (0.92), as the band's buttons.
+     */
+    class CornerButton(ctx: Context, val swirl: Boolean) : View(ctx) {
+        var onTap: (() -> Unit)? = null
+        var lit = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+        /** the swirl's own drawing (CompanionHost: the Strip's disc at this size): false = the drawn stand-in */
+        var art: ((Canvas, Float, Float, Float) -> Boolean)? = null
+        private var down = false
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG)
+        private val box = RectF()
+
+        override fun onDraw(c: Canvas) {
+            val w = width.toFloat(); val h = height.toFloat()
+            val d = minOf(w, h)
+            val cx = w / 2f; val cy = h / 2f
+            val save = c.save()
+            if (down) c.scale(0.92f, 0.92f, cx, cy + 2f)
+            if (swirl && art?.invoke(c, cx, cy, d) == true) {
+                if (lit) { p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = 3f; p.color = Theme.gold; c.drawCircle(cx, cy, d / 2f - 2f, p) }
+                c.restoreToCount(save); return
+            }
+            val r = d / 2f
+            p.style = android.graphics.Paint.Style.FILL; p.color = android.graphics.Color.argb(230, 10, 8, 6)
+            c.drawCircle(cx, cy, r * 0.84f, p)
+            val pic = if (swirl) null else UiKit.tex("ricon_spellbook")
+            if (pic != null) { box.set(cx - r * 0.56f, cy - r * 0.56f, cx + r * 0.56f, cy + r * 0.56f); c.drawBitmap(pic, null, box, p) }
+            else if (swirl) {
+                p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = 3f; p.color = Theme.gold
+                c.drawArc(RectF(cx - r * 0.5f, cy - r * 0.5f, cx + r * 0.5f, cy + r * 0.5f), 0f, 300f, false, p)
+            }
+            val ring = Icons.ui(if (lit) "cast/frame_circle_selected" else if (down) "cast/frame_circle_pressed" else "cast/frame_circle_normal")
+                ?: Icons.ui("cast/frame_circle_normal")
+            if (ring != null) { box.set(0f, 0f, w, h); c.drawBitmap(ring, null, box, p) }
+            else {
+                p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = 4f; p.color = if (lit) Theme.gold else Theme.bronze
+                c.drawCircle(cx, cy, r - 3f, p)
+            }
+            c.restoreToCount(save)
+        }
+
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { down = true; invalidate() }
+                MotionEvent.ACTION_UP -> { val was = down; down = false; invalidate(); if (was && e.x in 0f..width.toFloat() && e.y in 0f..height.toFloat()) onTap?.invoke() }
+                MotionEvent.ACTION_CANCEL -> { down = false; invalidate() }
+            }
+            return true
+        }
+    }
+
+    /**
      * ONE PIECE'S WINDOW CONTENT: it lays its one child (Home's lent view) at [box] in the window's own px, measured only when its size
      * changed - the glide's frames lay it here directly (no layout pass through the window). The map's: clipped round and the module's
      * edge drawn over it (Home's well language: UiKit.module).
@@ -262,7 +325,7 @@ class SingleDocks(context: Context, private val shell: SingleShell, private val 
 
     companion object {
         /** the pieces laid by the arrangement (the talk pop-up has its own [talkSync]) */
-        private val LAID = listOf(Piece.MAP, Piece.PARTY, Piece.CHAT, Piece.QUEST, Piece.ROW)
+        private val LAID = listOf(Piece.MAP, Piece.PARTY, Piece.CHAT, Piece.QUEST, Piece.ROW, Piece.CAST, Piece.BTN_L, Piece.BTN_R)
 
         /**
          * Home never laid yet: a fresh host in single screen mode (the switch, every launcher resume) starts on the game with the rooms

@@ -170,6 +170,34 @@ class SingleNpcShotsTest {
         assertEquals(SingleNpc.Dim.KEEP, SingleNpc.dimTap(SingleLook.In(npc = true)))
     }
 
+    /** the 1535 polish (the user on test 1533: "When looting the screen dims but thats excessive"): the loot window alone over the game
+     *  takes the loot look's dim (SingleLook.DIM_LOOT, none) - the 1533 picture with the panel's 0.55 beside it for the sheet */
+    @Test fun theLootWindowLeavesTheGameUndimmed() {
+        val loot = JSONObject().put("free", 9).put("items", JSONArray()
+            .put(JSONObject().put("i", 1).put("icon", 133784).put("name", "24 Copper").put("count", 0).put("q", 0).put("coin", true))
+            .put(JSONObject().put("i", 2).put("icon", 135274).put("name", "Cruel Barb").put("count", 1).put("q", 3).put("id", 5191))
+            .put(JSONObject().put("i", 3).put("icon", 132889).put("name", "Linen Cloth").put("count", 3).put("q", 1).put("id", 2589)))
+            .put("act", JSONObject().put("all", 9))
+        val v = interact(JSONObject().put("loot", loot).put("holder", "npc").put("bnext", "home").put("nav", JSONObject().put("on", true).put("cur", "loot 1")))
+        assertTrue("the loot window says so", v.looting())
+        val l = SingleLook.of(SingleLook.In(npc = true, loot = v.looting()))
+        assertEquals(SingleLook.Frame.FULL, l.frame); assertEquals(0f, l.dim)
+        // 1533: the window's own 0.45 cover over the panel's 0.55 dim; 1535: neither (SingleScreen.inUse drops the cover)
+        val before = picture(v, BW, BH)
+        single(true)
+        val page = picture(v, BW, BH)
+        val a = page.getPixel(60, BH - 60) ushr 24
+        assertTrue("no cover of its own over the game in single screen mode (alpha $a)", a == 0)
+        for ((name, dim, pic0) in listOf(Triple("npc_loot_1533_dim.png", SingleLook.DIM_PANEL, before), Triple("npc_loot_1535_no_dim.png", l.dim, page))) {
+            val page = pic0
+            val pic = backdrop()
+            val c = Canvas(pic)
+            c.drawColor(Color.argb((255 * dim).toInt(), 0, 0, 0))
+            c.drawBitmap(page, null, Rect(box[0], box[1], box[2], box[3]), null)
+            save(pic, name)
+        }
+    }
+
     // ---------------------------------------------------------------- the strip: the type tool, LB's picture
 
     private fun toolPicture(tab: Int, r: IntArray): Bitmap {

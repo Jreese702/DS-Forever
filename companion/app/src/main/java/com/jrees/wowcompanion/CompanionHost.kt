@@ -2444,7 +2444,13 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** PLAY: the play docks, the add-on's single flag, the frame pace (end of onCreate) */
     private fun singlePlayWire() {
         val s = single ?: return
-        docks = SingleDocks(this, s, castView)
+        docks = SingleDocks(this, s, castView).also { d ->
+            // the 1535 polish's corner buttons (the user: "In the bottom left it should slide open our touch to cast menu and then the bottom
+            // right we could have our spiral button and slide open the home menu bar when touched"): touch only, each a toggle
+            d.btnL.onTap = { cornerCast() }
+            d.btnR.onTap = { cornerRow() }
+            d.btnR.art = { c, cx, cy, dd -> strip.drawDiscAt(c, cx, cy, dd) }
+        }
         SingleUi.docks = true                                            // the game's minimap and chat give way to Home's
         // the top panel runs up to 120 Hz: Home's frames (the docked map's trail above all) paced while moving / fighting with Home's rest
         // being the game, not only while Home's page shows (the two-screen probe above stays as it was)
@@ -2467,6 +2473,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!play) {
             ui.removeCallbacks(playTick)
             d.show(false)
+            castOpen = false; rowAsk = null                              // the corner buttons' asks end with the play docks
             rowReclaim()
             homeView.reclaimFromDocks()
             return
@@ -2475,7 +2482,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val b = single?.box
         if (b != null && roomsRoot != null && SingleDocks.layHomeOnce(homeView, roomsRoot!!, b[0], b[1], b[2], b[3]))
             Log.i("WCHOME", "one screen: Home laid once for the docks (${homeView.width} x ${homeView.height})")
-        homeView.lendToDocks(d.chat, d.party, d.map, d.quest)
+        homeView.lendToDocks(d.chat, d.party, d.map, d.quest, d.castBar)
         rowLend(d.row)
         val was = d.up
         d.show(true)
@@ -2493,8 +2500,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val hud = SinglePlayLayout.Hud(GameUi.hudHeight() ?: SinglePlayLayout.Y_DEF, GameUi.hudWidth() ?: SinglePlayLayout.W_DEF,
             GameUi.hudScale() ?: SinglePlayLayout.S_DEF)
         val arr = SinglePlayLayout.arr(homeView.fightShown())
+        // the swirl button's ask lasts until the next fight edge (the rule takes the row back then)
+        if (d.plan?.arr != null && d.plan?.arr != arr) rowAsk = null
+        if (!laid.cast) castOpen = false
         val p = SinglePlayLayout.plan(arr, laid.party, hud, s.screenW, s.screenH, homeView.dockPartyH(),
-            questH = homeView.dockQuestH(fold = arr == SinglePlayLayout.Arr.IN))
+            questH = homeView.dockQuestH(fold = arr == SinglePlayLayout.Arr.IN),
+            castH = if (castOpen) (homeView.dockCastH() ?: SinglePlayLayout.CAST_H_DEF) else null, rowAsk = rowAsk, castBtn = laid.cast)
+        d.btnL.lit = castOpen
+        d.btnR.lit = rowAsk == true
         // the fight's rolls in the map's place, LB's party picture over the party list (NPC's strip, SingleLook rows 9 / 10)
         val l = playLook
         val hide = SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map, laid.quest)
@@ -2503,6 +2516,31 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (before != null && before != p.arr) Log.i("WCHOME", "one screen: the docks ${if (p.arr == SinglePlayLayout.Arr.IN) "into the fight" else "out of the fight"} " +
             "(chat ${p.chatLines} lines${if (p.party != null) ", the party list" else ""})")
         d.talkSync()
+    }
+
+    /**
+     * THE CORNER BUTTONS (the 1535 polish; the user, 2026-11-26: "I was thinking maybe we could add some touch buttons in the bottome left
+     * and right. In the bottom left it should slide open our touch to cast menu and then the bottom right we could have our spiral button
+     * and slide open the home menu bar when touched"). Touch only, toggles, in and out of fights alike:
+     *  - LEFT: Home's tap-to-cast bar slides in from the left edge over the button (its slots cast on a tap, as on Home; its own fight
+     *    rule), a second tap slides it out; it stays open across fight edges and goes with the docks (a panel, a room);
+     *  - RIGHT (Home's swirl): the room row slides up on demand - in a fight and in Party mode too - or down when it is up; the ask lasts
+     *    until the next fight edge, when the rule (up out of fights) takes it back.
+     */
+    private var castOpen = false
+    private var rowAsk: Boolean? = null
+
+    private fun cornerCast() {
+        castOpen = !castOpen
+        Log.i("WCHOME", "one screen: the tap-to-cast bar ${if (castOpen) "open" else "shut"} (the corner button)")
+        playStep(animate = true)
+    }
+
+    private fun cornerRow() {
+        val up = docks?.plan?.row != null
+        rowAsk = !up
+        Log.i("WCHOME", "one screen: the room row ${if (!up) "up" else "down"} (the swirl button)")
+        playStep(animate = true)
     }
 
     /**

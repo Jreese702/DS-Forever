@@ -79,17 +79,32 @@ object SinglePlayLayout {
     const val PARTY_MIN_H = 140
     const val PARTY_MIN_W = 320
     /** every dock window together at most this many px (about a quarter of the 1920 x 1080 top screen: the compositor's cost; the 1535
-     *  polish added the quest card and the room row, each small) */
-    const val AREA_MAX = 560_000L
+     *  polish added the quest card, the room row, the corner buttons and the tap-to-cast bar, each small) */
+    const val AREA_MAX = 660_000L
     /** the glide's times (Motion.COMBAT_GROW / COMBAT_SHRINK: SinglePlayLayoutTest keeps them equal) */
     const val GROW_MS = 240L
     const val SHRINK_MS = 200L
 
     /** the pieces, each in its own small window (SingleShell.sub ids) */
-    enum class Piece(val sub: String) { MAP("dockR"), PARTY("dockP"), CHAT("dockL"), TALK("dockT"), QUEST("dockQ"), ROW("dockH") }
+    enum class Piece(val sub: String) {
+        MAP("dockR"), PARTY("dockP"), CHAT("dockL"), TALK("dockT"), QUEST("dockQ"), ROW("dockH"), CAST("dockC"), BTN_L("dockBL"), BTN_R("dockBR")
+    }
 
-    /** the pieces that SLIDE (in from under the screen's bottom edge, out the same way) instead of fading where they stand */
-    val SLIDES = setOf(Piece.ROW)
+    /** the pieces that SLIDE instead of fading where they stand: the room row up from under the bottom edge, the tap-to-cast bar in
+     *  from the left edge (each back out the same way: [away]) */
+    val SLIDES = setOf(Piece.ROW, Piece.CAST)
+
+    // ---- the corner buttons (the 1535 polish, the user: "I was thinking maybe we could add some touch buttons in the bottome left and
+    // right. In the bottom left it should slide open our touch to cast menu and then the bottom right we could have our spiral button and
+    // slide open the home menu bar when touched"): two small round buttons in the bottom corners, out of every keep-out (left of the
+    // Wings' widest reach K4 x 152, right of its x 1768); the tap-to-cast bar (Home's own CastStripView, lent) opens over the left one
+    /** a corner button's size and its margin from the screen's edges (1080-line px) */
+    const val BTN = 72
+    const val BTN_MARGIN = 24
+    /** the tap-to-cast bar's box over the left button: its width (Home's LEFT bar: four slots in view, a scroll), its foot */
+    const val CAST_W = 560
+    const val CAST_FOOT = 966
+    const val CAST_H_DEF = 120
 
     // ---- the 1535 polish
     /** the focused-quest card: its width out of a fight / in one (right-anchored, under the map) and the most it may take */
@@ -119,14 +134,17 @@ object SinglePlayLayout {
 
     /** one arrangement: [party] null without Party mode; [talk] where hold to talk's pop-up stands while it is up; [quest] the focused
      *  quest's card (null: no focused quest); [row] the room row (out of a fight only) */
-    data class Plan(val arr: Arr, val map: Box, val party: Box?, val chat: Box, val talk: Box, val quest: Box? = null, val row: Box? = null) {
+    data class Plan(val arr: Arr, val map: Box, val party: Box?, val chat: Box, val talk: Box, val quest: Box? = null, val row: Box? = null,
+                    val cast: Box? = null, val btnL: Box? = null, val btnR: Box? = null) {
         /** the chat lines that fit the chat's box */
         val chatLines: Int get() = maxOf(1, (chat.h - 2 * PANE_PAD + MSG_GAP) / LINE_H)
         fun box(p: Piece): Box? = when (p) {
             Piece.MAP -> map; Piece.PARTY -> party; Piece.CHAT -> chat; Piece.TALK -> talk; Piece.QUEST -> quest; Piece.ROW -> row
+            Piece.CAST -> cast; Piece.BTN_L -> btnL; Piece.BTN_R -> btnR
         }
         /** the pieces that stand while playing (the talk pop-up only while it is up) */
-        fun boxes(): Map<Piece, Box?> = mapOf(Piece.MAP to map, Piece.PARTY to party, Piece.CHAT to chat, Piece.QUEST to quest, Piece.ROW to row)
+        fun boxes(): Map<Piece, Box?> = mapOf(Piece.MAP to map, Piece.PARTY to party, Piece.CHAT to chat, Piece.QUEST to quest, Piece.ROW to row,
+            Piece.CAST to cast, Piece.BTN_L to btnL, Piece.BTN_R to btnR)
     }
 
     /** the arrangement Home's fight word asks for */
@@ -200,7 +218,8 @@ object SinglePlayLayout {
      * centre out of a fight. The chat shrinks (lines, then width) and the map shrinks (to 240) to keep clear of every keep-out; the talk
      * pop-up over the party list (or over the chat).
      */
-    fun plan(arr: Arr, partyMode: Boolean, hud: Hud = Hud(), w: Int = BASE_W, h: Int = BASE_H, partyH: Int? = null, questH: Int? = null): Plan {
+    fun plan(arr: Arr, partyMode: Boolean, hud: Hud = Hud(), w: Int = BASE_W, h: Int = BASE_H, partyH: Int? = null, questH: Int? = null,
+             castH: Int? = null, rowAsk: Boolean? = null, castBtn: Boolean = true): Plan {
         val sc = Screen(w, h)
         val keeps = virtualKeeps(sc, arr, partyMode, hud).map { it.box }
         var map = sc.place(if (arr == Arr.OUT) MAP_OUT_BOX else MAP_IN_BOX, Anchor.RIGHT)
@@ -247,17 +266,32 @@ object SinglePlayLayout {
         if (talk.t < 0) talk = talk.shift(0, -talk.t)
         // the room row: out of a fight, centred at the bottom (the HUD's place - the bars hide out of combat - under the Wings at rest);
         // not while Party mode is on (Hub's party rows stand under the HUD there out of combat too: the open question's default)
-        val row = if (arr == Arr.OUT && !partyMode) {
+        // ... and the swirl button's ask ([rowAsk]: true = up on demand - in a fight, in Party mode too - false = down) over the rule
+        val row = if (rowAsk ?: (arr == Arr.OUT && !partyMode)) {
             val rw = Math.round(ROW_SRC_W * ROW_K); val rh = Math.round(ROW_SRC_H * ROW_K)
             val l = (BASE_W - rw) / 2
             sc.place(Box(l, BASE_H - ROW_FOOT - rh, l + rw, BASE_H - ROW_FOOT), Anchor.CENTRE)
         } else null
-        return Plan(arr, sc.px(map), party?.let { sc.px(it) }, sc.px(chat), sc.px(talk), quest?.let { sc.px(it) }, row?.let { sc.px(it) })
+        // the corner buttons (the left one only with a tap-to-cast bar to open: [castBtn]) and the bar over the left one while open
+        val y0 = BASE_H - BTN_MARGIN - BTN
+        val btnL = if (castBtn) sc.place(Box(BTN_MARGIN, y0, BTN_MARGIN + BTN, y0 + BTN), Anchor.LEFT) else null
+        val btnR = sc.place(Box(BASE_W - BTN_MARGIN - BTN, y0, BASE_W - BTN_MARGIN, y0 + BTN), Anchor.RIGHT)
+        val cast = if (castBtn && castH != null) {
+            val ch = castH.coerceIn(60, 200)
+            sc.place(Box(BTN_MARGIN, CAST_FOOT - ch, BTN_MARGIN + CAST_W, CAST_FOOT), Anchor.LEFT)
+        } else null
+        return Plan(arr, sc.px(map), party?.let { sc.px(it) }, sc.px(chat), sc.px(talk), quest?.let { sc.px(it) }, row?.let { sc.px(it) },
+            cast?.let { sc.px(it) }, btnL?.let { sc.px(it) }, sc.px(btnR))
     }
 
     /** whether piece [p] is held clear of the keep-out named [name]: the room row stands in the HUD's place under the Wings at rest by
      *  design (the user's words: the bars hide out of combat and the row slides up there), so K2 / K3 are not its */
-    fun keptFrom(p: Piece, name: String): Boolean = !(p == Piece.ROW && (name.startsWith("K2") || name.startsWith("K3")))
+    fun keptFrom(p: Piece, name: String): Boolean = when (p) {
+        Piece.ROW -> !(name.startsWith("K2") || name.startsWith("K3"))
+        // the tap-to-cast bar is opened on demand by the player's own tap: over the Wings' corner while it is open
+        Piece.CAST -> false
+        else -> true
+    }
 
     /** a right-anchored piece kept clear of [keeps]: its bottom up first, then narrower from the left, at last its top down */
     private fun fitRight(start: Box, keeps: List<Box>, minW: Int, minH: Int): Box {
@@ -316,8 +350,8 @@ object SinglePlayLayout {
             val a0 = from[p]; val b0 = to[p]
             if (a0 == b0) continue
             // a sliding piece (the room row) comes up from under the bottom edge and goes back down there, whole (no fade)
-            val a = if (p in SLIDES && a0 == null) below(b0!!) else a0
-            val b = if (p in SLIDES && b0 == null) below(a0!!) else b0
+            val a = if (p in SLIDES && a0 == null) away(p, b0!!) else a0
+            val b = if (p in SLIDES && b0 == null) away(p, a0!!) else b0
             val win = when { a == null -> b; b == null -> a; else -> a.union(b) }
             out += Step.Place(p, win)
             out += Step.Glide(p, a, b, ms)
@@ -328,6 +362,9 @@ object SinglePlayLayout {
 
     /** [b] moved down just past the screen's bottom edge (its height and a gap): where a sliding piece comes from / goes to */
     fun below(b: Box): Box = b.shift(0, b.h + GAP + ROW_FOOT)
+
+    /** where a sliding piece comes from / goes to: the room row under the bottom edge, the tap-to-cast bar past the left edge */
+    fun away(p: Piece, b: Box): Box = if (p == Piece.CAST) b.shift(-(b.r + GAP), 0) else below(b)
 
     /** a glide's box at [k] (0..1, the curve applied) between [a] and [b] (either null: the other, faded by the caller) */
     fun at(a: Box?, b: Box?, k: Float): Box? {
@@ -348,7 +385,7 @@ object SinglePlayLayout {
         val h = HashSet<Piece>()
         if (!chatLaid) h += Piece.CHAT
         if (!questLaid) h += Piece.QUEST
-        if (fullFrame) h += Piece.ROW
+        if (fullFrame) { h += Piece.ROW; h += Piece.CAST }
         if (!mapLaid || strip == SingleNpc.ROLLS) h += Piece.MAP
         if (strip == SingleNpc.LB || fullFrame) h += Piece.PARTY
         return h
