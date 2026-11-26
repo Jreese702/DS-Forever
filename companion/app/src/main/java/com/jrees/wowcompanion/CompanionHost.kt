@@ -2451,6 +2451,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             d.btnR.onTap = { cornerRow() }
             d.btnR.art = { c, cx, cy, dd -> strip.drawDiscAt(c, cx, cy, dd) }
         }
+        // B shuts the corner's bar (its press through Home's guest "home" while it holds, else Home's own B watch)
+        homeView.onDockCastClose = { if (castOpen) { castSet(false, "B"); playStep(animate = true) } }
         SingleUi.docks = true                                            // the game's minimap and chat give way to Home's
         // the top panel runs up to 120 Hz: Home's frames (the docked map's trail above all) paced while moving / fighting with Home's rest
         // being the game, not only while Home's page shows (the two-screen probe above stays as it was)
@@ -2473,7 +2475,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!play) {
             ui.removeCallbacks(playTick)
             d.show(false)
-            castOpen = false; rowAsk = null                              // the corner buttons' asks end with the play docks
+            castSet(false, "the play docks went"); rowAsk = null         // the corner buttons' asks end with the play docks
             rowReclaim()
             homeView.reclaimFromDocks()
             return
@@ -2502,7 +2504,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val arr = SinglePlayLayout.arr(homeView.fightShown())
         // the swirl button's ask lasts until the next fight edge (the rule takes the row back then)
         if (d.plan?.arr != null && d.plan?.arr != arr) rowAsk = null
-        if (!laid.cast) castOpen = false
+        if (!laid.cast) castSet(false, "no tap-to-cast bar set up")
         val p = SinglePlayLayout.plan(arr, laid.party, hud, s.screenW, s.screenH, homeView.dockPartyH(),
             questH = homeView.dockQuestH(fold = arr == SinglePlayLayout.Arr.IN),
             castH = if (castOpen) (homeView.dockCastH() ?: SinglePlayLayout.CAST_H_DEF) else null, rowAsk = rowAsk, castBtn = laid.cast)
@@ -2531,9 +2533,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var rowAsk: Boolean? = null
 
     private fun cornerCast() {
-        castOpen = !castOpen
-        Log.i("WCHOME", "one screen: the tap-to-cast bar ${if (castOpen) "open" else "shut"} (the corner button)")
+        castSet(!castOpen, "the corner button")
         playStep(animate = true)
+    }
+
+    /** the bar open / shut, and B with it (the user's pick: "Yes, B closes it"): Home holds the guest "home" exactly while it is open
+     *  (HomeView.dockCast) - every way it shuts frees it at once */
+    private fun castSet(open: Boolean, why: String) {
+        if (castOpen != open) Log.i("WCHOME", "one screen: the tap-to-cast bar ${if (open) "open" else "shut"} ($why)")
+        castOpen = open
+        if (::homeView.isInitialized) homeView.dockCast(open)
     }
 
     private fun cornerRow() {
@@ -2576,6 +2585,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the host goes (onDestroy): nothing of the docks left running or held */
     private fun singlePlayEnd() {
         ui.removeCallbacks(playTick); ui.removeCallbacks(ssAgain)
+        if (castOpen) castSet(false, "the host goes")
         rowReclaim()
         docks?.close(); docks = null
         if (single != null) {

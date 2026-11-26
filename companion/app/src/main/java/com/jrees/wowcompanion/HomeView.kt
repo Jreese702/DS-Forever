@@ -984,6 +984,8 @@ class HomeView(
 
     private fun onB() {
         if (typeWanted) return                                            // the tool's B comes through the guest (it closes the tool)
+        // the 1535 polish: the corner's tap-to-cast bar open and its hold not given (a fight): B closes it here (the game has the press too)
+        if (dockCastOpen && !dockCastHeld) { onDockCastClose?.invoke(); return }
         if (editLive()) return                                            // P2: edit mode's B comes through the guest "home" (its B ladder)
         // #540 (1.0.34: "Bar would not go back to combat mode while in combat and got stuck"): the B that closes one of the app's
         // overlays over Home (a wheel, the pause / context radial, the bar cursor) is that overlay's, never Home's shrink or close
@@ -1235,6 +1237,7 @@ class HomeView(
     fun auraPad(msg: JSONObject) {
         if (typeWanted) return                                            // the tool holds its own guest ("tool")
         if (editLive()) { editPad(msg); return }                          // P2: edit mode holds the guest "home" while it runs
+        if (dockCastOpen && !mapWanted && !chatWanted && auraPane.open == null) { dockCastPad(msg); return }   // the 1535 polish
         if (mapWanted) { mapPad(msg); return }
         if (!chatWanted) { auraPane.onPad(msg); return }
         if (msg.has("lost")) chatHeld = false else chatHeld = true
@@ -1380,6 +1383,7 @@ class HomeView(
             if (msg.optString("op") == "hold" && !msg.optBoolean("ok")) Log.i(TAG, "type tool: hold refused (${msg.optString("why")})")
             return
         }
+        if (dockCastOpen && !mapWanted && !chatWanted && auraPane.open == null && !editLive()) { dockCastAck(msg); return }
         if (mapWanted) {
             when (msg.optString("op")) {
                 // combat_nav Step 1 (the user, 2026-11-11): "pending" (a fight's take until the ENTER tap) is NOT held: the guard reads B
@@ -1415,7 +1419,55 @@ class HomeView(
     /** Home is busy with a controller layer of its own: its guest "home" (chat / map / aura list) or the tool's "tool" */
     fun homeGuestWanted(): Boolean = typeWanted || homeOwnGuestWanted()
     /** the guest "home" itself is wanted (the chat or map module, the buff / debuff list; the tool has its own "tool") */
-    fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false
+    fun homeOwnGuestWanted(): Boolean = homeOwnBesidesDockCast() || dockCastOpen
+    private fun homeOwnBesidesDockCast(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false
+
+    /**
+     * THE TAP-TO-CAST BAR'S B (single screen mode's bottom-left corner button; the user's pick 2026-11-26: "Yes, B closes it"): while the
+     * corner's bar is open Home holds the controller as the generic guest "home" - the key path every Home window over the game takes (the
+     * map module, the buff list) - so B reaches the app and not the game, and B closes the bar ([onDockCastClose]: the host slides it out).
+     * Taken ONLY while the bar is open: [dockCast] false frees it at once (never a held B or D-pad with the bar shut). A hold the game
+     * refuses (a fight's lockdown) leaves B the game's; Home's own B watch ([onB]) still closes the bar then. Its other presses are dropped
+     * while it holds (the bar is touch only). [dockCastAsks]: the holds / frees asked (tests).
+     */
+    var dockCastOpen = false; private set
+    var dockCastHeld = false; private set
+    private var dockCastN = -1
+    var onDockCastClose: (() -> Unit)? = null
+    val dockCastAsks = ArrayList<String>()
+
+    fun dockCast(open: Boolean) {
+        if (open == dockCastOpen) return
+        dockCastOpen = open
+        val others = homeOwnBesidesDockCast()
+        if (!open) dockCastHeld = false
+        if (others) return                                                // another of Home's windows holds the guest "home": it keeps it
+        dockCastN = -1
+        dockCastAsks += if (open) "hold" else "free"
+        val sent = homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = open))
+        Log.i(TAG, "tap-to-cast bar (one screen): ${if (open) "hold" else "free"} ${if (sent) "asked" else "not sent"}")
+    }
+
+    /** one press of the guest "home" while the corner's bar holds it: B closes the bar, the rest are dropped */
+    private fun dockCastPad(msg: JSONObject) {
+        if (msg.has("lost")) { dockCastHeld = false; return }
+        val n = msg.optInt("n", -1)
+        if (n == dockCastN) return
+        dockCastN = n
+        dockCastHeld = true
+        if (msg.optString("k") == "PAD2") onDockCastClose?.invoke()
+    }
+
+    private fun dockCastAck(msg: JSONObject) {
+        when (msg.optString("op")) {
+            "hold" -> if (msg.optBoolean("ok") && msg.optString("why") != "pending") dockCastHeld = true
+                else if (!msg.optBoolean("ok")) {
+                    Log.i(TAG, "tap-to-cast bar: hold refused (${msg.optString("why")}): B stays the game's, Home's watch closes the bar")
+                    dockCastHeld = false; dockCastAsks += "free"; homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))
+                }
+            "free", "leave" -> dockCastHeld = false
+        }
+    }
     /** B: pet recall's rest-layout B (PetRecall; was Smart pet / B: pet follow): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
      *  debuff list, the Keyboard & Trackpad tool - so B's press is not Home's plain B. The 1.0.33 merge review (feat/wk-mail x
      *  feat/wk-b-pet-follow): the mail card too - its B "closes it first, and does nothing else of Home's", so it never calls the pet */

@@ -66,7 +66,9 @@ class HomeEditWiringTest {
         assertTrue(home.contains("fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && (isShown || restElsewhere) && !typeWanted && !editLive()"))
         assertTrue(body(home, "override fun onInterceptTouchEvent(").contains("if (editLive()) { barsDown = false; return false }"))
         // the guest "home" while editing, never while parked by a fight
-        assertTrue(home.contains("fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false"))
+        // (the 1535 polish: the corner's tap-to-cast bar holds the guest too - HomeView.dockCast)
+        assertTrue(home.contains("fun homeOwnGuestWanted(): Boolean = homeOwnBesidesDockCast() || dockCastOpen"))
+        assertTrue(home.contains("private fun homeOwnBesidesDockCast(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false"))
         // the ribbon in the XP track, the disc's tick
         assertTrue(strip.contains("if (ribbon != null) ribbon(c, w, top, g0, g1)"))
         assertTrue(strip.contains("if (editTick) { drawEditTick(c); return }"))
