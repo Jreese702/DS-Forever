@@ -271,34 +271,66 @@ class SingleCoreShotsTest {
 
     /**
      * the review (2026-11-25, "Single mode puts DS Forever's opaque waiting page over the game's login and character select"): with the
-     * game screen up the waiting page is its row alone along the top screen's foot (SingleLook row 2b, the strip SingleNpc.startRect,
-     * StartView.bare): no loading scene - the game's character select shows round it and every touch outside the row is the game's
+     * game screen up the waiting page is its row alone over the game (SingleLook row 2b, the strip SingleNpc.startRect, StartView.bare):
+     * no loading scene - the game's character select shows round it and every touch outside the row is the game's. THE USER'S RULING
+     * (2026-11-25), verbatim: "Top of the screen (Recommended): Keeps character select's Enter World and the bottom of the login screen
+     * free for touch." - the row from the top edge down (the line's row, the sign-in row under it, the region line under those), the
+     * strip only as high as what shows
      */
     @Test fun theWaitingPageIsItsRowOverTheGame() {
         Tr.init(app)
         val up0 = LauncherHooks.gameUp
+        val keys0 = SetupBridge.openPcKeyboard
         try {
             LauncherHooks.gameUp = { true }
+            SetupBridge.openPcKeyboard = {}                     // the local game's waiting row: Menu | line | Keyboard
             val act = org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
             val sv = StartView(act)
             sv.bare = true
             sv.line = "Waiting for the world."
             sv.login = StartView.Login.SAVED
-            val r = SingleNpc.startRect(TW, TH)
+            assertEquals("the line's row and the sign-in row", SingleNpc.startNeed(second = true, region = false), sv.bareNeed())
+            val r = SingleNpc.startRect(TW, TH, sv.bareNeed())
             val w = r[2] - r[0]; val h = r[3] - r[1]
             assertEquals("the box's width", BW, w)
+            assertEquals("centred", TW, r[0] + r[2])
+            assertEquals("at the top of the screen (the ruling)", 0, r[1])
+            assertTrue("the screen's top third only: Enter World and the login screen's foot stay the game's", r[3] <= TH / 3)
             lay(sv, 0, 0, w, h)
             val strip = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             sv.draw(Canvas(strip))
             assertEquals("no loading scene behind the row (the game shows)", 0, Color.alpha(strip.getPixel(4, 4)))
             assertEquals(0, Color.alpha(strip.getPixel(w - 5, 4)))
-            assertTrue("the line's panel drawn", Color.alpha(strip.getPixel(w / 2, h - 40 - 55)) > 0)
-            assertTrue("the sign-in row drawn", Color.alpha(strip.getPixel(w / 2 + 60, h - 40 - 111 - 24 - 55)) > 0)
+            assertEquals(0, Color.alpha(strip.getPixel(4, h - 3)))
+            val top = SingleNpc.START_TOP
+            assertEquals("the top edge kept free over the row", 0, Color.alpha(strip.getPixel(w / 2, top / 2)))
+            assertTrue("the line's panel at the top", Color.alpha(strip.getPixel(w / 2, top + 55)) > 0)
+            assertTrue("Menu at its left", Color.alpha(strip.getPixel(40 + 110, top + 55)) > 0)
+            assertTrue("Keyboard at its right", Color.alpha(strip.getPixel(w - 40 - 110, top + 55)) > 0)
+            assertTrue("the sign-in row under it", Color.alpha(strip.getPixel(w / 2 + 60, top + 111 + 24 + 55)) > 0)
             val pic = backdrop("SINGLE_TOP_PLAY"); Canvas(pic).drawBitmap(strip, r[0].toFloat(), r[1].toFloat(), null)
             save(pic, "core_08_waiting_row.png")
             val l = SingleLook.of(SingleLook.In(waiting = true))
             assertEquals(SingleLook.Frame.HIDDEN, l.frame); assertEquals(SingleNpc.START, l.strip)
-        } finally { LauncherHooks.gameUp = up0 }
+
+            // a reload's line with the region line and no sign-in row: the region line straight under the line's row, the strip shorter
+            val sv2 = StartView(act)
+            sv2.bare = true
+            sv2.line = "Reloading the interface."
+            sv2.region = GameRegion.Note("EU", "US")
+            assertEquals(SingleNpc.startNeed(second = false, region = true), sv2.bareNeed())
+            val r2 = SingleNpc.startRect(TW, TH, sv2.bareNeed())
+            val h2 = r2[3] - r2[1]
+            assertEquals(0, r2[1]); assertTrue("shorter than with the sign-in row", h2 < h)
+            lay(sv2, 0, 0, w, h2)
+            val strip2 = Bitmap.createBitmap(w, h2, Bitmap.Config.ARGB_8888)
+            sv2.draw(Canvas(strip2))
+            val regionY = top + 111 + StartView.REGION_GAP.toInt() + StartView.REGION_SIZE.toInt() / 2
+            assertTrue("the region line under the line's row", (0 until w).any { Color.alpha(strip2.getPixel(it, regionY)) > 0 })
+            assertFalse("nothing between the line's row and the region line (no sign-in row)", (0 until w).any { Color.alpha(strip2.getPixel(it, top + 111 + 8)) > 0 })
+            val pic2 = backdrop("SINGLE_TOP_PLAY"); Canvas(pic2).drawBitmap(strip2, r2[0].toFloat(), r2[1].toFloat(), null)
+            save(pic2, "core_08b_waiting_row_region.png")
+        } finally { LauncherHooks.gameUp = up0; SetupBridge.openPcKeyboard = keys0 }
     }
 
     // ---------------------------------------------------------------- the panel, the glance, playing, the hints

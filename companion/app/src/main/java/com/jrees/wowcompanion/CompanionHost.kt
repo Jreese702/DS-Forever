@@ -1070,6 +1070,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             }, "region-card").apply { isDaemon = true }.start()
         }
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
+        // single screen mode's waiting row at the top (the user's ruling 2026-11-25, "Top of the screen"): its strip as high as the row
+        startView.onBareNeed = { if (stripKind == SingleNpc.START) stripPlace() }
         // the BLZ51914400 offer (the user, 2026-11-18): Browser login on, then the launcher's restart (the game's own Exit Game first)
         startView.onBrowserLogin = {
             Settings.browserLogin = true
@@ -2221,8 +2223,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /**
      * the review (2026-11-25, "Single mode puts DS Forever's opaque waiting page over the game's login and character select"): with the
      * game screen up the start page is the WAITING page (a logout, a disconnect, a reload, "Loading your character", the sign-in row): on
-     * two screens it sits beside the game; here it is only its row along the foot (SingleLook row 2b, the strip "start") and the game's
-     * own login screen / character select stay seen and touched. Its Menu opened = the page in the panel again (the Menu needs it)
+     * two screens it sits beside the game; here it is only its row over the game (SingleLook row 2b, the strip "start"; at the screen's
+     * TOP, the user's ruling 2026-11-25: "Top of the screen (Recommended): Keeps character select's Enter World and the bottom of the
+     * login screen free for touch.") and the game's own login screen / character select stay seen and touched. Its Menu opened = the
+     * page in the panel again (the Menu needs it)
      */
     private fun singleWaiting(): Boolean = startView.visibility == View.VISIBLE && LauncherHooks.gameUp() && !startView.menuOpen
 
@@ -2633,7 +2637,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val r = when (kind) {
             SingleNpc.TOOL -> SingleNpc.toolRect(homeView.toolTab(), w, h, ChatKeyboard.fullHeight(SingleNpc.boxScale(w, h)))
             SingleNpc.ROLLS -> SingleNpc.rollsRect(w, h)
-            SingleNpc.START -> SingleNpc.startRect(w, h)
+            SingleNpc.START -> SingleNpc.startRect(w, h, startView.bareNeed())
             else -> SingleNpc.lbRect(w, h, homeView.inFight())
         }
         val sub = s.sub(SingleNpc.STRIP)

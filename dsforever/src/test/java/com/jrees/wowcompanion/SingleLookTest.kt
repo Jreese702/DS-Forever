@@ -119,11 +119,39 @@ class SingleLookTest {
         val c = SingleLook.of(play.copy(waiting = true, launchCover = true))
         assertEquals("the launch swirl still covers", Frame.HIDDEN, c.frame); assertNull(c.strip)
         assertEquals("a tap beside it is nothing", SingleNpc.Dim.KEEP, SingleNpc.dimTap(play.copy(waiting = true)))
-        // the row's strip: the box's width at the screen's foot, high enough for StartView's own px (never scaled down)
-        val r = SingleNpc.startRect(1920, 1080)
-        assertEquals(listOf(340, 1080 - SingleNpc.START_H, 1580, 1080), r.toList())
-        assertTrue("the region line over the sign-in row fits (334 px)", SingleNpc.START_H >= 334)
-        assertEquals(720 - SingleNpc.START_H, SingleNpc.startRect(1280, 720)[1])
+    }
+
+    /**
+     * THE USER'S RULING (2026-11-25, after build 1533) on where single mode's waiting row goes, verbatim: "Top of the screen (Recommended):
+     * Keeps character select's Enter World and the bottom of the login screen free for touch." The strip is the centred box's width
+     * (the 1240 panel's, x 340..1580 on the Thor) from the top edge down, only as high as what the row shows now - the line's row, the
+     * sign-in row (or the add-ons' How) under it, the region line under those - so no empty strip over the game takes its touches; in
+     * StartView's own px, never scaled down, never past the screen
+     */
+    @Test fun theWaitingRowSitsAtTheTopOfTheScreen() {
+        val all = SingleNpc.startNeed(second = true, region = true)
+        val r = SingleNpc.startRect(1920, 1080, all)
+        assertEquals("the box's width, from the top edge", listOf(340, 0, 1580, all), r.toList())
+        assertEquals("the line's row, the sign-in row, the region line: 334 px", 334, all)
+        assertTrue("the whole row in the screen's top third: Enter World and the login screen's foot stay the game's", r[3] <= 1080 / 3)
+        assertEquals("the line's row alone", 151, SingleNpc.startNeed(second = false, region = false))
+        assertEquals("the sign-in row under it", 286, SingleNpc.startNeed(second = true, region = false))
+        assertEquals("the region line under the line's row", 199, SingleNpc.startNeed(second = false, region = true))
+        assertEquals("the line's row from the top edge kept free", 24, SingleNpc.START_TOP)
+        val small = SingleNpc.startRect(1280, 720, all)
+        assertEquals("a smaller screen: still the top edge", 0, small[1])
+        assertEquals("never scaled down (StartView's own px)", all, small[3])
+        assertTrue("centred (the box's own rounding: a px)", Math.abs(1280 - (small[0] + small[2])) <= 1)
+        assertEquals("never past the screen", 200, SingleNpc.startRect(1920, 200, all)[3])
+    }
+
+    /** the host places the strip by what the row shows now, and again whenever that changes (a sign-in row coming, the region line) */
+    @Test fun theHostFitsTheTopStripToTheRow() {
+        val h = listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt"),
+            java.io.File("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")).first { it.canRead() }.readText()
+        val place = h.substringAfter("private fun stripPlace() {").substringBefore("\n    }")
+        assertTrue("the rect fits the row", place.contains("SingleNpc.START -> SingleNpc.startRect(w, h, startView.bareNeed())"))
+        assertTrue("a change of the row places it again", h.contains("startView.onBareNeed = { if (stripKind == SingleNpc.START) stripPlace() }"))
     }
 
     /**

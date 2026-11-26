@@ -8,7 +8,8 @@ package com.jrees.wowcompanion
  *  - THE STRIP WINDOW (SingleShell.sub([STRIP])): the one small window over the game for what must leave the rest of the top screen to the
  *    game (SingleLook rows 8-10): the Keyboard tool as a strip along the screen's foot ([keysRect], the game's text box above it), the Track
  *    Pad as a pad in the bottom-right corner ([padRect], fingers on the rest of the screen are the game's), the fight's small roll panel in
- *    the right dock's place ([rollsRect]), LB's party picture over the left dock's party place ([lbRect], display only).
+ *    the right dock's place ([rollsRect]), LB's party picture over the left dock's party place ([lbRect], display only); and the waiting
+ *    page's row at the screen's top edge (row 2b, [startRect]: the user's ruling "Top of the screen").
  *  - WHERE OUR OWN ACTIVITIES OPEN (the add-on import, the frame-gen picker, the microphone question; [bottomRoute]): on the other screen
  *    of a two-screen device (Android's launcher is the bottom screen there: the top window stays), on display 0 on a one-screen device.
  *  - A TAP ON THE DIM ([dimTap]): a quick wheel closes; an NPC window, a dialog, the class wheel keep it (nothing happens).
@@ -102,15 +103,35 @@ object SingleNpc {
     }
 
     /**
-     * THE WAITING PAGE'S ROW over the game (SingleLook row 2b): the centred box's width at the screen's foot, [START_H] high - StartView
-     * draws its row from its own bottom in its own px (the line's panel 40 px up, the sign-in row over it, the region line over that:
-     * 334 px at most), so the height is never scaled down
+     * THE WAITING PAGE'S ROW over the game (SingleLook row 2b). THE USER'S RULING (2026-11-25, after build 1533), verbatim: "Top of the
+     * screen (Recommended): Keeps character select's Enter World and the bottom of the login screen free for touch." The centred box's
+     * width (the 1240 panel's: x 340..1580 on the Thor) from the top edge down, [need] high ([startNeed]: only what the row shows now,
+     * so no empty strip over the game takes its touches; the window is touch-only on this rect, the rest of the screen is the game's).
+     * StartView draws its row from its own top in its own px (the line's row [START_TOP] down, the sign-in row under it, the region
+     * line under those: 334 px at most), so the height is never scaled down - only kept inside the screen. The game's own pieces the
+     * code knows of stay clear: Enter World and the login screen's buttons at the foot, a loading screen's bar at the foot (a reload,
+     * "Loading your character"); the box's column keeps off the screen's corners (the login screen's logo at the top left)
      */
-    fun startRect(w: Int, h: Int): IntArray {
+    fun startRect(w: Int, h: Int, need: Int): IntArray {
         val box = SingleScreen.panelBox(w, h)
-        return intArrayOf(box[0], h - START_H.coerceAtMost(h), box[2], h)
+        return intArrayOf(box[0], 0, box[2], need.coerceIn(0, h))
     }
-    const val START_H = 352
+    /** the top edge kept free over the line's row (StartView bare: its row from here down) */
+    const val START_TOP = 24
+    /** under the row's lowest piece: the plates' metal and the outlined words' dark edge */
+    const val START_FOOT = 16
+
+    /**
+     * the strip's height for what the row shows: the line's row (Menu | line | Keyboard) from [START_TOP]; [second] = the sign-in row
+     * (or the add-ons' How in its place) under it; [region] = the region line under those. StartView's own px (its consts are inlined:
+     * no android class at run time)
+     */
+    fun startNeed(second: Boolean, region: Boolean): Int {
+        var y = START_TOP + StartView.BUTTON_H
+        if (second) y += StartView.GAP + StartView.BUTTON_H
+        if (region) y += StartView.REGION_GAP + StartView.REGION_SIZE
+        return Math.ceil((y + START_FOOT).toDouble()).toInt()
+    }
 
     /** the type tool's strip for its tab ([tab] 0 = the Track Pad, 1 = the Keyboard) */
     fun toolRect(tab: Int, w: Int, h: Int, kbH: Int): IntArray = if (tab == 1) keysRect(w, h, kbH) else padRect(w, h)

@@ -11,8 +11,10 @@ package com.jrees.wowcompanion
  *    the Spellbook's Bind box                                 FULL 0.55, touch, the room column if a room is open (else Home's glance)
  *  2b the waiting page with the game screen up (a logout,
  *    a disconnect, a reload, "Loading your character")       HIDDEN, the strip "start": the page's own row (its line, Menu, Keyboard,
- *                                                            the sign-in row) along the screen's foot - the game's login screen and
- *                                                            character select stay the player's (the review, 2026-11-25)
+ *                                                            the sign-in row) at the screen's TOP - the game's login screen and
+ *                                                            character select stay the player's (the review, 2026-11-25; the user's
+ *                                                            ruling "Top of the screen (Recommended): Keeps character select's Enter
+ *                                                            World and the bottom of the login screen free for touch.")
  *  3 the pause wheel                                          FULL 0.55, touch, the same
  *  4 the top-screen layout editor (over Settings)            FULL 0.25, touch, ROOM: the pieces it moves show at the sides (NPC)
  *  4 a room (not Home)                                        FULL 0.55, touch, ROOM

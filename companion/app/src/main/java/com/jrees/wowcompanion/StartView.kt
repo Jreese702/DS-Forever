@@ -87,12 +87,27 @@ class StartView(context: Context) : View(context) {
     var onBrowserLogin: (() -> Unit)? = null
 
     /**
-     * SINGLE SCREEN MODE'S STRIP (SingleLook row 2b; the review 2026-11-25): with the game screen up the page is only its row along the
-     * top screen's foot, over the game - no loading scene behind it (the game's login screen and character select show), no redraw
-     * loop. False = the page as always (two screens: never set)
+     * SINGLE SCREEN MODE'S STRIP (SingleLook row 2b; the review 2026-11-25): with the game screen up the page is only its row over the
+     * game - no loading scene behind it (the game's login screen and character select show), no redraw loop. AT THE TOP (the user's
+     * ruling 2026-11-25, verbatim: "Top of the screen (Recommended): Keeps character select's Enter World and the bottom of the login
+     * screen free for touch."): the row from the strip's top down - the line's row (Menu | line | Keyboard) at SingleNpc.START_TOP, the
+     * sign-in row (or the add-ons' How) under it, the region line under those. False = the page as always, its row at the foot (two
+     * screens: never set)
      */
     var bare = false
-        set(v) { if (field != v) { field = v; invalidate() } }
+        set(v) { if (field != v) { field = v; bareNeedLast = -1; invalidate() } }
+
+    /** the bare row's height for what it shows now (SingleNpc.startNeed): the strip window's height */
+    fun bareNeed(): Int = SingleNpc.startNeed(second = login != Login.NONE || howShown(), region = region != null)
+    /** the bare row's height changed (a sign-in row, the add-ons' How or the region line came or went): the host places the strip again */
+    var onBareNeed: (() -> Unit)? = null
+    private var bareNeedLast = -1
+
+    /** the add-ons' card's How in the sign-in row's place (never with the row: the line is a plain waiting one then) */
+    private fun howShown(): Boolean {
+        val card = addons?.takeIf { addonsShown } ?: return false
+        return login == Login.NONE && ReportNotice.HOW in card.buttons
+    }
 
     private val area = RectF()
     private val hits = ArrayList<Pair<RectF, Int>>()
@@ -106,9 +121,15 @@ class StartView(context: Context) : View(context) {
         if (!bare) {
             LoadingScene.draw(c, area, top = false)
             postInvalidateDelayed(FRAME_MS)
+        } else {
+            // the strip fits the row: a change of what it shows asks the host for the new height (posted: no window change mid-draw)
+            val need = bareNeed()
+            if (need != bareNeedLast) { bareNeedLast = need; post { if (bare) onBareNeed?.invoke() } }
         }
         drawRow(c)
-        if (menuOpen) {
+        // the Menu needs the whole page: the host takes the strip back at once (SingleLook: the Menu open is no waiting row), so the bare
+        // strip never draws it squeezed into the row's height
+        if (menuOpen && !bare) {
             val top = height - ROW_DOWN - BUTTON_H
             val left = (width - StartMenu.WIDTH) / 2f
             StartMenu.draw(c, RectF(left, GAP, left + StartMenu.WIDTH, top - GAP), pressed, hits, RectF(SIDE_M, top, SIDE_M + SIDE_W, top + BUTTON_H), game = true)
@@ -120,8 +141,9 @@ class StartView(context: Context) : View(context) {
         val row = login != Login.NONE
         hits.clear()
         // the line in one metal panel, framed by Report and the PC's keyboard (the user, 2026-10-30: "framed between the two buttons in
-        // like a fancy looking one part panel"); the keyboard only while a game or stream can take it
-        val sideTop = height - ROW_DOWN - BUTTON_H
+        // like a fancy looking one part panel"); the keyboard only while a game or stream can take it. Bare (single screen mode, the
+        // user's ruling "Top of the screen"): this row at the strip's top, the sign-in row under it, the region line under those
+        val sideTop = if (bare) SingleNpc.START_TOP.toFloat() else height - ROW_DOWN - BUTTON_H
         val panel = RectF(SIDE_M + SIDE_W + GAP, sideTop, width - SIDE_M - SIDE_W - GAP, sideTop + BUTTON_H)
         UiKit.module(c, panel)
         val card = addons?.takeIf { addonsShown }
@@ -141,16 +163,19 @@ class StartView(context: Context) : View(context) {
             UiKit.button(c, keys, "Keyboard", if (pressed == CURSOR_KEYS) UiKit.Button.DOWN else UiKit.Button.UP)
             hits += keys to CURSOR_KEYS
         }
-        val top = sideTop - GAP - BUTTON_H
+        val top = if (bare) sideTop + BUTTON_H + GAP else sideTop - GAP - BUTTON_H
         // the add-ons' card's one action, touch only, where the sign-in row would be (never with the row: the line is a plain waiting one then)
         val how = !row && card != null && ReportNotice.HOW in card.buttons
-        // the region line just over the panel, or over the sign-in row / the card's How (its words translated where they are drawn: UiKit.outlined)
+        // the region line just over the panel, or over the sign-in row / the card's How (its words translated where they are drawn: UiKit.outlined);
+        // bare: just under the panel, or under the sign-in row / the How
         region?.let { n ->
             val text = n.line { Tr.t(it) }
             var size = REGION_SIZE
             val p = UiKit.bodyPaint(size)
             while (p.measureText(Tr.t(text)) > width - SIDE_M * 2 && size > LINE_MIN) { size -= 1f; p.textSize = size }
-            UiKit.outlined(c, text, cx, (if (row || how) top else sideTop) - REGION_GAP - size / 2f, size, Theme.gold)
+            val cy = if (bare) (if (row || how) top else sideTop) + BUTTON_H + REGION_GAP + size / 2f
+                else (if (row || how) top else sideTop) - REGION_GAP - size / 2f
+            UiKit.outlined(c, text, cx, cy, size, Theme.gold)
         }
         if (!row) {
             if (how) {
