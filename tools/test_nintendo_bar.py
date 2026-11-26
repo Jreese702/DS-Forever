@@ -305,7 +305,8 @@ function PADMAP_ON()
         dpadState = function() return { on = DPAD_ON, d = DPAD_D } end,
         combatOn = function() return CC_ON end,
         forms = function() return FORMS end,
-        formFight = function(form, pos) local t = FORMFIGHT[form]; return t and t[pos] or nil end,
+        -- PadMap m204: a form's place key per set (the bare set's position, a trigger set's set * 10 + position)
+        formFight = function(form, pos, set) local t = FORMFIGHT[form]; local k = ((set or 1) == 1) and pos or (set * 10 + pos); return t and t[k] or nil end,
     }
 end
 '''
@@ -711,7 +712,7 @@ def plate_checks(chk):
     G = L.globals()
     W = G.WowCompanion
     NB = W.nbar
-    chk("nbar22: the version tag (the 1531 merge; nbar19 = the 1528 merge of the three nbar18s)", NB.V == "nbar27", NB.V)
+    chk("nbar22: the version tag (the 1531 merge; nbar19 = the 1528 merge of the three nbar18s)", NB.V == "nbar28", NB.V)
     G.ROWS["uisw"](None, 35)
     f = NB.f
     MEDIA_ = "Interface\\AddOns\\WowCompanion\\Media\\"
@@ -904,6 +905,14 @@ def review_checks(chk):
     W.nbar.tick(0.06)
     s = shown(L)
     chk("nbar2 form: a trigger layer never takes the form's bare set (ZR = slots 25-)", s[1]["s"] == 26 and s[1]["kind"] == "slot", s[1])
+    # nbar28 (PadMap m204): a form's OWN entry on the trigger layer (ZR + D-pad up = key 32: Rake) is what the bar shows there
+    L.execute("FORMFIGHT[768][32] = { n = 'Rake', id = 1822, i = 132122 }")
+    W.nbar.tick(0.06)
+    W.nbar.refresh()
+    s = shown(L)
+    chk("nbar28 form: ZR in Cat Form shows Cat Form's own ZR + D-pad up (Rake); ZR + X keeps the slot", s[1]["id"] == 1822 and s[4]["kind"] == "slot",
+        (s[1], s[4]))
+    L.execute("FORMFIGHT[768][32] = nil")
     G.RT = False
     G.COMBAT = False
     W.nbar.tick(0.06)

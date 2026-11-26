@@ -386,12 +386,12 @@ class SpellsOverlay(
         val lit = r?.takeIf { it.ok }?.pad?.takeIf { it.bar == set }?.pos ?: -1
         val icon = thingIcon
         // batch8: In combat shows each button's IN COMBAT spell for that set; b71: Party mode its A / X / Y (the layer held)
-        val form = ctl?.bindForm?.takeIf { f && set == 1 && m?.forms?.any { fo -> fo.id == it } == true }
+        val form = ctl?.bindForm?.takeIf { f && m?.forms?.any { fo -> fo.id == it } == true }      // PadMap m204: every set
         val nForm = ctl?.bindForm?.takeIf { !f && m?.stance?.set == set && m.forms.any { fo -> fo.id == it } }
         val cfg = PartyModel.live.cfg
         val fight: ((Int) -> Int?)? = if (party) { p -> PartyModel.slotAt(set, p)?.let { s -> (if (s == "yc") cfg?.yc else cfg?.slot(s))?.i } }
         else if (f && m != null) { p ->
-            if (form != null && p != 7) PadMapModel.formFight(m, form, p)?.icon else fightIcon(m, set, p)
+            if (form != null && (set != 1 || p != 7)) PadMapModel.formFight(m, form, p, set)?.icon else fightIcon(m, set, p)
         } else if (nForm != null && m != null) { p -> m.formBars.firstOrNull { it.form == nForm && it.pos == p }?.icon }
         else null
         c.save()

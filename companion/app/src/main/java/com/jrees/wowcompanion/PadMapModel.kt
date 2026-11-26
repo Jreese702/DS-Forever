@@ -97,7 +97,8 @@ object PadMapModel {
     data class Stance(val page: Int, val set: Int)
     /** m57: a learned form's own bar, out of combat: its place [pos] holds [icon] ([name]) */
     data class FormBar(val form: Int, val pos: Int, val icon: Int, val name: String?)
-    data class FormFight(val form: Int, val pos: Int, val ref: Ref)
+    /** m55: a form's own In-combat entry at [pos]; PadMap m204: on set [set] (1 the bare set, 2 LT, 3 RT, 4 LT + RT: the ff entry's `b`) */
+    data class FormFight(val form: Int, val pos: Int, val ref: Ref, val set: Int = 1)
 
     data class Map(
         val version: String,
@@ -289,10 +290,11 @@ object PadMapModel {
             smartY = m.optJSONObject("smarty")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0), item = true, kind = textOrNull(o, "k")) } },
             fish = m.optJSONObject("fish")?.let { o -> textOrNull(o, "n")?.let { Ref(intOrNull(o, "id"), it, o.optInt("i", 0)) } },
             formFights = objects(m.optJSONArray("ff")).mapNotNull { o ->
-                val f = o.optInt("f", 0); val p = o.optInt("p", 0)
+                val f = o.optInt("f", 0); val p = o.optInt("p", 0); val b = o.optInt("b", 1)
                 // PadMap m141 (PadTabCtl p43): a form's fight-layer command / item / mount carries `t` / `key` (no id)
+                // PadMap m204: `b` = its set (none = the bare set); B is a place on a trigger set only
                 val r = ref(o)
-                if (f > 0 && p in 1..8 && r != null) FormFight(f, p, r) else null
+                if (f > 0 && p in 1..8 && b in 1..4 && (b != 1 || p != 7) && r != null) FormFight(f, p, r, b) else null
             },
             srGone = m.optJSONObject("srx")?.let { o ->                // m160: the Smart Range clean-up (counts only)
                 SrGone(o.optInt("m", 0).coerceAtLeast(0), o.optInt("b", 0).coerceAtLeast(0), o.optInt("k", 0).coerceAtLeast(0), o.optInt("p", 0) == 1,
@@ -833,8 +835,18 @@ object PadMapModel {
         st.slots.filter { it.pos in 1..8 && it.pos != 7 && it.holdOf(combat) != null }.map { (st.set - 1) * 8 + (it.pos - 1) to it.holdOf(combat)!! }
     }.toMap()
 
-    /** m55: form [form]'s own In-combat spell on bare-set position [pos], or null */
-    fun formFight(map: Map, form: Int, pos: Int): Ref? = map.formFights.firstOrNull { it.form == form && it.pos == pos }?.ref
+    /** m55: form [form]'s own In-combat spell on bare-set position [pos], or null; PadMap m204: on set [set] (every layer has its own) */
+    fun formFight(map: Map, form: Int, pos: Int, set: Int = 1): Ref? =
+        map.formFights.firstOrNull { it.form == form && it.pos == pos && it.set == set }?.ref
+
+    /** PadMap m204 / PadTabCtl p64: the Controller room's In combat button [p] of set [s] with form [form] chosen - that form's own entry
+     *  (empty = the caster's fights there); B on the bare set stays the game's Back (null: the bar's own slot) */
+    fun formSlot(map: Map, form: Int, s: Int, p: Int): Slot? {
+        if (s == 1 && p == 7) return null
+        val r = formFight(map, form, p, s)
+        return if (r != null) Slot(p, null, Kind.COMBAT, r.id, r.name, r.icon, combat = r, ov = true)
+               else Slot(p, null, Kind.NONE, null, null, 0)
+    }
 
     /** b27 / p13: LB, tapped by the app on the bumper's release (LB is the game's emulated Ctrl on this device: the capture never hears it) */
     const val COL_LB = 9

@@ -2,6 +2,9 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar28 A FORM'S OWN IN-COMBAT SET ON EVERY LAYER (PadMap m204; a Druid's field report, 2026-11-26): in a fight in a form, ZL /
+-- ZR / ZL + ZR show that form's own In-combat entry for the place (PadMap formFight with the set), as the router casts it; the bare
+-- set as before. Nothing else changed.
 -- nbar27 THE int/1533 REVIEW, THE RING FILLS WHEN THE HOLD CASTS (PadMap m202; the user: "I also want this to cast right when the
 -- hold bar is filled"): the glowing ring's fill point is taken ONCE, at the press (b.hdSure), as the app's launcher freezes its fire
 -- point at the press - a frame time that changed mid-hold no more moved the fill off the cast; holdSecs holds the app's session bump
@@ -2591,7 +2594,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar27", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar28", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -3502,9 +3505,10 @@ function NB.resolve(set, p, lay, page, fight, dpadOn, hasTarget, form)
         end
         return slotEntry(d, hasTarget)
     end
-    if set == 1 and fight and form and type(pm) == "table" and type(pm.formFight) == "function" then
+    if fight and form and type(pm) == "table" and type(pm.formFight) == "function" and (set ~= 1 or p ~= 7) then
         -- nbar2: in a form, its own In-combat spell (or whole-button thing) wins on the bare layer, as the router and Home (OV.fightAt)
-        local ok, e = pcall(pm.formFight, form, p)
+        -- nbar28 (PadMap m204): on every layer (the set's own place)
+        local ok, e = pcall(pm.formFight, form, p, set)
         if ok and type(e) == "table" then return refEntry(e) end
     end
     if set == 1 and p <= 4 then

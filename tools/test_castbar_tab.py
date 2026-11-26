@@ -134,7 +134,7 @@ def clean(L, name):
           (L.eval('SPY[1]'), L.eval('VIOL[1]'), L.eval('SNIPERR[1]'), list(L.eval('ERRS').values())[:2]))
 
 
-check('local CV = "p63"' in SRC["padtabctl"] and 'local BV = "b88"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
+check('local CV = "p64"' in SRC["padtabctl"] and 'local BV = "b89"' in SRC["book"] and int(SRC["padmap"].split('local PV = "m', 1)[1].split('"', 1)[0]) >= 172
       and 'local CBV = "cb16"' in BLOCK, "the versions: PadTabCtl p55, Book b70, PadMap m172+, ActionBar cb14")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
