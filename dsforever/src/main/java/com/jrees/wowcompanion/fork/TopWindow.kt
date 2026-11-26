@@ -168,7 +168,7 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
             }
         }
         up = true
-        host = CompanionHost(context, this).also { it.onCreate(savedInstanceState); it.onStart() }
+        host = CompanionHost.made(context, this, savedInstanceState)
         densityLine()                                            // after the host: its onCreate starts DiagLog on a first start
     }
 

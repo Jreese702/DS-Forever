@@ -664,6 +664,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val seedReady: () -> Unit = { refreshServices() }
         PoiHarvest.init(this, seedReady); ends.add { PoiHarvest.seedReadyOff(seedReady) }
         castView = CastView(this) { key -> GameInput.key(key) }
+        // the Settings stage's DS toolbar is this host's live bar (its pictures, and whether they show): set once here and taken off at
+        // this host's end (the leak fix's review: set again at every full document and never taken off, it kept the last host that got
+        // one - a host let go for memory, the launcher's end - reachable, and the Settings pictures asked a dead CastView meanwhile)
+        PreviewStage.roomBar = { castView.roomBar }; ends.own(PreviewStage::roomBar, { null })
+        PreviewStage.roomBarOn = { castView.roomBarOn }; ends.own(PreviewStage::roomBarOn, { false })
         // feat/wk-itemcast (the user, 2026-11-16: "the cast bar for using Items from my bag or applying enchants is not visible"): while
         // Home's own cast bar is not on screen (any room; a Home module over the band), the rooms' bar draws the player's cast in its
         // tracking band - Bags' Use, Character's Enchant / kit pick / Feed Pet, the Spellbook, Macros, every room the same
@@ -1178,12 +1183,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ends.own(SetupBridge::reportKey, null)
         // the 5 minutes ran out: the report is saved by itself (no browser mid-game) and its note waits in Settings / the setup screen
         ReportFlow.init(this)
-        DiagLog.onEndedByItself = {
-            val app = applicationContext
-            Thread({ runCatching { ReportFlow.autoSave(app) }.onFailure { Log.w("WCREPORT", "auto-save failed", it) }; SetupBridge.loginSaved() },
-                "report-autosave").start()
-        }
-        ends.own(DiagLog::onEndedByItself, null)
+        // (the leak fix's review: process-wide and host-free - it needs only the application - so it stays when this host goes: a
+        // recording that runs out while no host exists, a memory release or a refused reopen, still saves its report)
+        DiagLog.onEndedByItself = reportAutoSave(applicationContext)
         ends.add(DiagLog.onChange(weakly(this) { h -> h.ui.post { h.ui.removeCallbacks(h.recTick); h.recTick.run() } }))
         SetupBridge.openLoginForm = { loginPrompt.open() }
         ends.own(SetupBridge::openLoginForm, null)
@@ -1915,7 +1917,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     fun abandon() {
         if (LauncherHooks.pkg != null) BottomSync.hostAbandoned(restored, rebuildMark)
         restored = null; rebuildMark = null
-        onStop(); onDestroy()
+        // (the leak fix's review: a stop that throws - a host whose start failed part way - never skips the teardown)
+        try { onStop() } finally { onDestroy() }
+    }
+
+    /** a start that threw part way ([made]): the abandon's teardown, and whatever it registered taken off even if that teardown throws */
+    private fun failedStart(t: Throwable) {
+        Log.w("WCLOG", "host: its start failed (${t.javaClass.simpleName}: ${t.message}): taken down again", t)
+        runCatching { abandon() }.onFailure { Log.w("WCLOG", "host: the failed start's teardown: ${it.message}", it) }
+        ends.end()
     }
 
     /** [adopt] (BottomSync's rebuild, Q3): the game still holds the controller for [r] with its window open - shown with no entry tap */
@@ -3959,7 +3969,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (castAskOpen && homeView.inFight()) castBarAsk()          // a fight: the cast bar question goes at once (back after)
                 if (keyAskOpen && homeView.inFight()) keyAskTick.run()       // Safety k10: the key question too (asked again after it)
                 if (current) PreviewStage.feedFull(msg)                     // f-settings-previews: the Settings panel's live miniatures
-                PreviewStage.roomBar = { castView.roomBar }; PreviewStage.roomBarOn = { castView.roomBarOn }
                 msg.optJSONObject("bags")?.let { bagsView.update(it, current); pinPicker.update(it); characterView.updateBags(it)
                     if (::interactView.isInitialized) interactView.updateBags(it)      // feat/vendor-bag-slots: the vendor's free bag / ammo slots
                     it.optJSONObject("equipped")?.let { eq -> homeView.durability(eq.optJSONObject("durw")) }; if (ProfessionsStore.onBags(it)) professionsView.refresh() }   // old = no room switch, no tap (bags)
@@ -5035,44 +5044,48 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     }
 
     fun onDestroy() {
-        live--
-        // BottomSync: a parked host that goes (a memory release, Android's close while away) never leaves the taps held
-        unholdPark()
-        GameInput.away = false
-        // round 3: an Edit Home session handed to a host made again (snapshot) is the new Home's alone from now on
-        if (::homeView.isInitialized) homeView.editLetGo()
-        // the review: every repeating tick off the main looper (the once-a-second loop reposted itself for ever: each host made again kept
-        // the old one - its rooms, its map - alive and ticking)
-        for (r in repeatingTicks()) ui.removeCallbacks(r)
-        Voice.stopAll()
-        ui.removeCallbacks(singlePoll)
-        singlePlayEnd()
-        if (SingleScreen.fightNow === singleFight) SingleScreen.fightNow = { false }
-        Theme.removeListener(themeChanged)
-        ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
-        ui.removeCallbacks(silenceTick)
-        ArtHarvest.offState(iconArtState)
-        ArtHarvest.offState(artStateLog)
-        ArtHarvest.offStepDone(mapArtDone)
-        // #568 / #573: NOT a stop - this host goes whenever the launcher goes to the background or the screen turns off, the only
-        // times the indoor maps may build after a game; the step lets go by itself when the game starts (IndoorSchedulerStep.on)
-        IndoorSchedulerStep.companionGone()
-        ui.removeCallbacks(signInTick)
-        NativeLogin.onTrafficSample = null
-        MemWatch.gameWalkWanted = { true }                              // #24 (11-23): no host, the walk as before
-        SetupBridge.keyboard(false)
-        ui.removeCallbacks(rootCheck)
-        if (PlayModes.onChanged === sourceChanged) PlayModes.onChanged = null
-        tail?.stop()
-        // BottomSync: the reader's place joins this host's snapshot (if one was kept for a rebuild): the next reader goes on from there
-        if (LauncherHooks.pkg != null) BottomSync.place(tail?.place(), LauncherHooks.gameStartSec)
-        getSharedPreferences(GameFiles.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(gameRootChanged)
-        GameRegion.listeners.remove(regionChanged)
-        if (::loginWatch.isInitialized) loginWatch.stop()
-        // HostEnds (HostsReleasedTest): the bottom-screen hitch watch's frame callback re-posted itself for ever while recording, and
-        // everything this host and its views registered process-wide goes now (a replaced host was kept whole by them before)
-        android.view.Choreographer.getInstance().removeFrameCallback(hitch); hitchOn = false
-        ends.end()
+        // (the leak fix's review: a step that throws on the way - a host whose start failed part way - never skips the last one)
+        try {
+            live--
+            // BottomSync: a parked host that goes (a memory release, Android's close while away) never leaves the taps held
+            unholdPark()
+            GameInput.away = false
+            // round 3: an Edit Home session handed to a host made again (snapshot) is the new Home's alone from now on
+            if (::homeView.isInitialized) homeView.editLetGo()
+            // the review: every repeating tick off the main looper (the once-a-second loop reposted itself for ever: each host made again kept
+            // the old one - its rooms, its map - alive and ticking)
+            for (r in repeatingTicks()) ui.removeCallbacks(r)
+            Voice.stopAll()
+            ui.removeCallbacks(singlePoll)
+            singlePlayEnd()
+            if (SingleScreen.fightNow === singleFight) SingleScreen.fightNow = { false }
+            Theme.removeListener(themeChanged)
+            ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
+            ui.removeCallbacks(silenceTick)
+            ArtHarvest.offState(iconArtState)
+            ArtHarvest.offState(artStateLog)
+            ArtHarvest.offStepDone(mapArtDone)
+            // #568 / #573: NOT a stop - this host goes whenever the launcher goes to the background or the screen turns off, the only
+            // times the indoor maps may build after a game; the step lets go by itself when the game starts (IndoorSchedulerStep.on)
+            IndoorSchedulerStep.companionGone()
+            ui.removeCallbacks(signInTick)
+            NativeLogin.onTrafficSample = null
+            MemWatch.gameWalkWanted = { true }                              // #24 (11-23): no host, the walk as before
+            SetupBridge.keyboard(false)
+            ui.removeCallbacks(rootCheck)
+            if (PlayModes.onChanged === sourceChanged) PlayModes.onChanged = null
+            tail?.stop()
+            // BottomSync: the reader's place joins this host's snapshot (if one was kept for a rebuild): the next reader goes on from there
+            if (LauncherHooks.pkg != null) BottomSync.place(tail?.place(), LauncherHooks.gameStartSec)
+            getSharedPreferences(GameFiles.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(gameRootChanged)
+            GameRegion.listeners.remove(regionChanged)
+            if (::loginWatch.isInitialized) loginWatch.stop()
+            // HostEnds (HostsReleasedTest): the bottom-screen hitch watch's frame callback re-posted itself for ever while recording, and
+            // everything this host and its views registered process-wide goes now (a replaced host was kept whole by them before)
+            android.view.Choreographer.getInstance().removeFrameCallback(hitch); hitchOn = false
+        } finally {
+            ends.end()
+        }
     }
 
     /**
@@ -6954,6 +6967,29 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         /** BottomSync's "never two hosts": the CompanionHosts made and not yet destroyed in this process (the tests read it) */
         @Volatile var live = 0
             private set
+
+        /**
+         * a host made by its window ([shell]) on [base]: its onCreate, then (with [start]) its onStart. ONE WHOSE START THROWS PART WAY
+         * IS TAKEN DOWN (the leak fix's review, 2026-11-26: a decode's OutOfMemoryError while it is made again right after a memory release
+         * on an 8 GB unit; HostsReleasedTest): the window never got it, so nobody ever ended it - everything it had registered stayed in
+         * the process' lists for good, firing into a half-made host, one more at every try of the watchdog. Now its abandon runs (the
+         * snapshot back for the next try, its stop and destroy) and every registration goes (HostEnds), then the throw goes on to the
+         * window as before (openBottom's catch, TopWindow's, the activity's)
+         */
+        fun made(base: Context, shell: HostShell, saved: Bundle?, start: Boolean = true): CompanionHost {
+            val h = CompanionHost(base, shell)
+            try { h.onCreate(saved); if (start) h.onStart() } catch (t: Throwable) { h.failedStart(t); throw t }
+            return h
+        }
+
+        /** the 5 minutes ran out: the report saved by itself on [app] (DiagLog.onEndedByItself). Made HERE, with no host in scope: inside
+         *  the host even a `runCatching { }` takes the host as its receiver, and the lambda kept it (HostsReleasedTest) */
+        private fun reportAutoSave(app: Context): () -> Unit = {
+            Thread({
+                try { ReportFlow.autoSave(app) } catch (t: Throwable) { Log.w("WCREPORT", "auto-save failed", t) }
+                SetupBridge.loginSaved()
+            }, "report-autosave").start()
+        }
         /** a message's source, set by [startTail] on everything the stream bridge delivers (the PC's add-ons) */
         const val SRC_KEY = "_dsf_src"
         const val SRC_PC = "pc"

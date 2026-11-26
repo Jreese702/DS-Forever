@@ -46,7 +46,7 @@ object PreviewStage {
     /** the companion's own keyboard, drawn at [w] x [h] (the Message input row): a board of its own, never wired to anything */
     private var kb: ChatKeyboard? = null
     fun keyboard(ctx: Context, c: Canvas, w: Float, h: Float) {
-        val k = kb ?: ChatKeyboard(ctx).also { it.open(); it.scaleOverride = 1f; kb = it }
+        val k = kb ?: ChatKeyboard(ctx).also { it.open(); it.scaleOverride = 1f; kb = it; ctx.atHostEnd { if (kb === it) kb = null } }
         val fh = ChatKeyboard.fullHeight()
         k.measure(View.MeasureSpec.makeMeasureSpec(1240, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(fh, View.MeasureSpec.EXACTLY))
         k.layout(0, 0, 1240, fh)
@@ -59,7 +59,7 @@ object PreviewStage {
     /** the class radial on that side, from the stage's own CastView (the bars' latest document) */
     fun classWheel(ctx: Context, c: Canvas, w: Float, h: Float, left: Boolean, pointed: Int): Boolean {
         val f = full ?: return false
-        val t = tree ?: build(ctx).also { tree = it }
+        val t = tree ?: build(ctx)
         strip(f).optJSONObject("actionbar")?.let { t.cast.update(it) }
         return t.cast.drawClassPreview(c, w, h, left, pointed)
     }
@@ -98,7 +98,7 @@ object PreviewStage {
      */
     fun render(ctx: Context, look: HomeView.Companion.Look, fight: Boolean, toolbar: Boolean?, into: Bitmap, spec: ThemeSpec? = null): Map<String, RectF>? {
         val f = full ?: return null
-        val t = tree ?: build(ctx).also { tree = it }
+        val t = tree ?: build(ctx)
         builtGen = gen
         askDirty = true
         val draw: () -> Map<String, RectF>? = {
@@ -235,7 +235,7 @@ object PreviewStage {
         // once more after a second, with the minimap tiles that decoded meanwhile (their own thread)
         if (a.done && a.pass == 0 && now - a.startedAt >= 1_000L) { a.pass = 1; a.restart() }
         if (a.done) return true
-        val t = tree ?: build(a.ctx).also { tree = it }
+        val t = tree ?: build(a.ctx)
         if (askDirty && a.step > 0) a.restart()
         askDirty = false
         val look = HomeView.Companion.Look(HomeSettings.rest, HomeSettings.combatGrow, HomeSettings.questOverMap, HomeSettings.swingTimer,
@@ -291,7 +291,7 @@ object PreviewStage {
         c.scale(a.scale, a.scale)
         c.drawColor(Theme.ink)
         t.home.draw(c)
-        val st = stripView ?: Strip(a.ctx) { }.also { stripView = it }
+        val st = stripView ?: Strip(a.ctx) { }.also { stripView = it; a.ctx.atHostEnd { if (stripView === it) stripView = null } }
         st.active = Room.HOME
         st.showOrder(RoomBar.shown(HomeSettings.layout), 0L)        // P4: the bar in the active record's order
         st.measure(View.MeasureSpec.makeMeasureSpec(W, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(Strip.HEIGHT, View.MeasureSpec.EXACTLY))
@@ -300,6 +300,14 @@ object PreviewStage {
         return b
     }
 
+    /**
+     * the stage made with [ctx] (a host or one of its views) and kept as [tree]. THE STAGE GOES WITH THE HOST THAT MADE IT (the leak fix's
+     * review, 2026-11-26): its views register with that host (Theme, Settings, HomeSettings, GameUi, ItemCd, MemWatch's "plans" and
+     * "cast", ChatFilter, TalkKeep ... through atHostEnd) and hold it as their context, so at that host's end the stage, the keyboard
+     * ([kb]) and the Home bar ([stripView]) it made are let go too: the next picture builds a stage of the host on show, whose listeners
+     * are its own (before, the first host that drew a Settings picture stayed alive for the whole process, and the stage stopped
+     * following the theme and the settings once that host's listeners were taken off). Made by no host (a test's application): kept, as before
+     */
     private fun build(ctx: Context): Tree {
         val holder = FrameLayout(ctx)
         val map = MapView(ctx)
@@ -312,6 +320,9 @@ object PreviewStage {
         val t = Tree(home, cast, map)
         lay(t)
         home.borrow()
+        // (kept before its end is registered: a host that already went runs it at once, and the stage goes after this one picture)
+        tree = t
+        ctx.atHostEnd { if (tree === t) { tree = null; askDirty = true } }
         return t
     }
 

@@ -123,7 +123,7 @@ class BottomSyncRound2Test {
         val p = source().substringAfter("private class HostPresentation(")
         val create = p.substringAfter("override fun onCreate(savedInstanceState: Bundle?) {").substringBefore("\n    }\n")
         assertFalse("no host inside Dialog.show (a refused addView costs nothing)", create.contains("CompanionHost("))
-        assertTrue(p.substringAfter("fun begin() {").substringBefore("\n    }\n").contains("CompanionHost(context, this)"))
+        assertTrue(p.substringAfter("fun begin() {").substringBefore("\n    }\n").contains("CompanionHost.made(context, this, null)"))
         val ab = p.substringAfter("fun abandon(shownOk: Boolean = false) {").substringBefore("\n    }\n")
         assertTrue("its display listener off (Presentation.onStop: dismiss() returns early on a window never shown)", ab.contains("super.onStop()"))
         assertTrue("never Dialog.isShowing (the decor is VISIBLE already when addView threw)", ab.contains("if (shownOk) {") && !ab.contains("isShowing"))

@@ -109,8 +109,8 @@ class DsForeverScreen(private val context: Context) {
         ScreenSwap.gameDisplay = if (ScreenSwap.inUse(context)) gameDisplay() else Display.DEFAULT_DISPLAY
         // what the sign-in watcher would ask the system for, from the launcher itself (S4)
         LauncherHooks.pkg = context.packageName
-        LauncherHooks.gameUp = { gameOn }
-        LauncherHooks.inFront = { (context as? Activity)?.hasWindowFocus() == true }
+        LauncherHooks.gameUp = gameUpHook
+        LauncherHooks.inFront = inFrontHook
         running = true
         SingleScreen.request = singleHook                    // single screen mode: the wheel's button asks this DS Forever
         SingleScreen.keysAgain = keysAgainHook               // NPC: our activity on the other screen closed: the keys looked at again
@@ -148,9 +148,18 @@ class DsForeverScreen(private val context: Context) {
         if (ScreenSwap.restart === restartHook) ScreenSwap.restart = null
         if (SingleScreen.request === singleHook) SingleScreen.request = null
         if (SingleScreen.keysAgain === keysAgainHook) SingleScreen.keysAgain = null
+        // the leak fix's review: the launcher's two hooks go back to "no game, not in front" (what they answered by now anyway: the game
+        // detached above, the activity going) while still this DS Forever's - they kept it, and the launcher's activity it was made on,
+        // until the next start (a back-out with the process kept, Streaming's end)
+        if (LauncherHooks.gameUp === gameUpHook) LauncherHooks.gameUp = { false }
+        if (LauncherHooks.inFront === inFrontHook) LauncherHooks.inFront = { false }
         keysCancel()
         Log.i(TAG, "stop")
     }
+
+    /** the launcher's hooks as this DS Forever sets them ([start], [reclaim]), taken off at its [stop] */
+    private val gameUpHook: () -> Boolean = { gameOn }
+    private val inFrontHook: () -> Boolean = { (context as? Activity)?.hasWindowFocus() == true }
 
     /** the game screen is up: its X server becomes DS Forever's input, the traffic measurement runs */
     fun attachGame(sink: InputSink.Sink) {
@@ -241,8 +250,8 @@ class DsForeverScreen(private val context: Context) {
     /** back from Streaming: the launcher's hooks and (a local game's) input are this screen's again; [show] comes with its resume */
     private fun reclaim() {
         LauncherHooks.pkg = context.packageName
-        LauncherHooks.gameUp = { gameOn }
-        LauncherHooks.inFront = { (context as? Activity)?.hasWindowFocus() == true }
+        LauncherHooks.gameUp = gameUpHook
+        LauncherHooks.inFront = inFrontHook
         RootPolicy.allowed = false
         TapSinks.wire(PlayMode.LOCAL, if (gameOn) input else null, null)
         SingleScreen.request = singleHook                    // the launcher's own DS Forever answers the wheel's button again
@@ -1568,7 +1577,7 @@ private class HostPresentation(outer: Context, display: Display, private val onR
      */
     fun begin() {
         if (!up || closing || host != null) return
-        host = CompanionHost(context, this).also { it.onCreate(null); it.onStart() }
+        host = CompanionHost.made(context, this, null)
     }
 
     /** the text fields' focus rules ([BottomTyping]) */
