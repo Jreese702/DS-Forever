@@ -128,6 +128,29 @@ class HostEndsTest {
         assertTrue("made while parked: parked", sub.contains(".also { if (parkedNow) it.park(true) }"))
     }
 
+    /**
+     * THE INT/1534 REVIEW: a document the reader had posted before the host's end runs on it after the end (LogTail.stop never waits for
+     * a poll under way) - every sender's check, and the key question's 3 s look, must stop first for a host that went (else a retry is
+     * posted for good: the dead host kept whole, its taps beside the next host's). HostsReleasedTest's queued-document test runs it
+     */
+    @Test fun aHostThatWentNeverSendsFromALateDocument() {
+        val host = File(srcDir(), "CompanionHost.kt").readText()
+        assertTrue(host.contains("private fun sendsGone(): Boolean = ends.ended"))
+        // every self-reposting sender's check (the function its "<name>Again" runnable runs), and the key question
+        val checks = Regex("private val \\w+Again = Runnable \\{ last(?:Dpad|PadMap)\\?\\.let \\{ (\\w+)\\(it").findAll(host).map { it.groupValues[1] }.toSet()
+        assertEquals(setOf("singleTopCheck", "mirrorCheck", "topCheck", "castCheck", "swingCheck", "previewCheck", "holdTicksCheck", "holdBumpCheck"), checks)
+        for (f in checks + "keyAsk") {
+            val body = host.substringAfter("    private fun $f(").substringAfter("{\n").substringBefore("\n    }\n")
+            val first = body.lines().map { it.trim() }.first { it.isNotEmpty() && !it.startsWith("//") }
+            val guard = if (f == "singleTopCheck") body.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("//") }[1] else first
+            assertTrue("$f stops first for a host that went: $guard", guard.startsWith("if (sendsGone()"))
+            // hold to cast's two: parked too (the park stopped them; a document posted before it would start them again)
+            if (f == "holdTicksCheck" || f == "holdBumpCheck") assertTrue("$f: not while parked", guard.startsWith("if (sendsGone() || parked) return"))
+        }
+        // (singleTopCheck: the add-on's mode is process-wide - the game's cast bar - so a late document still sets it first)
+        assertTrue(host.substringAfter("    private fun singleTopCheck(").substringAfter("{\n").trim().startsWith("SingleUi.addonSingle = d.ss == 1"))
+    }
+
     private fun srcDir(): File = listOf(File("../companion/app/src/main/java/com/jrees/wowcompanion"), File("companion/app/src/main/java/com/jrees/wowcompanion"))
         .first { it.isDirectory }
     private fun fork(name: String): String =

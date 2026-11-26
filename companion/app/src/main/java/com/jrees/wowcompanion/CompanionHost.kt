@@ -1804,12 +1804,21 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             psStepTick, talkTick, playTick, singlePoll)
 
     /** int/1534: this host's senders to the add-on, each tried again on the main looper until the add-on says the wish (a fight: waited
-     *  out every TopCombatBar.RESEND_MS). All off at the host's end (HostEnds); hold to cast's two ([holdSends]) off at a park too */
+     *  out every TopCombatBar.RESEND_MS). All off at the host's end (HostEnds); hold to cast's two ([holdSends]) off at a park too.
+     *  The int/1534 review: taking them off once is not enough - a document the reader had posted before the end still runs here after
+     *  it (LogTail.stop never waits for a poll under way), and it ran every check again: a retry posted for good (the dead host kept
+     *  whole, its taps beside the next host's). So every check of them ([singleTopCheck], [mirrorCheck], [topCheck], [castCheck],
+     *  [swingCheck], [previewCheck], [holdTicksCheck], [holdBumpCheck]) and the key question's ([keyAsk]) stops first for a host that
+     *  went ([sendsGone]); the process-wide part of such a late document (GameInput, HoldCast, SingleUi) still runs - the next reader goes
+     *  on after it, so this host is the only one that ever reads it */
     private fun sendRetries(): List<Runnable> =
         listOf(mirrorAgain, mirrorGiveUp, topAgain, castAgain, swingAgain, pvAgain, ssAgain) + holdSends()
     /** hold to cast's senders (the hold time, m194; test 1533's bump, m202): every current padmap runs both checks again, so a park
-     *  stops them and the return needs no restart of its own */
+     *  stops them and the return needs no restart of its own (the int/1534 review: and neither check runs while parked - a document
+     *  posted before the park would start them again) */
     private fun holdSends(): List<Runnable> = listOf(holdAgain, bumpAgain)
+    /** the int/1534 review: this host went (its end ran) - none of its senders taps or posts again */
+    private fun sendsGone(): Boolean = ends.ended
 
     /**
      * AWAY (the launcher's minimize, Recents, another app over it, the screen off): onStop's body without the game's UI (the wheels and the
@@ -2803,7 +2812,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * tries over (no hard stop for the host's life)
      */
     private fun singleTopCheck(d: PadMapModel.Dpad, fresh: Boolean = true) {
-        SingleUi.addonSingle = d.ss == 1
+        SingleUi.addonSingle = d.ss == 1                                   // (process-wide: the game's cast bar, a late document's too)
+        if (sendsGone()) return                                            // the int/1534 review: a host that went sends nothing
         val want = SingleScreen.inUse
         if (!mirrorCurrent && !want) return
         if (ssSentWant != want) { ssSentAt = null; ssTries = 0 }
@@ -6266,6 +6276,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** SPEC section 6 "SYNC": the layout's mirror bit vs the add-on's `d`; out of combat a pending wish is tapped (padtab 39, 38, 37 then 20 /
      *  21, Book b76) and tried again every ToolbarMirror.RESEND_MS until `d` says it; a fight waits. A new `d` shows the D-pad toast on Home */
     private fun mirrorCheck(d: PadMapModel.Dpad) {
+        if (sendsGone()) return                                            // the int/1534 review: a host that went sends nothing
         val bit = ToolbarMirror.bitOf(d.dirs)
         if (ToolbarMirror.toastFor(mirrorSeen, bit)) homeView.toolbarToast(d.dirs)
         if (bit != null) mirrorSeen = bit
@@ -6316,7 +6327,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  tapped (padtab 39, 38, 37 then 22 / 23, Book b76) and tried again every TopCombatBar.RESEND_MS until `ct` says it; a fight waits (the add-on
      *  switches by itself in fights: nothing is sent then). Checked at every current padmap, so each login re-asserts it */
     private fun topCheck(d: PadMapModel.Dpad) {
-        if (!mirrorCurrent) return
+        if (sendsGone() || !mirrorCurrent) return
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(topAgain); return }      // the 1514 merge: as mirrorCheck
         if (homeView.editing) { ui.removeCallbacks(topAgain); return }                       // 1518: as mirrorCheck (edit mode live)
         val want = TopCombatBar.wanted(fightPage())
@@ -6355,7 +6366,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  (out of combat, re-sent every TopCombatBar.RESEND_MS until `cc` says it, nothing while edit mode is live or with no key; an older
      *  add-on without `cc`: nothing to send - the bottom screen's strip carries the bar, TopCombatBar.honoured) */
     private fun castCheck(d: PadMapModel.Dpad) {
-        if (!mirrorCurrent) return
+        if (sendsGone() || !mirrorCurrent) return
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(castAgain); return }
         if (homeView.editing) { ui.removeCallbacks(castAgain); return }
         val want = TopCombatBar.castWanted(fightPage())
@@ -6387,7 +6398,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  until `cs` says it, nothing while edit mode is live or with no key, an older add-on without `cs`: nothing to send), after the cast
      *  bar's own taps (the same page-3 cells: TapPad's 0.25 s repeat guard) */
     private fun swingCheck(d: PadMapModel.Dpad) {
-        if (!mirrorCurrent) return
+        if (sendsGone() || !mirrorCurrent) return
         if (CharKey.of(d.name, d.realm) == null) { ui.removeCallbacks(swingAgain); return }
         if (homeView.editing) { ui.removeCallbacks(swingAgain); return }
         // the 1529 integration: the NEXT fight's page (edit tabs: In combat's or Party mode's own Cast bar), as topCheck / castCheck read
@@ -6423,7 +6434,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  out of combat, re-sent every EditPreview.RESEND_MS until `pv` says it (at most EditPreview.TRIES per wish), an older add-on (no
      *  `pv`): nothing; never with another page-3 batch just gone (TapPad's 0.25 s repeat guard). Display only on the add-on's side */
     private fun previewCheck(d: PadMapModel.Dpad) {
-        if (!mirrorCurrent) return
+        if (sendsGone() || !mirrorCurrent) return
         val want = homeView.editPreviewCode()
         if (pvSentWant != want) { pvSentAt = null; pvUpAt = null; pvTries = 0 }
         val now = SystemClock.elapsedRealtime()
@@ -6462,6 +6473,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** Settings > Controller > Hold time (the app's, CastSettings) vs the add-on's `hold.n`: [castCheck]'s rules - out of combat, re-sent
      *  every TopCombatBar.RESEND_MS until `hold.n` says it (HoldCast.SEND_TRIES per wish), an older add-on without it: nothing */
     private fun holdTicksCheck(m: PadMapModel.Map) {
+        // the int/1534 review: a host that went sends nothing; parked, nothing either (the park stopped this sender - a late document
+        // started it again, its tries spent on taps the park refuses; the first current padmap after the return runs it)
+        if (sendsGone() || parked) return
         val want = CastSettings.holdTime.ticks
         if (holdSentWant != want) { holdSentAt = null; holdTries = 0 }
         val now = SystemClock.elapsedRealtime()
@@ -6491,6 +6505,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  and the tries start again per add-on load and per minute (HoldCast.bumpTriesAgain) - three lost to a loading screen no longer
      *  give up for the session. In a fight the add-on steps its own (PadMap m203) */
     private fun holdBumpCheck(m: PadMapModel.Map) {
+        if (sendsGone() || parked) return                                  // the int/1534 review: as holdTicksCheck (gone, or parked)
         val want = HoldCast.release.bumpSteps
         val now = SystemClock.elapsedRealtime()
         if (HoldCast.bumpTriesAgain(bumpSentWant != want, m.holdLooks, bumpLk, bumpSentAt?.let { now - it })) { bumpSentAt = null; bumpTries = 0 }
@@ -6530,6 +6545,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var keyAskShown: KeyPick.Shown? = null
 
     private fun keyAsk(d: PadMapModel.Dpad) {
+        // the int/1534 review: a late document on a host that went - its WAIT looked again every 3 s for good (a frozen dead host is never
+        // ready), keeping it whole; the next host asks at its own next padmap
+        if (sendsGone()) return
         if (!::setupView.isInitialized || !::startView.isInitialized) return
         keyAskDpad = d
         val name = d.name

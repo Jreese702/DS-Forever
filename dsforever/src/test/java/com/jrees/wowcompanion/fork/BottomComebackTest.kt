@@ -223,6 +223,13 @@ class BottomComebackTest {
         assertFalse(f.contains("MemWatch.onTrim(\"bottom-park\""))
         val rel = f.substringAfter("private fun release(").substringBefore("\n    }\n")
         assertTrue("a snapshot first, then the old teardown", rel.indexOf("keepSnapshot(") in 0 until rel.indexOf("shown?.close()"))
+        // the int/1534 review: the pressure Android still holds at the park (it calls onTrimMemory again only when the level RISES; a
+        // trim while the window was in use let nothing go) - looked at by the same rule as the park starts (BottomRound4LifecycleTest)
+        val hide = f.substringAfter("fun hide(park: Boolean = true) {").substringBefore("\n    }\n")
+        assertTrue(hide.contains("if (w.park(\"the launcher went to the background\")) { pressureAtPark(); return }"))
+        val at = f.substringAfter("private fun pressureAtPark() {").substringBefore("\n    }\n")
+        assertTrue(at.contains("parkReleaseAt(level, light8())") && at.contains("release(\"Android's memory trim \$level (before the park)\")"))
+        assertTrue(f.substringAfter("private fun trimLevelNow(): Int").substringBefore("\n\n").contains("ActivityManager.getMyMemoryState(it)"))
     }
 
     @Test fun swapScreensThreeQuickMinimizesNeverTripTheGuard() {

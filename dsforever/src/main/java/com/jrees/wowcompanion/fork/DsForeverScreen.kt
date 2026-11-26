@@ -264,6 +264,8 @@ class DsForeverScreen(private val context: Context) {
         hidden = false
         reopenTries = 0; openFails = 0; topFails = 0
         update()
+        // the int/1534 review: single screen mode's keys looked at once after the return ([keysAfterReturn])
+        if (SingleScreen.inUse) { main.removeCallbacks(keysAfterReturn); main.postDelayed(keysAfterReturn, KEYS_RETURN_MS) }
     }
     /**
      * the launcher went away: Cocoon's bottom grid is the user's (the game itself is paused by the launcher then). THE BOTTOM SCREEN COMES
@@ -279,7 +281,7 @@ class DsForeverScreen(private val context: Context) {
         val w = shown ?: return
         if (!w.alive) { shown = null; companionGone(); return }                // Android closed it already ([lost] is on its way)
         if (park) when (bottomStep(true, null, gameDisplay(), Win(w.displayId, w.alive, w.parked))) {
-            BottomAct.PARK -> if (w.park("the launcher went to the background")) return
+            BottomAct.PARK -> if (w.park("the launcher went to the background")) { pressureAtPark(); return }
             else -> return                                                     // parked already: a second pause / stop changes nothing
         }
         com.jrees.wowcompanion.DiagLog.event("app", "bottom screen hidden (the launcher went to the background)")   // #147
@@ -599,11 +601,31 @@ class DsForeverScreen(private val context: Context) {
      */
     private val trims = object : android.content.ComponentCallbacks2 {
         override fun onTrimMemory(level: Int) {
-            if (parkReleaseAt(level, runCatching { com.jrees.wowcompanion.DeviceTier.light8() }.getOrDefault(false))) main.post { release("Android's memory trim $level") }
+            if (parkReleaseAt(level, light8())) main.post { release("Android's memory trim $level") }
         }
         override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {}
         @Deprecated("Deprecated in Java") override fun onLowMemory() { main.post { release("Android's low memory") } }
     }
+    private fun light8(): Boolean = runCatching { com.jrees.wowcompanion.DeviceTier.light8() }.getOrDefault(false)
+
+    /**
+     * THE PRESSURE ANDROID REPORTED BEFORE THE PARK (the int/1534 review): a trim that came while the window was in use let nothing go
+     * ([release]: not parked), and Android calls onTrimMemory again only when its level RISES - the launcher stays a foreground-service
+     * process while away, so a pressure that stays as it was never reached the parked host (on Light 8 RUNNING_LOW's rule missed its main
+     * case). At the park the level Android holds for this process NOW ([trimLevelNow]: 0 again once memory is normal) is looked at by the
+     * same rule ([parkReleaseAt]): UI_HIDDEN, or no pressure, still keeps the host
+     */
+    private fun pressureAtPark() {
+        val level = trimLevelNow()
+        if (level == 0) return
+        val go = parkReleaseAt(level, light8())
+        Log.i(TAG, "parked with Android's memory trim $level ${if (go) "(let go)" else "(kept)"}")
+        if (go) main.post { release("Android's memory trim $level (before the park)") }
+    }
+    /** the trim level Android holds for this process now (ActivityManager.getMyMemoryState's lastTrimLevel), 0 = none or unknown */
+    private fun trimLevelNow(): Int = runCatching {
+        android.app.ActivityManager.RunningAppProcessInfo().also { android.app.ActivityManager.getMyMemoryState(it) }.lastTrimLevel
+    }.getOrDefault(0)
 
     /** a parked host let go: its snapshot first, then the old full teardown (the window closed); the return opens one restored */
     private fun release(why: String) {
@@ -949,10 +971,23 @@ class DsForeverScreen(private val context: Context) {
         keysHintStuck = true
         (shown as? TopWindow)?.hint(SingleScreen.TAP_FOR_KEYS)
     }
-    /** a switch, a hide, a stop: nothing waits any more */
+    /**
+     * THE KEYS AFTER A RETURN (the int/1534 review): Android's top-resumed answer comes right after the resume; none comes when the
+     * other screen kept the controller's keys over the park or the sleep (no change, no call), and the hide dropped the stuck state - the
+     * keys stayed there with no plate and nothing taking them back. [KEYS_RETURN_MS] after the return the last answer is
+     * acted on as a switch does ([toggleSingle]); then the normal rules (the game's task forward, the plate only if they stay away)
+     */
+    private val keysAfterReturn = Runnable {
+        if (SingleScreen.inUse && !hidden && !topNow && (shown as? TopWindow)?.alive == true) keysTop(false)
+    }
+
+    /** a switch, a hide, a stop: nothing waits any more. The int/1534 review: the pinned "Tap the game for the controller" goes with the
+     *  stuck state - a hide now PARKS the same top window (its plate kept), and once the flags are dropped nothing else would ever clear
+     *  it: at the return it stood over the game while the controller already played there (a switch, a stop: the window closes anyway) */
     private fun keysCancel() {
+        if (keysHintStuck) (shown as? TopWindow)?.hint(null)
         keysAway = false; keysHintStuck = false
-        main.removeCallbacks(keysBackRun); main.removeCallbacks(keysStuckRun)
+        main.removeCallbacks(keysBackRun); main.removeCallbacks(keysStuckRun); main.removeCallbacks(keysAfterReturn)
     }
 
     /** Settings > Swap screens > Restart (ScreenSwap.restart): the launcher started again on the screen the saved choice gives it */
@@ -1143,6 +1178,9 @@ class DsForeverScreen(private val context: Context) {
         fun reopenWanted(running: Boolean, hidden: Boolean, single: Boolean, swap: Boolean, alive: Boolean): Boolean =
             running && !hidden && !single && !swap && !alive
 
+        /** the int/1534 review: single screen mode's one look at the keys after a return (keysAfterReturn) - well after Android's own
+         *  top-resumed answer, which comes right after the resume (acted on before it, every return would log a false keys-away) */
+        const val KEYS_RETURN_MS = 1_000L
         /** a start with a fresh snapshot and the game running (a configuration relaunch) shows the bottom screen sooner */
         const val SHOW_AGAIN_MS = 250L
         fun showAfter(fresh: Boolean, gameRunning: Boolean): Long = if (fresh && gameRunning) SHOW_AGAIN_MS else SHOW_AFTER_MS

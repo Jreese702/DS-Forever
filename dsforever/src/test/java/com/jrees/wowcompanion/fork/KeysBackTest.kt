@@ -64,6 +64,20 @@ class KeysBackTest {
         assertTrue(src.contains("fun topResumedFor(activity: Activity, top: Boolean) { current?.takeIf { it.context === activity }?.keysTop(top) }"))
         // a hide / stop / switch cancels what waits
         for (f in listOf("fun hide(park: Boolean = true) {", "fun stop() {")) assertTrue(f, src.substringAfter(f).substringBefore("\n    }").contains("keysCancel()"))
+        // the int/1534 review: a hide PARKS the same top window now - the pinned "Tap the game for the controller" goes with the stuck
+        // state (cleared before the flags drop: nothing else would clear it at the return), and the hide cancels before the park
+        val cancel = src.substringAfter("private fun keysCancel() {").substringBefore("\n    }")
+        assertTrue(cancel.indexOf("if (keysHintStuck) (shown as? TopWindow)?.hint(null)") in 0 until cancel.indexOf("keysHintStuck = false"))
+        val hide = src.substringAfter("fun hide(park: Boolean = true) {").substringBefore("\n    }")
+        assertTrue(hide.indexOf("keysCancel()") in 0 until hide.indexOf("w.park("))
+        // ... and once after the return the last top-resumed answer is acted on (none comes when the other screen kept the keys over the
+        // park), as a switch does; a hide / stop / switch cancels that look (BottomRound4LifecycleTest runs both ways)
+        val show = src.substringAfter("    fun show() {").substringBefore("\n    }")
+        assertTrue(show.contains("if (SingleScreen.inUse) { main.removeCallbacks(keysAfterReturn); main.postDelayed(keysAfterReturn, KEYS_RETURN_MS) }"))
+        assertTrue("well after Android's own answer", DsForeverScreen.KEYS_RETURN_MS >= 1_000L)
+        val look = src.substringAfter("private val keysAfterReturn = Runnable {").substringBefore("\n    }")
+        assertTrue(look.contains("if (SingleScreen.inUse && !hidden && !topNow && (shown as? TopWindow)?.alive == true) keysTop(false)"))
+        assertTrue(cancel.contains("main.removeCallbacks(keysAfterReturn)"))
         // no new permission: REORDER_TASKS was declared already (its comment names its second user)
         val manifest = listOf("src/main/AndroidManifest.xml", "dsforever/src/main/AndroidManifest.xml").map { java.io.File(it) }.first { it.canRead() }.readText()
         assertTrue(manifest.contains("in single screen mode when the bottom"))

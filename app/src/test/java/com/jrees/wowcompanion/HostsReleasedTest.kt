@@ -431,7 +431,11 @@ class HostsReleasedTest {
         settle(300)
         return listOf("the host whose start threw" to made!!)
     }
-    private companion object { const val FAIL = "the test: a throw part way through the host's start" }
+    private companion object {
+        const val FAIL = "the test: a throw part way through the host's start"
+        /** the int/1534 review: the add-on's padmap out of a fight with single screen mode on (PadMap m200's `ss` 1) */
+        const val SS_ON = """{"type":"padmap","v":"m203","m":{"page":1,"dpad":{"on":true,"want":true,"ss":1}}}"""
+    }
 
     // ---------------------------------------------------------------- int/1534: TEST 1533'S OWN PATHS (the leak fix over the code 1533 added)
 
@@ -596,5 +600,149 @@ class HostsReleasedTest {
         sv.draw(Canvas(bmp))
         sv.region = if (sv.region == null) GameRegion.Note("EU", "US") else null
         sv.draw(Canvas(bmp))
+    }
+
+    // ---------------------------------------------------------------- the int/1534 review: A DOCUMENT QUEUED AS ITS HOST GOES
+
+    /**
+     * A DOCUMENT THE READER HAD POSTED WHEN ITS HOST WENT (the int/1534 review): LogTail.stop never waits for a poll under way, so a
+     * document handed to the main looper just before Android's close runs on the host that went - and it ran every sender's check again:
+     * a retry posted itself for good, the whole host kept (its rooms, Home, the map), its taps beside the next host's.
+     * Two screens in a fight (the add-on's hold time and bump not the app's: holdAgain / bumpAgain every 5 s): Android's close with the
+     * padmap queued - the host that went gone while the next is up, none of its senders queued; then the launcher's end - none may stay
+     */
+    @Test fun aFightPadmapQueuedAsItsHostGoesStartsNoSenderAgain() =
+        withHoldCast { assertAllGone("hosts that went with a fight padmap queued", fightQueuedAsTheyGo()) }
+    private fun fightQueuedAsTheyGo(): List<Pair<String, WeakReference<Any>>> {
+        val c = upInTheWorld()
+        val refs = ArrayList<Pair<String, WeakReference<Any>>>()
+        refs += queuedThenClosed("two screens in a fight", listOf("holdAgain", "bumpAgain")) { fightPadmap() }
+        assertAllGone("the bottom host closed by Android with a fight padmap queued, while the next is up", refs)
+        refs += launcherRefs(c.get())
+        c.pause().stop().destroy()
+        settle(500)
+        return refs
+    }
+
+    /** the same padmap queued as a minimize parks the host: its hold senders stay off while away (the park stopped them; the first
+     *  current padmap after the return runs both again); back, then the launcher's end - none may stay */
+    @Test fun aFightPadmapQueuedAsTheHostParksStartsNoHoldSenderWhileAway() =
+        withHoldCast { assertAllGone("the host parked with a fight padmap queued", fightQueuedAtThePark()) }
+    private fun fightQueuedAtThePark(): List<Pair<String, WeakReference<Any>>> {
+        val c = upInTheWorld()
+        val refs = ArrayList(queuedThenParked(c))
+        refs += launcherRefs(c.get())
+        c.pause().stop().destroy()
+        settle(500)
+        return refs
+    }
+
+    /** the same in single screen mode out of a fight: the add-on's `ss` 1 queued as Android closes the top window (ssAgain: its lease) */
+    @Test fun anSsPadmapQueuedAsTheTopWindowGoesStartsNoSenderAgain() =
+        assertAllGone("hosts that went with the add-on's ss 1 queued", ssQueuedAsTheyGo())
+    private fun ssQueuedAsTheyGo(): List<Pair<String, WeakReference<Any>>> {
+        val c = upInTheWorld()
+        val refs = ArrayList<Pair<String, WeakReference<Any>>>()
+        refs += oneScreenOn("the bottom host before one screen")
+        refs += queuedThenClosed("one screen", listOf("ssAgain")) { write(SS_ON) }
+        assertAllGone("the top window's host closed by Android with the add-on's ss 1 queued, while the next is up", refs)
+        refs += launcherRefs(c.get())
+        c.pause().stop().destroy()
+        settle(500)
+        return refs
+    }
+
+    /** two screens, the launcher up, the game in the world */
+    private fun upInTheWorld(): org.robolectric.android.controller.ActivityController<LauncherHooksActivity> {
+        bottomDisplay()
+        write("""{"type":"quests","q":{"n":1}}""")
+        val c = Robolectric.buildActivity(LauncherHooksActivity::class.java).setup()
+        settle(6_000) { shown() != null && tail(host()) != null }
+        screen().attachGame(sink)
+        return c
+    }
+
+    /** a fight padmap read and queued, then the minimize in the same turn: the parked host's hold senders stay off while away; back */
+    private fun queuedThenParked(c: org.robolectric.android.controller.ActivityController<LauncherHooksActivity>): List<Pair<String, WeakReference<Any>>> {
+        val h = WeakReference(host())
+        val refs = refsOf(h.get()!!, "the host parked with a fight padmap queued")
+        readNotRun(h) { fightPadmap() }
+        assertTrue("the padmap waits on the main looper for its host", h.get()?.let { docQueued(it, "padmap") } == true)
+        c.get().onUserLeaveHint()
+        assertTrue("parked with the padmap still queued", parkedNow() && h.get()?.let { docQueued(it, "padmap") } == true)
+        c.pause().stop(); settle(600)
+        assertTrue("still parked", parkedNow())
+        assertEquals("parked: neither hold sender queued by the late padmap", emptyList<String>(), h.get()?.let { sendersQueued(it) })
+        c.start().resume()
+        settle(1_000) { !parkedNow() }
+        assertTrue("back: the same host", h.get() === host() && !parkedNow())
+        return refs
+    }
+
+    /**
+     * [doc] read by the host on show and handed to the main looper - not run yet - then Android's own close of its window IN THE SAME
+     * TURN (a display or size change; for the top window, update() making it again): the document runs on the host that went. The next
+     * host up, then none of [senders] queued for the old one
+     */
+    private fun queuedThenClosed(tag: String, senders: List<String>, doc: () -> Unit): List<Pair<String, WeakReference<Any>>> {
+        val h = WeakReference(host())
+        val refs = refsOf(h.get()!!, tag)
+        readNotRun(h, doc)
+        assertTrue("$tag: the document waits on the main looper for its host", h.get()?.let { docQueued(it, "padmap") } == true)
+        val w = WeakReference(shown()!!)
+        (w.get() as android.app.Dialog).cancel()
+        assertTrue("$tag: its host ended with the document still queued",
+            h.get()?.let { (field(it, "ends") as HostEnds).ended && docQueued(it, "padmap") } == true)
+        settle(4_000) { shown() != null && shown() !== w.get() && tail(host()) != null }
+        assertNotNull("$tag: the next host up", shown())
+        settle(600)
+        assertEquals("$tag: no sender of the host that went queued", emptyList<String>(), h.get()?.let { queued(it, senders) })
+        return refs + ("$tag's window" to WeakReference<Any>(w.get()))
+    }
+
+    /** [doc] written and read by [h]'s reader, its document handed to the main looper (the reader's place past it) and NOT run: the main
+     *  looper is not idled meanwhile (only the clock moves, for the reader's own polls) */
+    private fun readNotRun(h: WeakReference<CompanionHost>, doc: () -> Unit) {
+        doc()
+        val end = System.currentTimeMillis() + 3_000
+        while (System.currentTimeMillis() < end && h.get()?.let { tail(it)?.place()?.offset } != log.length()) {
+            ShadowSystemClock.advanceBy(Duration.ofMillis(50)); Thread.sleep(20)
+        }
+        assertEquals("the reader read the document", log.length(), h.get()?.let { tail(it)?.place()?.offset })
+    }
+
+    /** a main-looper message that runs [h]'s handleMessage for a document of [type] (the reader's own post: its lambda holds both) */
+    private fun docQueued(h: CompanionHost, type: String): Boolean {
+        val q = android.os.Looper.getMainLooper().queue
+        val head = android.os.MessageQueue::class.java.getDeclaredField("mMessages").apply { isAccessible = true }
+        val next = android.os.Message::class.java.getDeclaredField("next").apply { isAccessible = true }
+        var m = head.get(q) as android.os.Message?
+        var n = 0
+        while (m != null && n++ < 100_000) {
+            val cb = m.callback
+            if (cb != null) {
+                val args = cb.javaClass.declaredFields.mapNotNull { f -> runCatching { f.isAccessible = true; f.get(cb) }.getOrNull() }
+                if (args.any { it === h } && args.any { it is JSONObject && it.optString("type") == type }) return true
+            }
+            m = next.get(m) as android.os.Message?
+        }
+        return false
+    }
+
+    /** which of [h]'s runnables [names] are queued on its main-looper handler now */
+    private fun queued(h: CompanionHost, names: List<String>): List<String> {
+        val ui = field(h, "ui") as android.os.Handler
+        return names.filter { ui.hasCallbacks(field(h, it) as Runnable) }
+    }
+
+    /** single screen mode on (the wheel's button) with no room visited: the replaced bottom host's references and its window (weakly) */
+    private fun oneScreenOn(tag: String): List<Pair<String, WeakReference<Any>>> {
+        val was = WeakReference<Any>(host())
+        val refs = refsOf(host(), tag) + ("$tag's window" to WeakReference<Any>(shown()!!))
+        SingleScreen.request?.invoke(true, "the test")
+        settle(4_000) { runCatching { host() }.getOrNull().let { it != null && it !== was.get() && tail(it) != null } }
+        assertTrue("one screen on", SingleScreen.inUse)
+        assertTrue("the top window's host up", runCatching { host() }.getOrNull().let { it != null && it !== was.get() })
+        return refs
     }
 }
