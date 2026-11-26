@@ -116,4 +116,28 @@ class RoomTabsPadTest {
         assertFalse("an NPC window / a wheel over the room reads the pad itself", RoomTabsPad.live(shown = true, holder = true, roomMode = false, covered = true))
         assertFalse(RoomTabsPad.live(shown = false, holder = true, roomMode = true, covered = false))
     }
+
+    /** int/1533: hold to cast's fire at its threshold is off while a tabbed room owns the pad (HoldCast.gates via SetupBridge.roomHoldsPad) */
+    @Test fun holdToCastsFireIsOffWhileATabbedRoomOwnsThePad() {
+        for (r in listOf("CHARACTER", "GROUPFINDER", "PROFESSIONS", "SOCIAL")) {
+            assertTrue("$r shows, the capture not named yet: off", RoomTabsPad.blocksHoldFire(r, holder = false, roomMode = false))
+            assertTrue("$r holding: off", RoomTabsPad.blocksHoldFire(r, holder = true, roomMode = false))
+            assertTrue("$r in a fight's room mode: off", RoomTabsPad.blocksHoldFire(r, holder = false, roomMode = true))
+        }
+        for (r in listOf("SPELLBOOK", "TALENTS", "MACROS")) {
+            assertTrue("$r holding: off", RoomTabsPad.blocksHoldFire(r, holder = true, roomMode = false))
+            assertTrue("$r in a fight's room mode: off", RoomTabsPad.blocksHoldFire(r, holder = false, roomMode = true))
+            assertFalse("$r not holding: the gate stays as it was", RoomTabsPad.blocksHoldFire(r, holder = false, roomMode = false))
+        }
+        // Home and the rooms that are not the rooms' tabs' keep the gates they had
+        for (r in listOf("HOME", "MAP", "QUESTS", "CONTROLLER", "BAGS", "CHAT", "CALENDAR", "SETTINGS"))
+            assertFalse(r, RoomTabsPad.blocksHoldFire(r, holder = true, roomMode = true))
+        // the gate is wired: HoldCast.gates asks SetupBridge.roomHoldsPad, the host answers with blocksHoldFire (weakly)
+        val dir = listOf(java.io.File("../companion"), java.io.File("companion")).first { it.isDirectory }
+        val src = { n: String -> java.io.File(dir, "app/src/main/java/com/jrees/wowcompanion/$n").readText() }
+        assertTrue(src("HoldCast.kt").substringAfter("var gates: () -> Boolean = {").substringBefore("\n    }").contains("SetupBridge.roomHoldsPad()"))
+        val host = src("CompanionHost.kt")
+        assertTrue(host.contains("SetupBridge.roomHoldsPad = { me.get()?.let"))
+        assertTrue(host.substringAfter("private fun roomHoldsPad(): Boolean {").substringBefore("\n    }").contains("RoomTabsPad.blocksHoldFire("))
+    }
 }

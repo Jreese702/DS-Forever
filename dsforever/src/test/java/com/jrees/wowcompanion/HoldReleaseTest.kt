@@ -144,9 +144,31 @@ class HoldReleaseTest {
         val src = java.io.File(listOf(java.io.File("../companion"), java.io.File("companion")).first { it.isDirectory },
             "app/src/main/java/com/jrees/wowcompanion/HoldCast.kt").readText()
         val g = src.substringAfter("var gates: () -> Boolean = {").substringBefore("\n    }")
-        assertTrue("the real gates: STREAM, party / box / loading, our pop-ups and wheels",
+        assertTrue("the real gates: STREAM, party / box / loading, our pop-ups and wheels, a tabbed room owning the pad",
             g.contains("PlayModes.current != PlayMode.STREAM") && g.contains("mapWhy != \"party\"") && g.contains("mapWhy != \"box\"")
-                && g.contains("mapWhy != \"loading\"") && g.contains("SetupBridge.holdsGamePad()"))
+                && g.contains("mapWhy != \"loading\"") && g.contains("SetupBridge.holdsGamePad()") && g.contains("SetupBridge.roomHoldsPad()"))
+    }
+
+    // 8b int/1533: the rooms' tabs on top - a tabbed room owning the pad closes the REAL gates like a pop-up (the release decides)
+    @Test fun aTabbedRoomOwningThePadClosesTheRealGates() {
+        val was = SetupBridge.roomHoldsPad
+        try {
+            HoldCast.gates = gates0
+            HoldCast.mapWhy = "on"
+            val e = HoldCast.release
+            SetupBridge.roomHoldsPad = { false }
+            val open = HoldCast.gates()
+            SetupBridge.roomHoldsPad = { true }
+            assertFalse("a room owns the pad: closed", HoldCast.gates())
+            e.reset(); e.cn = 3; e.ft = 17
+            e.edge(X, true, 1000); e.keep("PAD3", 5, 0, 3, 1100)
+            assertFalse("a room owns the pad: no fire, the release decides", e.due(1678)); assertTrue(xDown(e))
+            assertEquals(HoldRelease.GAVE_UP, e.state(X))
+            SetupBridge.roomHoldsPad = { throw IllegalStateException("the host went away") }
+            assertEquals("a throwing hook is no room", open, HoldCast.gates())
+        } finally {
+            SetupBridge.roomHoldsPad = was
+        }
     }
 
     // 9

@@ -102,6 +102,14 @@ object SetupBridge {
     @Volatile var roomShoulders: () -> Boolean = { false }
 
     /**
+     * HOLD TO CAST x THE ROOMS' TABS (int/1533): a tabbed room owns the pad now (RoomTabsPad.blocksHoldFire: one of the four rooms whose
+     * tabs moved on top shows, or another tabbed room shows holding the controller) - HoldCast's gates close as for our pop-ups and wheels:
+     * no kept press is let go for the game at its fire point, the release decides. Set by the companion's host (weakly); main thread, as
+     * the fire's timer
+     */
+    @Volatile var roomHoldsPad: () -> Boolean = { false }
+
+    /**
      * The launcher's key path, for every pad key ([keyCode], [down], [repeat] = the event's repeat count): true = a tabbed room owns
      * L / R now, so a bumper's press is held from the game (PopupHold.holdsKey's room). A bumper's press is DECIDED here, once
      * (RoomTabsPad.decide): the room's own delivery acts on it only when it was held for the room. Never throws into the key path

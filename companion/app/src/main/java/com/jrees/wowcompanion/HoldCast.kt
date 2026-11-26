@@ -432,10 +432,12 @@ object HoldCast {
     /** the holdmap's why ("on" / "box" / "party" / "loading" / "none") */
     @Volatile var mapWhy = ""
     /** the gates at the fire moment (true = open): not a PC game's presses, not the Bind box / Party mode / a loading screen, none of our
-     *  pop-ups or wheels holding the pad; tests set their own */
+     *  pop-ups or wheels holding the pad, no tabbed room owning it (int/1533: SetupBridge.roomHoldsPad, RoomTabsPad.blocksHoldFire);
+     *  tests set their own */
     var gates: () -> Boolean = {
         PlayModes.current != PlayMode.STREAM && mapWhy != "party" && mapWhy != "box" && mapWhy != "loading" &&
-            !runCatching { SetupBridge.holdsGamePad() }.getOrDefault(false)
+            !runCatching { SetupBridge.holdsGamePad() }.getOrDefault(false) &&
+            !runCatching { SetupBridge.roomHoldsPad() }.getOrDefault(false)
     }
     /** the fire's timer (main looper, uptime) - [HoldRelease.NEVER] = none; tests set their own */
     var schedule: (Long) -> Unit = { at -> post(at) }
