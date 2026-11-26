@@ -44,7 +44,8 @@ class OpenOnBottomSingleTest {
             .substringBefore("\n    }")
         // single screen mode first, through NPC's route; two screens: the old lines below it, untouched
         assertTrue(open.lines().drop(1).first { it.isNotBlank() }.trim() == "singleOpenOnBottom(cls, tag, setClosed)?.let { return it }")
-        assertTrue(open.contains("decor?.visibility = View.GONE"))
+        // (BottomSync's review, 2026-11-26: the two-screen hide goes through the window when it can - a parked one never shows - else the decor)
+        assertTrue(open.contains("if (!shell.hostHeld(on)) decor?.visibility = if (on) View.GONE else View.VISIBLE"))
         val single = host.substringAfter("private fun singleOpenOnBottom(").substringBefore("\n    }")
         assertTrue(single.contains("SingleNpc.bottomRoute(true, s.otherDisplay)"))
         assertTrue("never the top window's decor (its look is the decor)", !single.contains("decorView") && !single.contains("visibility ="))

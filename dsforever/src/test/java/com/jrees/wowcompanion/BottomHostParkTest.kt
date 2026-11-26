@@ -75,7 +75,7 @@ class BottomHostParkTest {
         val gate = create.indexOf("GameInput.gate.restart()")
         val replay = create.indexOf("for (m in DocMemory.replay()) handleMessage(m)")
         assertTrue("the documents replayed after the gate's new start (non-current) and before the reader starts", gate in 0 until replay)
-        assertTrue(create.contains("BottomSync.waitingGone(r, LauncherHooks.gameUp())"))
+        assertTrue(create.contains("BottomSync.waitingGone(r, LauncherHooks.gameUp(), SystemClock.elapsedRealtime())"))
         // the room by the adopt route: decided at the first CURRENT interact document, no entry tap
         val interact = host.substringAfter("            \"interact\" -> {").substringBefore("\n            \"cappad\"")
         assertTrue(interact.contains("BottomSync.roomAfter(want, holderNow, HomeBack::roomsOf)"))

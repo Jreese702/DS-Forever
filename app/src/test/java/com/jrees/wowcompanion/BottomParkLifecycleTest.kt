@@ -11,6 +11,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -45,8 +46,13 @@ import java.util.Calendar
 class BottomParkLifecycleTest {
     /** the launcher's MainActivity's DS Forever hooks, in its order (MainActivity.onCreate / onResume / onUserLeaveHint / onPause / onStop / onDestroy) */
     class LauncherHooksActivity : Activity() {
+        companion object {
+            /** the display this activity is made on (null = display 0): a reopen from the bottom grid makes it on the bottom screen */
+            var onDisplay: Int? = null
+        }
         /** Robolectric's activity context is not a display context (ContextImpl.getDisplay throws); on a device it is display 0 here */
-        @Suppress("DEPRECATION") override fun getDisplay(): Display = windowManager.defaultDisplay
+        @Suppress("DEPRECATION") override fun getDisplay(): Display =
+            onDisplay?.let { getSystemService(android.hardware.display.DisplayManager::class.java).getDisplay(it) } ?: windowManager.defaultDisplay
         override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); DsForeverScreen.begin(this) }
         override fun onResume() {
             super.onResume()
@@ -77,6 +83,7 @@ class BottomParkLifecycleTest {
     }
 
     @After fun down() {
+        LauncherHooksActivity.onDisplay = null
         runCatching { DsForeverScreen.closeAll() }
         GameInput.away = false
         root.deleteRecursively()
@@ -208,5 +215,159 @@ class BottomParkLifecycleTest {
         c.pause().stop().destroy()
         settle(300)
         assertEquals(hostsBefore - 1, CompanionHost.live)
+    }
+
+    private fun bottomDisplay(): Int {
+        val bottom = ShadowDisplayManager.addDisplay("w1240dp-h1080dp", Display.FLAG_PRESENTATION)
+        display(bottom) { it.type = 1; it.flags = Display.FLAG_PRESENTATION }
+        return bottom
+    }
+
+    private val sink = object : InputSink.Sink { override fun key(xKeycode: Int, down: Boolean) {}; override fun tap(fx: Float, fy: Float) {} }
+
+    private fun showRoom(h: CompanionHost, r: Room) =
+        h.javaClass.getDeclaredMethod("show", Room::class.java, Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(h, r, false, false, false)
+
+    /** Android closes the shown window by itself; only weak references come back (the test itself must hold neither) */
+    private fun cancelShown(): Pair<java.lang.ref.WeakReference<Any>, java.lang.ref.WeakReference<CompanionHost>> {
+        val w = shown()!!; val h = host()
+        (w as android.app.Dialog).cancel()
+        return java.lang.ref.WeakReference<Any>(w) to java.lang.ref.WeakReference(h)
+    }
+
+    /**
+     * THE REVIEW (2026-11-26): a browser page whose WebView cannot be made (a provider update) after the window came up must never take
+     * the window down - before, the open's catch abandoned a window that was already on screen (a dead host's views over the bottom
+     * launcher) and the watchdog stacked one more every 5 s. And a host that goes (Android's own close) leaves nothing of it on the main
+     * looper: its once-a-second loop was never taken off, so every rebuild kept the whole old host (its rooms, its map) alive and ticking.
+     */
+    @Test fun aFailedPageKeepsOneWindowAndAGoneHostStopsTicking() {
+        bottomDisplay()
+        val base = CompanionHost.live
+        val c = Robolectric.buildActivity(LauncherHooksActivity::class.java).create()
+        // the sign-in page wanted before the window opens (DsForeverScreen.browserPage), its view cannot be made
+        assertFalse(screen().browserPage { throw IllegalStateException("WebView provider updating") })
+        c.start().resume()                                    // the resume's show() opens the bottom window
+        settle(6_000) { shown() != null && tail(host()) != null }
+        settle(3_000)                                         // the watchdog's 250 / 500 / 1000 / 2000 ms looks, had it been asked
+        assertNotNull("the window stays up", shown())
+        assertTrue("shown", (shown() as android.app.Dialog).isShowing)
+        assertEquals("one host", base + 1, CompanionHost.live)
+        assertFalse("no reopen loop: ${BottomSync.line()}", BottomSync.line().contains("reopen looks"))
+        assertTrue(screen().browserPage(null))
+        screen().attachGame(sink)
+
+        // Android closes the window by itself: the new one comes, and NONE of the old host's repeating ticks stays on the main looper
+        // (the once-a-second loop reposted itself for ever: the whole old host alive and ticking - GameUi, Home, the pet's B - beside
+        // the new one). (Its views are still reachable from settings listener lists the app registers in many views and never removes:
+        // older than this branch, a task of its own; this checks the looper, the reviewer's path)
+        val (oldWin, oldHost) = cancelShown()
+        settle(3_000) { shown() != null && shown() !== oldWin.get() && tail(host()) != null }
+        assertEquals("never two hosts", base + 1, CompanionHost.live)
+        settle(2_500)                                         // past the 1 s loop's next turn
+        val old = oldHost.get()
+        if (old != null) {
+            @Suppress("UNCHECKED_CAST")
+            val ticks = old.javaClass.getDeclaredMethod("repeatingTicks").apply { isAccessible = true }.invoke(old) as List<Runnable>
+            val queued = queuedCallbacks()
+            val left = ticks.filter { t -> queued.any { it === t } }.map { t ->
+                old.javaClass.declaredFields.firstOrNull { f -> runCatching { f.isAccessible = true; f.get(old) === t }.getOrDefault(false) }?.name ?: t.javaClass.name
+            }
+            assertEquals("the old host's ticks left on the main looper", emptyList<String>(), left)
+        }
+        c.pause().stop().destroy()
+        settle(300)
+    }
+
+    /** every callback queued on the main looper now (its MessageQueue's list) */
+    private fun queuedCallbacks(): List<Any> {
+        val q = android.os.Looper.getMainLooper().queue
+        val head = android.os.MessageQueue::class.java.getDeclaredField("mMessages").apply { isAccessible = true }
+        val next = android.os.Message::class.java.getDeclaredField("next").apply { isAccessible = true }
+        val cb = android.os.Message::class.java.getDeclaredField("callback").apply { isAccessible = true }
+        val out = ArrayList<Any>()
+        var m = head.get(q) as android.os.Message?
+        var n = 0
+        while (m != null && n++ < 200_000) { cb.get(m)?.let { out += it }; m = next.get(m) as android.os.Message? }
+        return out
+    }
+
+    /**
+     * THE REVIEW (2026-11-26): an activity of ours over the bottom screen (Settings > import add-ons, the DLL picker, the microphone
+     * question: CompanionHost.openOnBottom hides the window until it closes). Closed while the launcher is away, its hook must never show
+     * the PARKED window over the Thor's bottom launcher; still open at the return, the window stays hidden behind it.
+     */
+    @Test fun anActivityOverTheBottomScreenClosingWhileAwayShowsNothing() {
+        bottomDisplay()
+        val c = Robolectric.buildActivity(LauncherHooksActivity::class.java).setup()
+        settle(6_000) { shown() != null && tail(host()) != null }
+        screen().attachGame(sink)
+        val win = (shown() as android.app.Dialog).window!!
+        val open = host().javaClass.getDeclaredMethod("openOnBottom", Class::class.java, String::class.java, Function1::class.java)
+            .apply { isAccessible = true }
+        var closed: (() -> Unit)? = null
+        val setClosed: ((() -> Unit)?) -> Unit = { closed = it }
+        assertTrue("up on the bottom screen", open.invoke(host(), VoiceAskActivity::class.java, "Voice", setClosed) as Boolean)
+        assertEquals("hidden behind it", View.GONE, win.decorView.visibility)
+        // away; the activity closes meanwhile (the user cancels it on the bottom screen)
+        c.get().onUserLeaveHint(); c.pause().stop()
+        settle(300)
+        closed!!.invoke()
+        settle(300)
+        assertEquals("parked: nothing shows over the bottom launcher", View.GONE, win.decorView.visibility)
+        c.start().resume()
+        settle(500)
+        assertEquals("back: shown (the activity is gone)", View.VISIBLE, win.decorView.visibility)
+
+        // again, but the activity still open at the return: it stays in view, the window hidden until it closes
+        assertTrue(open.invoke(host(), VoiceAskActivity::class.java, "Voice", setClosed) as Boolean)
+        c.get().onUserLeaveHint(); c.pause().stop(); settle(300)
+        c.start().resume(); settle(500)
+        assertEquals("the activity still over it: hidden", View.GONE, win.decorView.visibility)
+        closed!!.invoke(); settle(300)
+        assertEquals(View.VISIBLE, win.decorView.visibility)
+        c.pause().stop().destroy()
+        settle(300)
+    }
+
+    /**
+     * THE REVIEW (2026-11-26; device check D4): a reopen from the bottom grid with the game running. Android makes the launcher's
+     * activity again ON THE BOTTOM SCREEN (a configuration relaunch: no bottom window there, the game's display), its game screen
+     * stamps the game's start anew (XServerScreen -> attachGame), the move to the top screen makes it again (a second relaunch), and
+     * that one opens the bottom window. The snapshot the first activity kept must still be THIS game's: the new host opens restored
+     * (the reader on from its place, the room by the adopt rule), not on Home with the whole-log replay.
+     */
+    @Test fun aReopenFromTheBottomGridOpensRestored() {
+        val bottom = bottomDisplay()
+        write("""{"type":"quests","q":{"n":1}}""")
+        val c = Robolectric.buildActivity(LauncherHooksActivity::class.java).setup()
+        settle(6_000) { shown() != null && tail(host())?.let { offset(it) == log.length() } == true }
+        showRoom(host(), Room.SETTINGS)
+        screen().attachGame(sink)
+        LauncherHooks.gameStartSec = 1_000L                    // the game came up long ago (its stamp is not this second's)
+        // the minimize; the add-on writes on while away
+        c.get().onUserLeaveHint(); c.pause().stop(); settle(300)
+        write("""{"type":"quests","q":{"n":2}}""")
+        // the reopen from the bottom grid: made again on the bottom screen (the game's display now: no bottom window), its game screen up
+        LauncherHooksActivity.onDisplay = bottom
+        c.recreate()
+        c.start().resume(); settle(500)
+        screen().attachGame(sink)
+        assertNull("no bottom window while the launcher is on the bottom screen", shown())
+        // the move to the top screen: made again there, and the bottom window opens
+        LauncherHooksActivity.onDisplay = null
+        c.recreate()
+        settle(6_000) { shown() != null && tail(host()) != null }
+        screen().attachGame(sink)
+        assertTrue("rebuilt restored: ${BottomSync.line()}", BottomSync.line().contains("a configuration relaunch"))
+        val t2 = tail(host())!!
+        settle(2_000) { offset(t2) == log.length() }
+        assertEquals(log.length(), offset(t2))
+        write("""{"type":"interact","holder":"pad:settings"}""")
+        settle(3_000) { room(host()) == Room.SETTINGS }
+        assertEquals("the room adopted (the game still holds it)", Room.SETTINGS, room(host()))
+        c.pause().stop().destroy()
+        settle(300)
     }
 }

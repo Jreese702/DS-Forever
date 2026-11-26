@@ -66,10 +66,10 @@ class BottomSyncTest {
     }
 
     @Test fun theWaitingScreenStartsGoneOnlyInTheWorld() {
-        assertTrue(BottomSync.waitingGone(snap(inWorld = true), gameUp = true))
-        assertFalse(BottomSync.waitingGone(snap(inWorld = false), gameUp = true))
-        assertFalse(BottomSync.waitingGone(snap(inWorld = true), gameUp = false))
-        assertFalse(BottomSync.waitingGone(null, gameUp = true))
+        assertTrue(BottomSync.waitingGone(snap(inWorld = true), gameUp = true, now = 2_000L))
+        assertFalse(BottomSync.waitingGone(snap(inWorld = false), gameUp = true, now = 2_000L))
+        assertFalse(BottomSync.waitingGone(snap(inWorld = true), gameUp = false, now = 2_000L))
+        assertFalse(BottomSync.waitingGone(null, gameUp = true, now = 2_000L))
         assertTrue(BottomSync.inWorld(lastCurrentAt = 10_000L, now = 10_000L + BottomSync.IN_WORLD_MS - 1))
         assertFalse(BottomSync.inWorld(lastCurrentAt = 10_000L, now = 10_000L + BottomSync.IN_WORLD_MS))
         assertFalse(BottomSync.inWorld(lastCurrentAt = 0L, now = 5L))
@@ -77,9 +77,9 @@ class BottomSyncTest {
 
     @Test fun theReportSaysThePath() {
         BottomSync.parked(); BottomSync.parked()
+        BottomSync.rebuilt("closed by Android")
         BottomSync.back(awayMs = 60_000L, workMs = 3L)
         BottomSync.caughtUp(240L)
-        BottomSync.rebuilt("closed by Android")
         BottomSync.released()
         BottomSync.reopenLook()
         val l = BottomSync.line()

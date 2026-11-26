@@ -49,6 +49,9 @@ interface HostShell {
     /** THE BOTTOM SCREEN COMES STRAIGHT BACK (BottomSync, 2026-11-25): the launcher's bottom windows hand a host made again after a
      *  real rebuild the old host's snapshot (fresh, this game run), null = none (the app's own MainActivity, Swap screens: unchanged) */
     fun hostRestore(): BottomSync.Snapshot? = null
+    /** one of our activities is over this window's display ([on]; CompanionHost.openOnBottom): the window hidden until it closes, by the
+     *  window itself (the bottom Presentation: never shown while parked); false = not handled (the host sets its decor as before) */
+    fun hostHeld(on: Boolean): Boolean = false
 }
 
 /**
@@ -102,7 +105,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  when it is "room" (Interact's doc.fightMode); it replaces SPEC_COMBAT 9 / 10's per-room enter tap and show()'s inline leave */
     private val padOwner = PadOwnerSync()
     private val padOwnerTick = object : Runnable {
-        override fun run() { padOwnerStep(); if (padOwner.mode != null) ui.postDelayed(this, PAD_OWNER_TICK_MS) }
+        override fun run() { if (shell.hostGone()) return; padOwnerStep(); if (padOwner.mode != null) ui.postDelayed(this, PAD_OWNER_TICK_MS) }
     }
     private lateinit var gameMenuLock: GameMenuLock
     /** the capture ids of the room the app last left by its own show(), and when (uptime ms): HomeBack.isOwnLeave */
@@ -276,6 +279,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** issues #243 #262 #263 #264: a world map built while this host is up is read by the Map room then (it read the art at start) */
     private val mapArtDone: (String) -> Unit = { id ->
         if (id == "worldmap") ui.post { if (::worldMapRoom.isInitialized) worldMapRoom.reloadArtIfMissing() }
+    }
+    /** the art step's state in DiagLog (named: the review - an anonymous one was never let go, and held every host made again) */
+    private val artStateLog: (ArtHarvest.State) -> Unit = { s ->
+        val kind = s.javaClass.simpleName + ((s as? ArtHarvest.State.Failed)?.let { ": ${it.why}" } ?: "")
+        if (kind != lastArtKind) { lastArtKind = kind; DiagLog.event("art", kind) }
     }
     private val iconArtState: (ArtHarvest.State) -> Unit = { state ->
         ui.post {
@@ -510,12 +518,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             (getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.displayId
         }.getOrNull()
         val decor = shell.hostWindow()?.decorView
-        setClosed { ui.post { decor?.visibility = View.VISIBLE; setClosed(null) } }
+        // the review: through the window when it can (the bottom Presentation: a PARKED one stays hidden whatever the activity does, and
+        // its return keeps it hidden while the activity is still over it); else this window's decor as before
+        fun hide(on: Boolean) { if (!shell.hostHeld(on)) decor?.visibility = if (on) View.GONE else View.VISIBLE }
+        setClosed { ui.post { hide(false); setClosed(null) } }
         val onBottom = displayId != null && runCatching {
             startActivity(i, android.app.ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle())
         }.onFailure { android.util.Log.w(tag, "${cls.simpleName} on display $displayId: ${it.message}") }.isSuccess
         if (onBottom) {
-            decor?.visibility = View.GONE
+            hide(true)
             android.util.Log.i(tag, "${cls.simpleName} on display $displayId; the bottom window hidden until it closes")
         } else {
             setClosed(null)
@@ -573,11 +584,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         GameInput.away = false
         DocMemory.on = LauncherHooks.pkg != null && PlayModes.current != PlayMode.STREAM
         DocMemory.shared.capBytes = if (runCatching { DeviceTier.light8() }.getOrDefault(false)) DocMemory.CAP_LIGHT8 else DocMemory.CAP_BYTES
-        restored = shell.hostRestore()
-        ArtHarvest.onState { s ->
-            val kind = s.javaClass.simpleName + ((s as? ArtHarvest.State.Failed)?.let { ": ${it.why}" } ?: "")
-            if (kind != lastArtKind) { lastArtKind = kind; DiagLog.event("art", kind) }
-        }
+        MemWatch.source8("docmemory") { DocMemory.shared.bytes }           // the review: on Light 8's memory line (D5 sees it)
+        // (the review: every launcher host after the run's first is counted as a rebuild in the report, with or without a snapshot)
+        restored = shell.hostRestore(); if (LauncherHooks.pkg != null) BottomSync.hostMade(restored)
+        ArtHarvest.onState(artStateLog)
         ArtHarvest.init(this)                     // the harvested art folder, before any view reads a picture (the art harvest, phase 1)
         ArtHarvest.onState(iconArtState)
         // interiors (Track C): the optional background bake starts with the companion (if it is not running already: it outlives this
@@ -1583,10 +1593,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             var n = 0
             for (m in DocMemory.replay()) handleMessage(m).also { n++ }
             resumeAt = r.place
-            if (BottomSync.waitingGone(r, LauncherHooks.gameUp())) startView.visibility = View.GONE
+            if (BottomSync.waitingGone(r, LauncherHooks.gameUp(), SystemClock.elapsedRealtime())) startView.visibility = View.GONE
             restoreRoom = r.room.takeIf { it != Room.HOME.name }
             catchUpFrom = SystemClock.uptimeMillis(); catchUpWhat = "the rebuild"; catchUpByte = r.place?.offset ?: -1L
-            BottomSync.rebuilt(r.why)
             DiagLog.event("app", "bottom screen rebuilt (${r.why}): $n documents replayed in ${SystemClock.uptimeMillis() - t0} ms, the log " +
                 (r.place?.let { "read on from byte ${it.offset}" } ?: "read from the start") + ", room ${r.room.lowercase()}" +
                 if (restoreRoom != null) " if the game still has its window open" else "")
@@ -1623,6 +1632,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the host's once-a-second loop (named: a park stops it, the return starts it again; [repeatingTicks]) */
     private val secondTick = object : Runnable {
         override fun run() {
+            if (shell.hostGone()) return  // the review: a host that went is never kept alive (and ticking) by its own loop
             // Home holds the same map (compact), so it is fed there too
             if (room == Room.MAP || room == Room.HOME) mapView.update(lastMap,
                 if (lastMapAt == 0L) 0 else System.currentTimeMillis() - lastMapAt)
@@ -1649,6 +1659,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
 
     /** [gameHidden]: a park (the launcher away or the screen off: nobody sees the game) - the game's own UI is left as it is */
     fun onStop(gameHidden: Boolean = false) {
+        // a PARKED host torn down for good (a memory release, Android's close while away, a move or close, a relaunch): the park's hold
+        // goes first, so this stop gives the game's own UI back as a real stop does (the review: it was swallowed by the hold)
+        if (!gameHidden) unholdPark()
         Voice.stopAll()             // no recognizer keeps the microphone while the app is away (a page waiting on Android's question stays)
         if (unpacking) return
         // the sign-in prompt never stays open behind the app's back (its fields are cleared; the review)
@@ -1712,6 +1725,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         tapHoldBefore = GameUi.tapHold(); GameUi.holdTaps(Long.MAX_VALUE)
         GameInput.away = true
         IndoorSchedulerStep.companionGone()
+        if (::chatView.isInitialized) chatView.pauseWatch()               // the review: Chat's twice-a-second watch stops too
         catchUpFrom = 0L
         BottomSync.parked()
         DiagLog.event("app", "bottom screen kept while away (room ${room.name.lowercase()}, ${parkTicks.size} ticks stopped; $why)")
@@ -1734,6 +1748,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         tail?.resume()
         for (r in parkTicks) { ui.removeCallbacks(r); ui.post(r) }
         parkTicks = emptyList()
+        if (::chatView.isInitialized) chatView.resumeWatch()
         onStart()
         catchUpFrom = SystemClock.uptimeMillis(); catchUpWhat = "the return"; catchUpByte = tail?.place()?.offset ?: -1L
         val work = SystemClock.uptimeMillis() - t0
@@ -1741,11 +1756,34 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         DiagLog.event("app", "bottom screen shown again after ${awayMs / 1000} s away, $work ms (room ${room.name.lowercase()}; $why)")
     }
 
-    /** what a host made again after this one needs (BottomSync; fields only, inside the launcher only) */
+    /** the park's hold and away let go (the return's own way is [unpark]; this is a parked host's teardown: [onStop], [onDestroy]) */
+    private fun unholdPark() {
+        if (parkedAt == 0L) return
+        parkedAt = 0L
+        GameUi.holdTaps(tapHoldBefore)
+        GameInput.away = false
+    }
+
+    /**
+     * what a host made again after this one needs (BottomSync; fields only, inside the launcher only). The review: elapsedRealtime (a
+     * long sleep counts against the restore's age), and a restored host that has not settled yet (no current document since it came)
+     * carries its restore forward ([BottomSync.snapshotOf]: the room waiting for the adopt rule, in the world, the reader's place)
+     */
     fun snapshot(why: String): BottomSync.Snapshot? {
         if (LauncherHooks.pkg == null || unpacking) return null
-        return BottomSync.Snapshot(SystemClock.uptimeMillis(), LauncherHooks.gameStartSec, room.name,
-            BottomSync.inWorld(docLiveAt, System.currentTimeMillis()), null, why)
+        return BottomSync.snapshotOf(restored, docLiveAt > 0L, room.name, restoreRoom, BottomSync.inWorld(docLiveAt, System.currentTimeMillis()),
+            tail?.place(), SystemClock.elapsedRealtime(), LauncherHooks.gameStartSec, why)
+    }
+
+    /**
+     * a host whose window never came up (the window manager refused the display after its onCreate: HostPresentation / TopWindow
+     * abandon). The review: the snapshot it took goes back for the watchdog's next try (never used up by a failed open), uncounted; then
+     * the old teardown. Its gate restarted at its onCreate and no document reached it, so its stop taps nothing on the top screen
+     */
+    fun abandon() {
+        if (LauncherHooks.pkg != null) BottomSync.hostAbandoned(restored)
+        restored = null
+        onStop(); onDestroy()
     }
 
     /** [adopt] (BottomSync's rebuild, Q3): the game still holds the controller for [r] with its window open - shown with no entry tap */
@@ -4769,8 +4807,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // each message carries WHERE it came from (the settings fix 2026-11-18): a PC document handled after a switch back to Local
         // must never be taken for the Thor's own (before 1489 the PC's svkeep replaced the Thor's kept copy whole)
         // BottomSync: inside the launcher the latest state documents are kept on this reader thread, before the hand-off (DocMemory)
-        val onMessage: (org.json.JSONObject) -> Unit = { msg -> if (streaming) runCatching { msg.put(SRC_KEY, SRC_PC) } else DocMemory.note(msg); ui.post { handleMessage(msg) } }
-        val onStatus: (String) -> Unit = { s -> ui.post {
+        // (the review: only with the game up - the start screens read the last session's log from byte 0, another character's even)
+        val onMessage: (org.json.JSONObject) -> Unit = { msg -> if (streaming) runCatching { msg.put(SRC_KEY, SRC_PC) } else if (LauncherHooks.gameUp()) DocMemory.note(msg); ui.post { handleMessage(msg) } }
+        // (DocMemory: a truncated log - the client restarted - keeps nothing of the old client's documents; the reader thread, first)
+        val onStatus: (String) -> Unit = { s -> if (!streaming) DocMemory.readerSaid(s); ui.post {
             status.text = s.take(110)
             // the other game started: is IT set up for the companion?
             // (not inside the launcher: there the second candidate is the same game's private log, never another game)
@@ -4853,8 +4893,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     fun onDestroy() {
         live--
         // BottomSync: a parked host that goes (a memory release, Android's close while away) never leaves the taps held
-        if (parkedAt != 0L) { parkedAt = 0L; GameUi.holdTaps(tapHoldBefore) }
+        unholdPark()
         GameInput.away = false
+        // the review: every repeating tick off the main looper (the once-a-second loop reposted itself for ever: each host made again kept
+        // the old one - its rooms, its map - alive and ticking)
+        for (r in repeatingTicks()) ui.removeCallbacks(r)
         Voice.stopAll()
         ui.removeCallbacks(singlePoll)
         singlePlayEnd()
@@ -4863,6 +4906,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ui.removeCallbacks(guardTick); guardReader?.stop(); guardReader = null
         ui.removeCallbacks(silenceTick)
         ArtHarvest.offState(iconArtState)
+        ArtHarvest.offState(artStateLog)
         ArtHarvest.offStepDone(mapArtDone)
         // #568 / #573: NOT a stop - this host goes whenever the launcher goes to the background or the screen turns off, the only
         // times the indoor maps may build after a game; the step lets go by itself when the game starts (IndoorSchedulerStep.on)

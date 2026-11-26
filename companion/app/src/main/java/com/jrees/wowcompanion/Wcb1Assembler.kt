@@ -35,6 +35,19 @@ class Wcb1Assembler(
     /** documents waiting for more parts (for tests and the status line) */
     fun pending(): Int = frags.size
 
+    /**
+     * THE BOTTOM SCREEN COMES STRAIGHT BACK (the review, 2026-11-26): a rebuilt host's reader goes on from the old one's place in the log
+     * (LogTail.Place), and the add-on's 48 KiB flushes can split an n-part document (quests, spells, talents, full) across that place -
+     * the parts already read are handed over ([pendingParts], a copy) with the sequence ([seqNow]) and taken by the new reader's
+     * assembler ([adopt]), so the rest joins them (and a real gap is still told)
+     */
+    fun pendingParts(): Map<Int, List<String?>> = if (frags.isEmpty()) emptyMap() else frags.mapValues { it.value.toList() }
+    val seqNow: Int get() = lastSeq
+    fun adopt(parts: Map<Int, List<String?>>, seq: Int) {
+        for ((k, v) in parts) frags[k] = v.toMutableList()
+        lastSeq = seq
+    }
+
     fun line(rawIn: String) {
         // The client is a Windows app (under Wine on the Thor, natively on the PC), so General.log uses CRLF. Splitting on '\n'
         // leaves a '\r' on the tail of every line -- invisible, and it lands exactly at each fragment boundary, corrupting the

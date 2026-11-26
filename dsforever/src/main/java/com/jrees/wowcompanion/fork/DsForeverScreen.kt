@@ -121,7 +121,7 @@ class DsForeverScreen(private val context: Context) {
         runCatching { context.applicationContext.registerComponentCallbacks(trims) }
         dm?.registerDisplayListener(listener, main)
         // a configuration relaunch with the game running (a reopen from the bottom grid, F5): the bottom screen back sooner, restored
-        val fresh = com.jrees.wowcompanion.BottomSync.fresh(com.jrees.wowcompanion.BottomSync.last, android.os.SystemClock.uptimeMillis(),
+        val fresh = com.jrees.wowcompanion.BottomSync.fresh(com.jrees.wowcompanion.BottomSync.last, android.os.SystemClock.elapsedRealtime(),
             LauncherHooks.gameStartSec)
         main.postDelayed({ update() }, showAfter(fresh, LauncherHooks.gameStartSec > 0L))
         Log.i(TAG, "start (launcher on display ${gameDisplay()})")
@@ -134,6 +134,8 @@ class DsForeverScreen(private val context: Context) {
     fun stop() {
         // BottomSync: a configuration relaunch (a reopen from the bottom grid moved the activity) - the new activity's host opens restored
         if (relaunching) keepSnapshot(shown, "a configuration relaunch")
+        // (the review: the new activity's game screen stamps the game's start anew - the same game goes on, the snapshot stays its own)
+        if (relaunching && gameOn) com.jrees.wowcompanion.BottomSync.relaunching(LauncherHooks.gameStartSec, android.os.SystemClock.elapsedRealtime())
         detachGame()
         running = false
         main.removeCallbacksAndMessages(null)
@@ -155,6 +157,10 @@ class DsForeverScreen(private val context: Context) {
         val route = TapSinks.wire(PlayMode.LOCAL, sink, null)
         gameOn = true
         LauncherHooks.gameStartSec = System.currentTimeMillis() / 1000
+        // BottomSync (the review): a configuration relaunch's game screen is the SAME game - the snapshot the old activity kept is re-keyed
+        // to this stamp; a new game run keeps no document of before (DocMemory)
+        if (!com.jrees.wowcompanion.BottomSync.attached(LauncherHooks.gameStartSec, android.os.SystemClock.elapsedRealtime()))
+            com.jrees.wowcompanion.DocMemory.shared.clear()
         lastRx = -1L; note("game screen up"); main.removeCallbacks(traffic); main.post(traffic)
         com.jrees.wowcompanion.GameLife.started()             // issue #12: the game's life in DS Forever's own log
         runCatching { com.jrees.wowcompanion.IndoorKeepAlive.gameStarting() }   // issue 568: never the indoor maps' service beside a game
@@ -409,7 +415,7 @@ class DsForeverScreen(private val context: Context) {
     private fun openBottom(target: Display, game: Int) {
         var made: HostPresentation? = null
         shown = try {
-            HostPresentation(context, target, { rebuild() }, { w, why -> lost(w, why) }).also { made = it; it.show(); it.board(boardWanted); pageWanted?.let { m -> it.page(m) } }
+            HostPresentation(context, target, { rebuild() }, { w, why -> lost(w, why) }).also { made = it; it.show() }
         } catch (t: Throwable) {
             made?.abandon()                                         // its onCreate made a host before the window manager refused: never two
             Log.w(TAG, "presentation: ${t.message}", t)
@@ -417,6 +423,9 @@ class DsForeverScreen(private val context: Context) {
                 com.jrees.wowcompanion.DiagLog.event("app", "bottom screen failed to open on display ${target.displayId}: ${t.javaClass.simpleName}")   // #147
             null
         }
+        // the review: the keyboard and the browser page on their own - a page that cannot be made (a WebView provider update) never takes
+        // the window down (the open's catch left a dead host's window on screen, and the watchdog stacked one more every 5 s)
+        shown?.let { w -> addOns(w) }
         // TapBridge needs to know which display is OURS, so a read of display 0 that answers this
         // screen's size can be told apart from an honest one (it used to guess by panel size)
         com.jrees.wowcompanion.TapBridge.companionDisplayId =
@@ -542,12 +551,25 @@ class DsForeverScreen(private val context: Context) {
     private fun openTop(): BottomWindow? {
         val a = context as? Activity ?: return null
         var made: TopWindow? = null
-        return try { TopWindow(a, this).also { made = it; it.show(); it.board(boardWanted); pageWanted?.let { m -> it.page(m) }; topOpens = 0 } } catch (t: Throwable) {
+        val w = try { TopWindow(a, this).also { made = it; it.show(); topOpens = 0 } } catch (t: Throwable) {
             made?.abandon()                                         // its host goes with it (never two)
             Log.w(TAG, "top window: ${t.message}", t)
             com.jrees.wowcompanion.DiagLog.event("app", "one screen window failed to open: ${t.javaClass.simpleName}")
             reopenSoon("the one screen window failed to open", top = true)
             null
+        }
+        w?.let { addOns(it) }                                       // (the review: never inside the open's try, as the bottom one)
+        return w
+    }
+
+    /** what a new window gets after it is up (Streaming's keyboard, the browser page), each on its own: a failure leaves the window up */
+    private fun addOns(w: BottomWindow) {
+        runCatching { w.board(boardWanted) }.onFailure { Log.w(TAG, "the window's keyboard: ${it.message}", it) }
+        pageWanted?.let { m ->
+            runCatching { w.page(m) }.onFailure {
+                Log.w(TAG, "the window's sign-in page: ${it.message}", it)
+                com.jrees.wowcompanion.DiagLog.event("app", "the sign-in page could not be made: ${it.javaClass.simpleName}")
+            }
         }
     }
 
@@ -1034,6 +1056,14 @@ class DsForeverScreen(private val context: Context) {
             else -> false
         }
 
+        /**
+         * F5's one look again (the review, 2026-11-26): only while that activity is still up off the game's display with its DS Forever
+         * shown ([shownThere]: started and not hidden) - the user may have gone Home or slept meanwhile, and a move then brought the game
+         * back to the front against it
+         */
+        fun moveAgainWanted(finishing: Boolean, destroyed: Boolean, display: Int?, target: Int, shownThere: Boolean): Boolean =
+            !finishing && !destroyed && display != target && shownThere
+
         /** F6: a Swap screens close counts against the start guard only when it was Android's (or the ask never came), never ours */
         fun swapStartCounts(closedByUs: Boolean): Boolean = !closedByUs
 
@@ -1199,7 +1229,10 @@ class DsForeverScreen(private val context: Context) {
             if (move == Move.NONE && d != target && (gameRunning || up) && !movedAgain) {
                 movedAgain = true
                 Handler(Looper.getMainLooper()).postDelayed({
-                    if (!activity.isFinishing && !activity.isDestroyed && activity.display?.displayId != target) moveToTop(activity, gameRunning)
+                    // the review: never after the user left again (Home, the lid): a move then brought the game back over their Home press
+                    val there = current?.takeIf { it.context === activity }?.let { it.running && !it.hidden } == true
+                    if (moveAgainWanted(activity.isFinishing, activity.isDestroyed, activity.display?.displayId, target, there)) moveToTop(activity, gameRunning)
+                    else movedAgain = false
                 }, (MOVE_GUARD_MS - (now - lastMoveAt)).coerceIn(0L, MOVE_GUARD_MS) + 100L)
             }
             if (move == Move.NONE) return false
@@ -1369,11 +1402,24 @@ private class HostPresentation(outer: Context, display: Display, private val onR
     override fun unpark(why: String) {
         if (!parkedNow || !up) return
         parkedNow = false
-        window?.decorView?.visibility = View.VISIBLE
+        // (the review: an activity of ours still over this display - openOnBottom - keeps the window hidden until it closes)
+        window?.decorView?.visibility = if (held) View.GONE else View.VISIBLE
         window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         host?.unpark(why)
         if (pageSlot.up) typer.focusable(true)
+    }
+
+    /**
+     * one of our activities over this display (CompanionHost.openOnBottom: the import picker, the DLL picker, the microphone question):
+     * the window hidden until it closes. The review: its close while PARKED never shows the window over the Thor's bottom launcher (the
+     * return shows it), and a return while it is still open keeps the window hidden behind it ([unpark])
+     */
+    private var held = false
+    override fun hostHeld(on: Boolean): Boolean {
+        held = on
+        if (up && !parkedNow) window?.decorView?.visibility = if (on) View.GONE else View.VISIBLE
+        return true
     }
 
     /** Streaming's Battle.net keyboard over the whole screen */
@@ -1453,11 +1499,14 @@ private class HostPresentation(outer: Context, display: Display, private val onR
         super.onStop()
     }
 
-    /** a [show] that failed after onCreate (the window manager refused the display): its host goes, never a second one beside the next */
+    /**
+     * a [show] that failed after onCreate (the window manager refused the display): its host goes, never a second one beside the next;
+     * the snapshot it took goes back first (the review: CompanionHost.abandon - a failed open never uses up the restore)
+     */
     fun abandon() {
         closing = true; up = false
         pageSlot.drop()
-        host?.let { it.onStop(); it.onDestroy() }
+        runCatching { host?.abandon() }.onFailure { Log.w(DsForeverScreen.TAG, "the abandoned window's host: ${it.message}", it) }
         host = null
     }
 
@@ -1468,7 +1517,7 @@ private class HostPresentation(outer: Context, display: Display, private val onR
 
     override fun setHostContent(v: View) = setContentView(v)
     override fun hostGone(): Boolean = !up
-    override fun hostRestore() = com.jrees.wowcompanion.BottomSync.take(android.os.SystemClock.uptimeMillis(), com.jrees.wowcompanion.LauncherHooks.gameStartSec)
+    override fun hostRestore() = com.jrees.wowcompanion.BottomSync.take(android.os.SystemClock.elapsedRealtime(), com.jrees.wowcompanion.LauncherHooks.gameStartSec)
     override fun recreateHost() = onRecreate()
     override fun hostWindow() = window
     override fun hostIntent(): Intent? = null

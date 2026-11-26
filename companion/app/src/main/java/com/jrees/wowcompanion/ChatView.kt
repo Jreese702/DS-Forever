@@ -159,9 +159,13 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             sendEnabled = GameInput.live()
             stream.tick()
             if (noticeUntil in 1..System.currentTimeMillis()) { noticeUntil = 0; invalidate() }
-            if (isAttachedToWindow) postDelayed(this, 500)
+            if (isAttachedToWindow && !watchPaused) postDelayed(this, 500)
         }
     }
+    /** the bottom screen kept while away (CompanionHost.park, the review): the watch stops until [resumeWatch] (its window stays added) */
+    private var watchPaused = false
+    fun pauseWatch() { watchPaused = true; removeCallbacks(watch) }
+    fun resumeWatch() { watchPaused = false; if (isAttachedToWindow) { removeCallbacks(watch); post(watch) } }
 
     // ---- the controller
     private val pad = ChatPad()
@@ -463,7 +467,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         fonts()
         padField()
         removeCallbacks(watch)
-        post(watch)
+        if (!watchPaused) post(watch)
     }
 
     override fun onDetachedFromWindow() {

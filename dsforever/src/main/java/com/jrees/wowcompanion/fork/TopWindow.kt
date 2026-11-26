@@ -106,6 +106,9 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         else { showDecor(true); window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE); touchNow = true }
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         host?.unpark(why)
+        // the review: the browser sign-in page open at the park takes the keys again (the park made the window not focusable, and a touch
+        // on the page never gives it back: BottomPageSlot), as the bottom Presentation's return does
+        if (pageSlot.up) typer.focusable(true)
     }
 
     /** Streaming's Battle.net keyboard over the whole screen (as the Presentation's) */
@@ -122,6 +125,7 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         pageSlot.show(context, make)
         if (pageSlot.up) showDecor(true)                            // the page is over everything: the window shows while it is up
         else lookNow?.let { l -> lookNow = null; look(l) }
+        if (parkedNow && typing) typer.focusable(false)          // parked: never focusable (the page takes the keys at the return)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -221,11 +225,12 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         super.onStop()
     }
 
-    /** a [show] that failed after onCreate: its host goes with it (never a second one beside the next) */
+    /** a [show] that failed after onCreate: its host goes with it (never a second one beside the next), its snapshot given back first
+     *  (CompanionHost.abandon: the review) */
     fun abandon() {
         closing = true; up = false
         pageSlot.drop()
-        host?.let { it.onStop(); it.onDestroy() }
+        runCatching { host?.abandon() }.onFailure { android.util.Log.w(DsForeverScreen.TAG, "the abandoned top window's host: ${it.message}", it) }
         host = null
         main.removeCallbacksAndMessages(null)
         for (s in subs.values) s.close()
@@ -240,7 +245,7 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     override fun hostIntent(): Intent? = null
     override fun startHostActivity(i: Intent) = context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     override fun hostSingle(): SingleShell = this
-    override fun hostRestore() = com.jrees.wowcompanion.BottomSync.take(android.os.SystemClock.uptimeMillis(), com.jrees.wowcompanion.LauncherHooks.gameStartSec)
+    override fun hostRestore() = com.jrees.wowcompanion.BottomSync.take(android.os.SystemClock.elapsedRealtime(), com.jrees.wowcompanion.LauncherHooks.gameStartSec)
 
     // ---- SingleShell
 

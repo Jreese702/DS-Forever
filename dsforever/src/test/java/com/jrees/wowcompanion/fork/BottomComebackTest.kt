@@ -286,7 +286,8 @@ class BottomComebackTest {
         assertTrue(park.contains("if (typing) typer.focusable(false)"))
         assertTrue(park.contains("host?.park("))
         val unpark = p.substringAfter("override fun unpark(").substringBefore("\n    }\n")
-        assertTrue(unpark.contains("decorView?.visibility = View.VISIBLE") && unpark.contains("clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)"))
+        // (the review: hidden still while an activity of ours is over the display - openOnBottom)
+        assertTrue(unpark.contains("decorView?.visibility = if (held) View.GONE else View.VISIBLE") && unpark.contains("clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)"))
         assertTrue("focusable again only for an open browser page", unpark.contains("if (pageSlot.up) typer.focusable(true)"))
         assertFalse("nothing requests focus", (park + unpark).contains("requestFocus"))
     }

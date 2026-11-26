@@ -15,10 +15,44 @@ package com.jrees.wowcompanion
  */
 object BottomSync {
     /**
-     * [at] uptime ms; [gameRun] LauncherHooks.gameStartSec (another game run = no restore); [room] a Room's name; [inWorld] a current
-     * document in the last [IN_WORLD_MS]; [place] the old reader's place (joined at that host's end, [place]); [why] for the log
+     * [at] SystemClock.elapsedRealtime ms (the review: it counts deep sleep - uptime stops while the Thor sleeps, so a nine-hour sleep read
+     * as seconds); [gameRun] LauncherHooks.gameStartSec (another game run = no restore; a configuration relaunch keeps it: [attached]);
+     * [room] a Room's name; [inWorld] a current document in the last [IN_WORLD_MS]; [place] the old reader's place (joined at that host's
+     * end, [place]); [why] for the log
      */
     data class Snapshot(val at: Long, val gameRun: Long, val room: String, val inWorld: Boolean, val place: LogTail.Place?, val why: String)
+
+    /**
+     * A HOST'S SNAPSHOT (CompanionHost.snapshot, pure). The review: a host that was itself restored and has not settled yet ([settled]
+     * false: no current document since it came) carries the restore forward - its room still waiting for the adopt rule ([restoreRoom]),
+     * whether the game was in the world, the old snapshot's time, and the reader's place when its own reader has none yet - so a second
+     * rebuild soon after the first (Android closing the window again at a wake, a move, the verify) never turns the restore into Home, the
+     * waiting screen and the whole-log replay. Settled: what the host shows now ([room], [inWorldNow], its reader's [place])
+     */
+    fun snapshotOf(restored: Snapshot?, settled: Boolean, room: String, restoreRoom: String?, inWorldNow: Boolean, place: LogTail.Place?,
+                   now: Long, gameRun: Long, why: String): Snapshot {
+        val r = restored?.takeIf { !settled }
+        return Snapshot(r?.at ?: now, gameRun, restoreRoom ?: room, r?.inWorld ?: inWorldNow, place ?: r?.place, why)
+    }
+
+    /**
+     * THE GAME RUN ACROSS A CONFIGURATION RELAUNCH (the review: a reopen from the bottom grid moves the activity, Android makes it again,
+     * and the new activity's game screen stamps LauncherHooks.gameStartSec anew - the snapshot the old activity kept was then another
+     * run's and was thrown away). DsForeverScreen.stop marks the relaunch with the game running ([relaunching]: its run, when); the next
+     * game screen ([attached], within [RELAUNCH_MS]) is the SAME game: the kept snapshot is re-keyed to the new stamp. True = that same
+     * game (nothing of it is dropped); false = a new run
+     */
+    const val RELAUNCH_MS = 30_000L
+    @Volatile private var relaunchRun = 0L
+    @Volatile private var relaunchAt = 0L
+    fun relaunching(run: Long, now: Long) { relaunchRun = run; relaunchAt = now }
+    fun attached(run: Long, now: Long): Boolean {
+        val was = relaunchRun; val at = relaunchAt
+        relaunchRun = 0L; relaunchAt = 0L
+        if (was <= 0L || now - at !in 0L until RELAUNCH_MS) return false
+        last?.let { s -> if (s.gameRun == was) last = s.copy(gameRun = run) }
+        return true
+    }
 
     /** a snapshot older than this restores nothing (the room, the waiting screen) */
     const val RESTORE_MAX_MS = 30 * 60_000L
@@ -55,8 +89,12 @@ object BottomSync {
     fun roomAfter(saved: String?, holder: String, roomsOf: (String) -> Set<String>): String? =
         saved?.takeIf { it != "HOME" && holder.isNotEmpty() && it in roomsOf(holder) }
 
-    /** the waiting screen starts GONE on a restore only when the game was in the world and is still up (its own rules bring it back) */
-    fun waitingGone(s: Snapshot?, gameUp: Boolean): Boolean = s != null && s.inWorld && gameUp
+    /**
+     * the waiting screen starts GONE on a restore only when the game was in the world, is still up, and the snapshot is recent ([now] -
+     * [Snapshot.at] under [IN_WORLD_MS], elapsedRealtime: a long sleep counts - WoW may have dropped the connection). Its own rules bring
+     * it back; an older one shows it until the first current document
+     */
+    fun waitingGone(s: Snapshot?, gameUp: Boolean, now: Long): Boolean = s != null && s.inWorld && gameUp && now - s.at in 0L until IN_WORLD_MS
 
     fun inWorld(lastCurrentAt: Long, now: Long): Boolean = lastCurrentAt > 0L && now - lastCurrentAt < IN_WORLD_MS
 
@@ -67,7 +105,8 @@ object BottomSync {
 
     fun clear() {
         last = null
-        kept = 0; shown = 0; lastAwayMs = -1L; lastWorkMs = -1L; lastCatchUpMs = -1L; rebuilt = 0; releases = 0; looks = 0
+        kept = 0; shown = 0; lastAwayMs = -1L; lastWorkMs = -1L; lastCatchUpMs = -1L; rebuilt = 0; releases = 0; looks = 0; hosts = 0
+        relaunchRun = 0L; relaunchAt = 0L
         synchronized(why) { why.clear() }
     }
 
@@ -81,14 +120,40 @@ object BottomSync {
     @Volatile private var rebuilt = 0
     @Volatile private var releases = 0
     @Volatile private var looks = 0
+    @Volatile private var hosts = 0
     private val why = LinkedHashMap<String, Int>()
 
     fun parked() { kept++ }
-    /** shown again after [awayMs] away, [workMs] of our own work for it */
-    fun back(awayMs: Long, workMs: Long) { shown++; lastAwayMs = awayMs; lastWorkMs = workMs }
+    /** shown again after [awayMs] away, [workMs] of our own work for it (its catch-up time is its own: none until [caughtUp]) */
+    fun back(awayMs: Long, workMs: Long) { shown++; lastAwayMs = awayMs; lastWorkMs = workMs; lastCatchUpMs = -1L }
     /** the first current document after a return / a restore, [ms] after it */
     fun caughtUp(ms: Long) { lastCatchUpMs = ms }
-    fun rebuilt(reason: String) { rebuilt++; synchronized(why) { why[reason] = (why[reason] ?: 0) + 1 } }
+    fun rebuilt(reason: String) { rebuilt++; lastCatchUpMs = -1L; synchronized(why) { why[reason] = (why[reason] ?: 0) + 1 } }
+    private fun unrebuilt(reason: String) {
+        if (rebuilt > 0) rebuilt--
+        synchronized(why) { val n = (why[reason] ?: 0) - 1; if (n > 0) why[reason] = n else why.remove(reason) }
+    }
+
+    /**
+     * a launcher host came (CompanionHost.onCreate, [restored]: the snapshot it took, null = none). The review: every host after the
+     * run's first is a rebuild in the report - restored ones by their snapshot's reason, the others as "no snapshot" (an old snapshot,
+     * another game run, Android's close with the game not up) - so "rebuilt 0" means none
+     */
+    fun hostMade(restored: Snapshot?) {
+        hosts++
+        if (restored != null) rebuilt(restored.why) else if (hosts > 1) rebuilt(NO_SNAPSHOT)
+    }
+
+    /**
+     * a host whose window never came up (the window manager refused it: HostPresentation / TopWindow abandon). The review: it is not
+     * counted, and the snapshot it took is put back for the watchdog's next try (never used up by a failed open)
+     */
+    fun hostAbandoned(restored: Snapshot?) {
+        if (hosts > 0) hosts--
+        if (restored != null) { unrebuilt(restored.why); if (last == null) last = restored }
+        else if (hosts >= 1) unrebuilt(NO_SNAPSHOT)
+    }
+    const val NO_SNAPSHOT = "no snapshot"
     fun released() { releases++ }
     fun reopenLook() { looks++ }
 

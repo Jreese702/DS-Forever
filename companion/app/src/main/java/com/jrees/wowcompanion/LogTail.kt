@@ -282,12 +282,14 @@ class LogTail(
                 RandomAccessFile(f, "r").use { raf -> raf.seek(p.offset - p.tail.size); ByteArray(p.tail.size).also { raf.readFully(it) } }
             }.getOrNull() else null
             val at = resumeOffset(p, path, len, there)
-            if (at > 0L) { offset = at; carry = p.carry; byteCarry = p.byteCarry }
+            // (the review: the half-joined documents go on too - an n-part one split by the place joins here - and the place is
+            // this reader's own until it reads more, so a second rebuild before any new byte still goes on from it)
+            if (at > 0L) { offset = at; carry = p.carry; byteCarry = p.byteCarry; docs.adopt(p.parts, p.seq); placeNow = p }
             android.util.Log.i("WCLOG", if (at > 0L) "the reader goes on at byte $at (${len - at} bytes to read)" else "the log is not the old reader's: read from the start")
         }
         if (len < offset) {                       // client relaunched: file truncated
             offset = 0; carry = ""; byteCarry = Utf8Cut.EMPTY; docs.reset()
-            onStatus("client restarted, resyncing")
+            onStatus(RESTARTED)
         }
         if (len == offset) return
         RandomAccessFile(f, "r").use { raf ->
@@ -359,7 +361,7 @@ class LogTail(
             // after every 5 s guard - measured 2026-09-30 20:33-20:35, the log read as 0 bytes for 2.5 min and the app saw nothing.
             // "Unknown": the next read takes the length it sees, and the next reclaim needs RECLAIM_BYTES of real growth
             reclaimedTo = -1; reclaimAt = 0
-            onStatus("client restarted, resyncing")
+            onStatus(RESTARTED)
             return                                // next poll re-reads from 0
         }
         reclaimAt = 0
@@ -391,7 +393,7 @@ class LogTail(
             handleLine(lines[i])
         }
         // BottomSync: the place a new reader would go on from (every document up to it is handed on; its last bytes say it is the same log)
-        placeNow = Place(path, offset, carry, byteCarry, buf.copyOfRange((n - TAIL_BYTES).coerceAtLeast(0), n))
+        placeNow = Place(path, offset, carry, byteCarry, buf.copyOfRange((n - TAIL_BYTES).coerceAtLeast(0), n), docs.pendingParts(), docs.seqNow)
     }
 
     private fun handleLine(raw: String) = docs.line(raw)
@@ -409,12 +411,16 @@ class LogTail(
 
     /**
      * THE READER'S PLACE (BottomSync): [offset] read up to there in [path], with the partial line [carry] and the cut letter [byteCarry]
-     * still to finish, and the [tail] bytes before [offset] (a client restart that wrote past it has other bytes there). Pure
+     * still to finish, and the [tail] bytes before [offset] (a client restart that wrote past it has other bytes there); [parts] the
+     * multi-part documents not yet whole there and [seq] the add-on's last sequence number (Wcb1Assembler.pendingParts: the review). Pure
      */
-    data class Place(val path: String, val offset: Long, val carry: String, val byteCarry: ByteArray, val tail: ByteArray)
+    data class Place(val path: String, val offset: Long, val carry: String, val byteCarry: ByteArray, val tail: ByteArray,
+                     val parts: Map<Int, List<String?>> = emptyMap(), val seq: Int = -1)
 
     companion object {
         const val MAGIC = Wcb1Assembler.MAGIC
+        /** the status a truncated log (the client restarted) gives; DocMemory drops the old client's documents on it */
+        const val RESTARTED = "client restarted, resyncing"
         /** the bytes before a [Place] kept to know the log again */
         const val TAIL_BYTES = 64
 
