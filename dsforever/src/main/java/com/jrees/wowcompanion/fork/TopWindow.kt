@@ -250,7 +250,8 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     override fun hostIntent(): Intent? = null
     override fun startHostActivity(i: Intent) = context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     override fun hostSingle(): SingleShell = this
-    override fun hostRestore() = com.jrees.wowcompanion.BottomSync.take(android.os.SystemClock.elapsedRealtime(), com.jrees.wowcompanion.LauncherHooks.gameStartSec)
+    override fun hostRestore() = com.jrees.wowcompanion.BottomSync.take(android.os.SystemClock.elapsedRealtime(), com.jrees.wowcompanion.LauncherHooks.gameStartSec,
+        android.os.SystemClock.uptimeMillis())
 
     // ---- SingleShell
 

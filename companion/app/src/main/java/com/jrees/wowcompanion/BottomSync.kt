@@ -92,8 +92,8 @@ object BottomSync {
         return true
     }
 
-    /** a snapshot older than this restores no room, no layer, no room state, no edit session and no hidden waiting screen (round 2: its
-     *  reader's place and the document memory still apply: [take]) */
+    /** a snapshot whose Thor has SLEPT this long since restores no room, no layer, no room state and no edit session (round 2: its
+     *  reader's place and the document memory still apply: [take]; round 3: the time asleep, never the time away - [take]) */
     const val RESTORE_MAX_MS = 30 * 60_000L
     /** the game counts as in the world with a current document this recent */
     const val IN_WORLD_MS = 2 * 60_000L
@@ -115,14 +115,19 @@ object BottomSync {
     /**
      * the new host's restore (once): this game run's snapshot WHATEVER ITS AGE, else null. Round 2 (2026-11-26: "After a long sleep with
      * Android's close, the whole log is replayed from byte 0"): nothing about the reader's place goes stale with age (the log's own bytes
-     * before it prove it is the same log: LogTail.resumeOffset), so an old one ([fresh] false) keeps the place and the document memory
-     * and restores only that - Home, no layer, no room state, no edit session, the waiting screen shown ([Snapshot.inWorld] false)
+     * before it prove it is the same log: LogTail.resumeOffset), so it always keeps the place and the document memory. ROUND 3 (the
+     * review, 2026-11-26: "A rebuild from a snapshot older than 30 min lands on Home, drops Home's layer and Edit Home, and shows the
+     * waiting screen, even when the game never left the world and the Thor never slept"; "the snapshot's age is counted from the release,
+     * not from the return, and deep sleep plays no part in it"): only the time the Thor really SLEPT since ([sleptSince]: [now]
+     * elapsedRealtime, [nowUp] uptime) of [RESTORE_MAX_MS] or more restores Home with no layer, no room state and no edit session; a
+     * minimize of any length, where the game ran on, keeps them all. "In the world" is never forced off: the waiting screen is
+     * [waitingGone]'s own sleep rule, the room the adopt rule's (a current holder), Edit Home its record's owner (HomeView.editRestore)
      */
-    fun take(now: Long, gameRun: Long): Snapshot? {
+    fun take(now: Long, gameRun: Long, nowUp: Long): Snapshot? {
         val s = last
         last = null
         if (s == null || s.gameRun != gameRun) return null
-        return if (fresh(s, now, gameRun)) s else s.copy(room = "HOME", inWorld = false, ui = HostUi())
+        return if (sleptSince(s, now, nowUp) < RESTORE_MAX_MS) s else s.copy(room = "HOME", ui = HostUi())
     }
 
     /**
@@ -206,7 +211,10 @@ object BottomSync {
     fun hostMade(restored: Snapshot?): String? {
         val e = expected
         expected = null
-        if (restored != null) rebuilt(restored.why) else if (e != null) rebuilt(NO_SNAPSHOT)
+        // round 3 (the review: "Report still counts non-drops as rebuilds"): ONLY after a comeback path's mark - a snapshot kept by a
+        // host's own start over (DsForeverScreen.rebuild: single screen mode ending with the game, the first run's unpack) is laid back
+        // all the same, never counted
+        if (e != null) rebuilt(restored?.why ?: NO_SNAPSHOT)
         return e
     }
 
@@ -215,8 +223,8 @@ object BottomSync {
      * snapshot it took and the mark ([mark]: [hostMade]'s) are put back for the watchdog's next try (never used up by a failed open)
      */
     fun hostAbandoned(restored: Snapshot?, mark: String? = null) {
-        if (restored != null) { unrebuilt(restored.why); if (last == null) last = restored }
-        else if (mark != null) unrebuilt(NO_SNAPSHOT)
+        if (mark != null) unrebuilt(restored?.why ?: NO_SNAPSHOT)          // (round 3: counted only with a mark: [hostMade])
+        if (restored != null && last == null) last = restored
         if (mark != null && expected == null) expected = mark
     }
     const val NO_SNAPSHOT = "no snapshot"

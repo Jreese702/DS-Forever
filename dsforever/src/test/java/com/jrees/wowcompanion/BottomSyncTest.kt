@@ -39,13 +39,13 @@ class BottomSyncTest {
         val p = LogTail.Place("/g/General.log", 123_456L, "WCB1|9|1/2|{\"ty", ByteArray(0), byteArrayOf(1, 2, 3))
         BottomSync.place(p, gameRun = 77L)
         assertEquals(p, BottomSync.last?.place)
-        val t = BottomSync.take(now = 2_000L, gameRun = 77L)
+        val t = BottomSync.take(now = 2_000L, gameRun = 77L, nowUp = 2_000L)
         assertEquals("BAGS", t?.room)
         assertEquals(p, t?.place)
-        assertNull("once", BottomSync.take(2_000L, 77L))
+        assertNull("once", BottomSync.take(2_000L, 77L, 2_000L))
         // a stale one is dropped by take
         BottomSync.keep(snap(run = 1L))
-        assertNull(BottomSync.take(2_000L, 77L))
+        assertNull(BottomSync.take(2_000L, 77L, 2_000L))
         assertNull(BottomSync.last)
         // another run's place never joins
         BottomSync.keep(snap())

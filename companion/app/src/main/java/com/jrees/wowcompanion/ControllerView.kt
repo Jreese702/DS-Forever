@@ -79,7 +79,14 @@ class ControllerView(
     onBind: (SpellsModel.Entry) -> Unit = {},
     /** another view reads the controller now (one reader at a time): the page does not read the triggers then */
     otherReader: () -> Boolean = { false },
-) : View(context), BLeadsHome {
+) : View(context), BLeadsHome, RoomKeep {
+
+    /**
+     * BottomSync round 3 (RoomKeep; the review, 2026-11-26: "the Spellbook / Controller tab ... come back without their state" on the
+     * bottom-grid return, a rebuild): the page's tab, set, chosen button and radial page (PadTabPage's own), for a host made again
+     */
+    override fun keepUi(): Map<String, String> = page.keepUi()
+    override fun restoreUi(k: Map<String, String>) { page.restoreUi(k); invalidate() }
 
     private var book: SpellsModel.Book? = null
     private var ctl: SpellsModel.Ctl? = null

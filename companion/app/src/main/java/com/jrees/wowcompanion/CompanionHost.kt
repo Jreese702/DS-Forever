@@ -1672,8 +1672,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         barSelect.appBack()
     }
 
-    /** [gameHidden]: a park (the launcher away or the screen off: nobody sees the game) - the game's own UI is left as it is */
-    fun onStop(gameHidden: Boolean = false) {
+    /** [gameHidden]: a park (the launcher away or the screen off: nobody sees the game) - the game's own UI is left as it is.
+     *  [giveBack] (round 3): a PARKED host torn down with no host sure to follow on its display (Android's close with the display gone):
+     *  the park's hold goes FIRST, so the game's own UI is given back now, while the input gate may still be live (as base did at the
+     *  sleep itself) - a later return may find no window and no reader to make the gate live again */
+    fun onStop(gameHidden: Boolean = false, giveBack: Boolean = false) {
+        if (giveBack && !gameHidden) unholdPark()
         // ROUND 2 (the review, 2026-11-26: "A parked host torn down while the user is away now taps the game's UI open, and the new host
         // taps it shut at the return"): a PARKED host torn down for good (a memory release, Android's close while away, a move or close,
         // the relaunch a reopen from Cocoon's bottom grid brings) runs its stop UNDER the park's hold - GameUi records "not in view" and
@@ -1825,13 +1829,20 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             room = roomKeeper(room)?.keepUi().orEmpty(), edit = homeView.editKeep())
     }.getOrDefault(BottomSync.HostUi())
 
-    /** the rooms that keep a small state of their own across a rebuild (their tab, page, scroll); the others come back as they land */
+    /** the rooms that keep a small state of their own across a rebuild (their tab, page, scroll); the others come back as they land.
+     *  Round 3 (the review, 2026-11-26): Chat (what is written, the type, the board), Professions (the search, its filters and keyboard),
+     *  the Spellbook and the Controller room (their tabs and PadTabPage's own), Bags (the clean view, the search, the scroll) too */
     private fun roomKeeper(r: Room): RoomKeep? = when (r) {
         Room.QUESTS -> if (::questsView.isInitialized) questsView else null
         Room.SOCIAL -> if (::socialView.isInitialized) socialView else null
         Room.GROUPFINDER -> if (::groupFinderView.isInitialized) groupFinderView else null
         Room.CALENDAR -> if (::calendarView.isInitialized) calendarView else null
         Room.TALENTS -> if (::talentsView.isInitialized) talentsView else null
+        Room.CHAT -> if (::chatView.isInitialized) chatView else null
+        Room.PROFESSIONS -> if (::professionsView.isInitialized) professionsView else null
+        Room.SPELLBOOK -> if (::spellbookView.isInitialized) spellbookView else null
+        Room.CONTROLLER -> if (::controllerView.isInitialized) controllerView else null
+        Room.BAGS -> if (::bagsView.isInitialized) bagsView else null
         else -> null
     }
 
@@ -4285,6 +4296,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                         ?: "Home (the ${want.lowercase()} window is not open in the game)"))
                     // (round 2: and that room's own state - its tab, page, scroll - laid on it: the game's window is still on that tab)
                     got?.let { if (room == Room.HOME) { show(Room.valueOf(it), adopt = true); roomKeeper(Room.valueOf(it))?.restoreUi(restoreUi) } }
+                    // (round 3: Professions' search keyboard was up in the old host and its room is not laid back - the add-on still
+                    // keeps B the room's for it: told "nokbd" once)
+                    if (got == null && want == Room.PROFESSIONS.name && restoreUi["kb"] == "1") ProfessionsView.kbdOff(this)
                     restoreUi = emptyMap()
                 }
                 if (current) hiddenSince.keys.retainAll { it == holderNow }
@@ -4976,6 +4990,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // BottomSync: a parked host that goes (a memory release, Android's close while away) never leaves the taps held
         unholdPark()
         GameInput.away = false
+        // round 3: an Edit Home session handed to a host made again (snapshot) is the new Home's alone from now on
+        if (::homeView.isInitialized) homeView.editLetGo()
         // the review: every repeating tick off the main looper (the once-a-second loop reposted itself for ever: each host made again kept
         // the old one - its rooms, its map - alive and ticking)
         for (r in repeatingTicks()) ui.removeCallbacks(r)

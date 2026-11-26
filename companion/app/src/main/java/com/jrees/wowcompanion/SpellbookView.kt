@@ -39,7 +39,29 @@ class SpellbookView(
     onPadTab: (List<Pair<String, Int>>) -> Boolean = { false },
     /** another view reads the controller now (one reader at a time): the tab does not read the triggers then */
     otherReader: () -> Boolean = { false },
-) : View(context), BLeadsHome {
+) : View(context), BLeadsHome, RoomKeep {
+
+    /**
+     * BottomSync round 3 (RoomKeep; the review, 2026-11-26: "the Spellbook on its first tab while the game's window can still be on the
+     * other one" after the bottom-grid return, a rebuild; the add-on's spellsctl is never kept by DocMemory): the book's tab, page and
+     * chosen spell, the Controller tab and its page's own state, for a host made again (the add-on's next document wins, as always)
+     */
+    override fun keepUi(): Map<String, String> = buildMap {
+        tabKey?.let { put("tab", it) }
+        put("page", page.toString())
+        chosenId?.let { put("chosen", it.toString()) }
+        if (tabOpen) put("ctrl", "1")
+        for ((key, v) in padTab.keepUi()) put("pad.$key", v)
+    }
+    override fun restoreUi(k: Map<String, String>) {
+        k["tab"]?.let { tabKey = it }
+        k["page"]?.toIntOrNull()?.let { page = it }
+        k["chosen"]?.toIntOrNull()?.let { chosenId = it }
+        padTab.restoreUi(k.filterKeys { it.startsWith("pad.") }.mapKeys { it.key.removePrefix("pad.") })
+        if (k["ctrl"] == "1" && !tabOpen) openTab(byTouch = false)
+        settle()
+        invalidate()
+    }
 
     private var book: SpellsModel.Book? = null
     private var ctl: SpellsModel.Ctl? = null

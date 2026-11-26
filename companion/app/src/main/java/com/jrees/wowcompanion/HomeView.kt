@@ -3724,7 +3724,21 @@ class HomeView(
      * menus, tab, and the record Discard puts back), the record it was read under, the last write. Null = none, or parked by a fight or
      * a room (Home is Home then; every settled change is saved already)
      */
-    fun editKeep(): HomeEditKeep? = edit?.takeIf { !it.parked }?.let { HomeEditKeep(it, editOwner, editPersisted, editLate) }
+    fun editKeep(): HomeEditKeep? = edit?.takeIf { !it.parked }?.let { editHanded = true; HomeEditKeep(it, editOwner, editPersisted, editLate) }
+
+    /**
+     * ROUND 3 (the review, 2026-11-26: "HomeEditKeep hands the SAME mutable HomeEditModel to the new HomeView while the dead host's
+     * HomeView still holds it and still runs its owner listener on it"): a session handed to a host made again ([editKeep]) is let go
+     * here at this host's end - no write, no guest tap, nothing posted left - so only the new Home acts on it (its owner changes, its
+     * rebase, its end). The host's end also takes this view's store listeners off (CompanionHost's ends)
+     */
+    fun editLetGo() {
+        if (!editHanded) return
+        editHanded = false
+        editUi.removeCallbacksAndMessages(null)
+        edit = null; editOwner = null; editPersisted = null; editLate = null
+    }
+    private var editHanded = false
 
     /**
      * a kept session back on this (new) Home, as [editOpen] opens one - only on the record it was read under (another character's now:

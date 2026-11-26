@@ -32,19 +32,20 @@ class BottomSyncRound2Test {
     @Test fun anOldSnapshotStillGivesTheReadersPlace() {
         val p = LogTail.Place("/g/General.log", 9_000L, "", ByteArray(0), byteArrayOf(1, 2))
         BottomSync.keep(snap(place = p, ui = BottomSync.HostUi(homeLayer = "module:MAP", room = mapOf("tab" to "1"))))
-        val t = BottomSync.take(now = 1_000L + BottomSync.RESTORE_MAX_MS + 8 * 3_600_000L, gameRun = 77L)
+        // (round 3: eight hours ASLEEP - uptime stood still; a minimize of any length is BottomSyncRound3Test's)
+        val t = BottomSync.take(now = 1_000L + BottomSync.RESTORE_MAX_MS + 8 * 3_600_000L, gameRun = 77L, nowUp = 1_000L)
         assertNotNull("eight hours later: still this run's", t)
         assertEquals("the reader goes on from its place", p, t!!.place)
-        assertEquals("no room after 30 min", "HOME", t.room)
-        assertFalse("the waiting screen shows", t.inWorld)
+        assertEquals("no room after 30 min asleep", "HOME", t.room)
+        assertFalse("the waiting screen shows (the sleep rule)", BottomSync.waitingGone(t, true, 1_000L + BottomSync.RESTORE_MAX_MS + 8 * 3_600_000L, 1_000L))
         assertEquals("nothing else laid back", BottomSync.HostUi(), t.ui)
-        assertNull("once", BottomSync.take(2_000L, 77L))
+        assertNull("once", BottomSync.take(2_000L, 77L, 2_000L))
         // a recent one: all of it
         BottomSync.keep(snap(place = p, ui = BottomSync.HostUi(homeLayer = "module:MAP")))
-        assertEquals("module:MAP", BottomSync.take(2_000L, 77L)?.ui?.homeLayer)
+        assertEquals("module:MAP", BottomSync.take(2_000L, 77L, 2_000L)?.ui?.homeLayer)
         // another game run: nothing
         BottomSync.keep(snap(run = 5L, place = p))
-        assertNull(BottomSync.take(2_000L, 77L))
+        assertNull(BottomSync.take(2_000L, 77L, 2_000L))
     }
 
     /** "A snapshot taken while parked marks the game out of the world after 2 min away" */
@@ -191,7 +192,7 @@ class BottomSyncRound2Test {
 
     /** "A parked host torn down while the user is away now taps the game's UI open, and the new host taps it shut at the return" */
     @Test fun aParkedHostThatGoesTapsNothing() {
-        val stop = host().substringAfter("fun onStop(gameHidden: Boolean = false) {").substringBefore("\n    }\n")
+        val stop = host().substringAfter("fun onStop(gameHidden: Boolean = false, giveBack: Boolean = false) {").substringBefore("\n    }\n")
         assertTrue("the game's UI recorded under the park's hold (nothing tapped), the hold let go after",
             stop.indexOf("if (!gameHidden) unholdPark()") > stop.indexOf("stopBody(gameHidden)"))
         val body = host().substringAfter("private fun stopBody(gameHidden: Boolean) {").substringBefore("\n    }\n")

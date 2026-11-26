@@ -905,6 +905,9 @@ object GameUi {
         changed()
     }
 
+    /** BottomSync round 3: the game's UI is as the modes want it now (nothing left to tap: fork/DsForeverScreen's give-back reader ends) */
+    fun inPlace(): Boolean = last == UiStep.InPlace
+
     /** once a second: the game becoming live, and a reply that never came */
     fun tick() {
         val before = last

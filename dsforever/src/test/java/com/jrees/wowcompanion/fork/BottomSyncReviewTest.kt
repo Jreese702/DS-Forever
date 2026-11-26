@@ -39,7 +39,7 @@ class BottomSyncReviewTest {
         BottomSync.relaunching(1_000L, now = 10_000L)
         assertTrue("the same game", BottomSync.attached(1_764_000_000L, now = 10_500L))
         assertEquals("re-keyed to the new stamp", 1_764_000_000L, BottomSync.last?.gameRun)
-        assertNotNull(BottomSync.take(now = 11_000L, gameRun = 1_764_000_000L))
+        assertNotNull(BottomSync.take(now = 11_000L, gameRun = 1_764_000_000L, nowUp = 11_000L))
         // the second relaunch (the move back to the top screen): stamped again, re-keyed again
         BottomSync.keep(snap(run = 2L)); BottomSync.relaunching(2L, 20_000L)
         assertTrue(BottomSync.attached(3L, 20_100L)); assertEquals(3L, BottomSync.last?.gameRun)
@@ -68,13 +68,14 @@ class BottomSyncReviewTest {
     @Test fun aFailedOpenGivesTheSnapshotBack() {
         BottomSync.hostMade(null)                                   // the run's first host
         val s = snap(); BottomSync.keep(s)
-        val t = BottomSync.take(now = 2_000L, gameRun = 77L)        // the new host's onCreate (hostRestore)
-        BottomSync.hostMade(t)
+        BottomSync.expectRebuild("test")                            // (round 3: counted only after a comeback path's mark)
+        val t = BottomSync.take(now = 2_000L, gameRun = 77L, nowUp = 2_000L)        // the new host's onCreate (hostRestore)
+        val mark = BottomSync.hostMade(t)
         assertNull(BottomSync.last)
-        BottomSync.hostAbandoned(t)                                 // the window manager refused the display: its host goes
+        BottomSync.hostAbandoned(t, mark)                           // the window manager refused the display: its host goes
         assertSame("given back for the watchdog's next try", t, BottomSync.last)
         assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 0"))
-        BottomSync.hostMade(BottomSync.take(3_000L, 77L))           // the next try: restored
+        BottomSync.hostMade(BottomSync.take(3_000L, 77L, 3_000L))           // the next try: restored
         assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 1 (test 1)"))
         // the windows' abandon goes through the host's (the snapshot back BEFORE its teardown joins the reader's place)
         val p = source().substringAfter("private class HostPresentation(")
@@ -182,7 +183,9 @@ class BottomSyncReviewTest {
         assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 1 (no snapshot 1)"))
         assertFalse("a rebuild's time is its own", BottomSync.line().contains("rebuild caught up"))
         assertTrue("the last return's stays in its brackets", BottomSync.line().contains("caught up in 90 ms)"))
-        BottomSync.hostMade(snap())
+        BottomSync.hostMade(snap())                                // round 3: a snapshot with no comeback path's mark (a host's own start over)
+        assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 1 (no snapshot 1)"))
+        BottomSync.expectRebuild("test"); BottomSync.hostMade(snap())
         assertTrue(BottomSync.line(), BottomSync.line().contains("rebuilt 2 (no snapshot 1, test 1)"))
         assertTrue(host().substringAfter("restored = shell.hostRestore()").substringBefore("\n").contains("BottomSync.hostMade(restored)"))
     }
@@ -246,7 +249,7 @@ class BottomSyncReviewTest {
         // round 2 (2026-11-26): the other way round - a parked host that goes records "not in view" UNDER the park's hold (nothing tapped
         // on the top screen while nobody sees it), and the hold goes after, whatever the body does (the unpack return included); the game's
         // UI comes back from DsForeverScreen when a return finds no bottom window (BottomSyncRound2Test.aParkedHostThatGoesTapsNothing)
-        val stop = host().substringAfter("fun onStop(gameHidden: Boolean = false) {").substringBefore("\n    }\n")
+        val stop = host().substringAfter("fun onStop(gameHidden: Boolean = false, giveBack: Boolean = false) {").substringBefore("\n    }\n")
         assertTrue(stop.contains("try { stopBody(gameHidden) } finally { if (!gameHidden) unholdPark() }"))
         val body = host().substringAfter("private fun stopBody(gameHidden: Boolean) {").substringBefore("\n    }\n")
         assertTrue(body.indexOf("if (unpacking) return") in 0 until body.indexOf("if (!gameHidden) GameUi.onVisible(false)"))

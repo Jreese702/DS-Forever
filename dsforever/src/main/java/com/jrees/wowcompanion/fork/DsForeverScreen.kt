@@ -139,6 +139,7 @@ class DsForeverScreen(private val context: Context) {
         if (relaunching && gameOn) com.jrees.wowcompanion.BottomSync.relaunching(LauncherHooks.gameStartSec, android.os.SystemClock.elapsedRealtime())
         detachGame()
         running = false
+        stopGiveBack()
         main.removeCallbacksAndMessages(null)
         frontLater = false                                   // #383 / #384: its waiting ask went with the queue
         try { dm?.unregisterDisplayListener(listener) } catch (_: Exception) {}
@@ -264,6 +265,7 @@ class DsForeverScreen(private val context: Context) {
     fun hide(park: Boolean = true) {
         hidden = true
         keysCancel()
+        stopGiveBack()
         main.removeCallbacks(reopenLook); main.removeCallbacks(verifyRun); main.removeCallbacks(displaySettle)
         val w = shown ?: return
         if (!w.alive) { shown = null; companionGone(); return }                // Android closed it already ([lost] is on its way)
@@ -424,10 +426,50 @@ class DsForeverScreen(private val context: Context) {
         if (shown == null && pick == null && game == Display.DEFAULT_DISPLAY) gameUiBack()
     }
 
-    /** the game's own UI on the top screen again (GameUi: nothing of ours shows in its place); a tick reconciles it now */
+    /** the game's own UI on the top screen again (GameUi: nothing of ours shows in its place); a tick reconciles it now - and when the
+     *  input gate is not live (round 3: no host, so no reader made it live since the park), the give-back reader until it is done */
     private fun gameUiBack() {
         com.jrees.wowcompanion.GameUi.onVisible(false)
         com.jrees.wowcompanion.GameUi.tick()
+        if (!com.jrees.wowcompanion.GameUi.inPlace()) giveBackRead()
+    }
+
+    /**
+     * ROUND 3 (the review, 2026-11-26: "gameUiBack cannot give the game's UI back: GameInput is not live after a park longer than 25 s,
+     * and with no host nothing ticks GameUi again"): a return with NO bottom window to show (the panel not listed, every open refused)
+     * while the game's own bars and minimap are still hidden for ours. Nothing is ever tapped without the live gate, so a small reader
+     * of its own goes on from the last host's place (its snapshot's) - only the input gate and the hub document (GameInput.note,
+     * GameUi.onHub), once a second GameUi's reconcile - until the game's UI is as the modes want it with nothing of ours in view
+     * ([GameUi.inPlace]), a window comes ([stopGiveBack]: a host reads again), the launcher goes ([hide]) or [GIVE_BACK_MS] passed.
+     * The local game only (never Streaming's)
+     */
+    private var giveBack: com.jrees.wowcompanion.LogTail? = null
+    private var giveBackUntil = 0L
+    private fun giveBackRead() {
+        if (giveBack != null || !running || hidden || !gameOn || com.jrees.wowcompanion.PlayModes.current == com.jrees.wowcompanion.PlayMode.STREAM) return
+        val p = com.jrees.wowcompanion.BottomSync.last?.place ?: return
+        giveBackUntil = android.os.SystemClock.uptimeMillis() + GIVE_BACK_MS
+        com.jrees.wowcompanion.DiagLog.event("app", "no bottom window at the return: the game's own UI given back (its reader from byte ${p.offset})")
+        giveBack = com.jrees.wowcompanion.LogTail(p.path, onMessage = { m -> main.post { giveBackDoc(m) } }, onStatus = {}, follow = listOf(p.path),
+            resume = p).also { it.start() }
+        main.removeCallbacks(giveBackTick); main.postDelayed(giveBackTick, 1_000L)
+    }
+    private fun giveBackDoc(m: org.json.JSONObject) {
+        if (giveBack == null) return
+        val current = com.jrees.wowcompanion.GameInput.note(m)
+        if (m.optString("type") == "hub") com.jrees.wowcompanion.GameUi.onHub(m, current)
+    }
+    private val giveBackTick: Runnable = Runnable {
+        if (giveBack == null) return@Runnable
+        com.jrees.wowcompanion.GameUi.onVisible(false)
+        com.jrees.wowcompanion.GameUi.tick()
+        if (com.jrees.wowcompanion.GameUi.inPlace() || shown != null || hidden || !running || !gameOn ||
+            android.os.SystemClock.uptimeMillis() >= giveBackUntil) stopGiveBack()
+        else main.postDelayed(giveBackTick, 1_000L)
+    }
+    private fun stopGiveBack() {
+        main.removeCallbacks(giveBackTick)
+        giveBack?.stop(); giveBack = null
     }
 
     /**
@@ -452,7 +494,10 @@ class DsForeverScreen(private val context: Context) {
                     if (!com.jrees.wowcompanion.BottomSync.opensWanted(openFails)) " ($openFails in a row: tried again at the next display change or return)" else "")   // #147
             null
         }
-        if (shown != null) openFails = 0
+        if (shown != null) { openFails = 0; stopGiveBack() }
+        // round 3 (the review: "Also call gameUiBack() when the watchdog stops at OPEN_FAILS_MAX"): every open refused - no window of
+        // ours shows the bars and the minimap, so the game's own come back (one look again at the next display event or return)
+        else if (!com.jrees.wowcompanion.BottomSync.opensWanted(openFails) && game == Display.DEFAULT_DISPLAY) gameUiBack()
         // the review: the keyboard and the browser page on their own - a page that cannot be made (a WebView provider update) never takes
         // the window down (the open's catch left a dead host's window on screen, and the watchdog stacked one more every 5 s)
         shown?.let { w -> addOns(w) }
@@ -528,11 +573,12 @@ class DsForeverScreen(private val context: Context) {
         }
     }
 
-    /** BottomSync: the host's snapshot before its window goes (a move, a close, a relaunch, a rebuild, a memory release), the game up */
-    private fun keepSnapshot(w: BottomWindow?, why: String) {
+    /** BottomSync: the host's snapshot before its window goes (a move, a close, a relaunch, a rebuild, a memory release), the game up.
+     *  [counts] false (round 3: the host's own start over - [rebuild]): laid back the same, never a rebuild in the report */
+    private fun keepSnapshot(w: BottomWindow?, why: String, counts: Boolean = true) {
         if (w == null) return
         // round 2: a comeback path closes this window - the next host is a rebuild in the report, snapshot or not (BottomSync.expectRebuild)
-        com.jrees.wowcompanion.BottomSync.expectRebuild(why)
+        if (counts) com.jrees.wowcompanion.BottomSync.expectRebuild(why)
         if (!gameOn) return
         w.snapshot(why)?.let { com.jrees.wowcompanion.BottomSync.keep(it) }
     }
@@ -572,7 +618,9 @@ class DsForeverScreen(private val context: Context) {
     private fun companionGone() { com.jrees.wowcompanion.TapBridge.companionDisplayId = Display.INVALID_DISPLAY }
 
     /** the host asked to start over (its recreate, e.g. after a permission): a fresh Presentation (or activity) */
-    internal fun rebuild() { main.post { keepSnapshot(shown, "the host asked to start over"); shown?.close(); shown = null; update() } }
+    // (round 3, the review: "Report still counts non-drops as rebuilds: rebuild() marks expectRebuild for single screen mode ending with
+    // the game and for the first-run unpack recreate" - no drop: never counted)
+    internal fun rebuild() { main.post { keepSnapshot(shown, "the host asked to start over", counts = false); shown?.close(); shown = null; update() } }
 
     /** single screen mode: a second screen that came in a fight is looked at again ([SingleStep.RETRY]), a one-screen start's grace
      *  ([SingleStep.WAIT]) */
@@ -1089,6 +1137,8 @@ class DsForeverScreen(private val context: Context) {
         /** a start with a fresh snapshot and the game running (a configuration relaunch) shows the bottom screen sooner */
         const val SHOW_AGAIN_MS = 250L
         fun showAfter(fresh: Boolean, gameRunning: Boolean): Long = if (fresh && gameRunning) SHOW_AGAIN_MS else SHOW_AFTER_MS
+        /** round 3: the give-back reader's longest run (a return with no bottom window: DsForeverScreen.giveBackRead) */
+        const val GIVE_BACK_MS = 120_000L
 
         /**
          * 4.6 (Q2: kept "until Android signals real memory pressure"): Android's trim [level] lets a PARKED host go at RUNNING_CRITICAL
@@ -1568,10 +1618,19 @@ private class HostPresentation(outer: Context, display: Display, private val onR
         up = false
         if (typing) typer.focusable(false)
         pageSlot.drop()
-        host?.let { it.onStop(); it.onDestroy() }
+        // round 3 (the review: "A parked host torn down while away leaves the game's own UI hidden when no new bottom window comes"):
+        // Android's close of a PARKED window with its display gone (removed, no longer valid: no host is sure to follow there) gives
+        // the game's UI back now, while the input gate may still be live; a metrics-only close, the relaunch and the memory release
+        // keep the park's hold (a host follows on the same display)
+        val giveBack = byAndroid && parkedNow && displayGone()
+        host?.let { it.onStop(giveBack = giveBack); it.onDestroy() }
         host = null
         super.onStop()
     }
+
+    /** round 3: this window's display is gone (removed, or no longer valid) */
+    private fun displayGone(): Boolean = !display.isValid ||
+        runCatching { context.getSystemService(android.hardware.display.DisplayManager::class.java)?.getDisplay(display.displayId) == null }.getOrDefault(false)
 
     /**
      * a [show] that failed after onCreate (the window manager refused the display), or a host that could not be made ([begin]): never a
@@ -1599,7 +1658,8 @@ private class HostPresentation(outer: Context, display: Display, private val onR
 
     override fun setHostContent(v: View) = setContentView(v)
     override fun hostGone(): Boolean = !up
-    override fun hostRestore() = com.jrees.wowcompanion.BottomSync.take(android.os.SystemClock.elapsedRealtime(), com.jrees.wowcompanion.LauncherHooks.gameStartSec)
+    override fun hostRestore() = com.jrees.wowcompanion.BottomSync.take(android.os.SystemClock.elapsedRealtime(), com.jrees.wowcompanion.LauncherHooks.gameStartSec,
+        android.os.SystemClock.uptimeMillis())
     override fun recreateHost() = onRecreate()
     override fun hostWindow() = window
     override fun hostIntent(): Intent? = null

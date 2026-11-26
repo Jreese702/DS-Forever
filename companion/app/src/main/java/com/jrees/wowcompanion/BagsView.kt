@@ -53,7 +53,25 @@ private val bmpPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
  *
  * Pixel sizes are physical px on the 1240 x 1080 bottom screen, like every other room.
  */
-class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
+class BagsView(c: Context) : FrameLayout(c), BLeadsHome, RoomKeep {
+
+    /**
+     * BottomSync round 3 (RoomKeep; the review, 2026-11-26: "Bags' view ... comes back without its state" on the bottom-grid return, a
+     * rebuild): the clean view's toggle, the search's words and the grid's scroll, for a host made again (the add-on's documents draw
+     * the bags themselves). No game action
+     */
+    override fun keepUi(): Map<String, String> = buildMap {
+        if (state.clean) put("clean", "1")
+        (search.text?.toString() ?: "").takeIf { it.isNotEmpty() }?.let { put("search", it) }
+        if (gridScroll.scrollY > 0) put("scroll", gridScroll.scrollY.toString())
+    }
+    override fun restoreUi(k: Map<String, String>) {
+        post {
+            if ((k["clean"] == "1") != state.clean) state.toggleClean()
+            k["search"]?.let { t -> search.setText(t); search.setSelection(t.length) }
+            k["scroll"]?.toIntOrNull()?.let { y -> gridScroll.post { gridScroll.scrollTo(0, y) } }
+        }
+    }
 
     private val column = LinearLayout(c)
     private val head = Header(c)

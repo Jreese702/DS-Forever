@@ -147,7 +147,31 @@ private const val SEND_W = 220
  * THE LOG IS KEPT HERE, NOT IN THE ADDON. Chat.lua re-sends its whole ring with every document; lines are appended by (session,
  * line number), so a /reload keeps the history.
  */
-class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Unit = {}) : LinearLayout(c) {
+class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Unit = {}) : LinearLayout(c), RoomKeep {
+
+    /**
+     * BottomSync round 3 (RoomKeep; the review, 2026-11-26: "Chat's keyboard and typed text ... come back without their state" on the
+     * bottom-grid return, a rebuild): what is written, where it goes (the type, the whisper's person) and the board, for a host made
+     * again. Laid back after the room's own landing (its onShown sets the log first: posted after it), with no game action but the
+     * add-on told the type again (as every landing does)
+     */
+    override fun keepUi(): Map<String, String> = buildMap {
+        if (typed.isNotEmpty()) put("typed", typed)
+        put("type", type)
+        if (whisperName.isNotEmpty()) put("whisper", whisperName)
+        if (board != Board.NONE) put("board", board.name)
+    }
+    override fun restoreUi(k: Map<String, String>) {
+        post {
+            k["whisper"]?.let { w -> if (ChatNames.canWhisper(w)) whisperName = w }
+            k["type"]?.let { t -> if (t != "WHISPER" || whisperName.isNotEmpty()) type = t }
+            k["typed"]?.let { typed = it }
+            applyType()
+            val b = k["board"]?.let { n -> Board.values().firstOrNull { it.name == n } } ?: Board.NONE
+            if (b != Board.NONE) { setBoard(b, animate = false); pad.focus = if (b == Board.QUICK) pad.quickFocus(scene()) else Focus.Field }
+            showTyped(); invalidate()
+        }
+    }
 
     /** Whether the module may send: only while the game is provably in the world. */
     private var sendEnabled = false
