@@ -42,6 +42,21 @@ class SingleLookTest {
         assertEquals(Frame.HIDDEN, SingleLook.of(play.copy(dialog = true, fightRolls = true)).frame)
     }
 
+    /** the 1535 polish (the user on test 1533, 2026-11-26: "When looting the screen dims but thats excessive"): the loot window alone
+     *  over the game leaves it undimmed (still the panel's window: its touches ours); anything else open with it dims as before */
+    @Test fun lootingLeavesTheGameUndimmed() {
+        val l = SingleLook.of(play.copy(npc = true, loot = true))
+        assertEquals(Frame.FULL, l.frame); assertEquals(SingleLook.DIM_LOOT, l.dim); assertEquals(0f, l.dim); assertTrue(l.touchable)
+        assertEquals("a vendor still dims", SingleLook.DIM_PANEL, SingleLook.of(play.copy(npc = true)).dim)
+        for (i in listOf(play.copy(npc = true, loot = true, room = "BAGS"), play.copy(npc = true, loot = true, glanceHub = true),
+            play.copy(npc = true, loot = true, dialog = true), play.copy(npc = true, loot = true, startPages = true),
+            play.copy(npc = true, loot = true, pause = true)))
+            assertEquals("$i", SingleLook.DIM_PANEL, SingleLook.of(i).dim)
+        val h = listOf(java.io.File("../companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt"),
+            java.io.File("companion/app/src/main/java/com/jrees/wowcompanion/CompanionHost.kt")).first { it.canRead() }.readText()
+        assertTrue("the host tells the loot window apart", h.contains("loot = ::interactView.isInitialized && interactView.visibility == View.VISIBLE && interactView.looting(),"))
+    }
+
     @Test fun row3ThePauseWheel() {
         val l = SingleLook.of(play.copy(pause = true))
         assertEquals(Frame.FULL, l.frame); assertEquals(SingleLook.DIM_PANEL, l.dim); assertTrue(l.touchable); assertEquals(Root.GONE, l.root)

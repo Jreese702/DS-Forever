@@ -71,6 +71,8 @@ class InteractView(context: Context) : View(context) {
     private var doc: JSONObject? = null
     private var docGt = -1L
     private var kind = Kind.NONE
+    /** the window shown is the LOOT window (single screen mode leaves the game undimmed under it: SingleLook.DIM_LOOT) */
+    fun looting(): Boolean = kind == Kind.LOOT
     private var sig = ""
     private var dismissedSig: String? = null
     private var dismissedAt = 0L                        // when close() hid this window (the game's own may refuse to close)

@@ -97,11 +97,16 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
 
     private fun RectF.of(b: Box): RectF { set(b.l, b.t, b.r, b.b); return this }
 
+    /** the 1535 polish (the user: "The party mode box ... solid backgrounds and it needs to be way more see through"): standing in single
+     *  screen mode's party dock over the game - a see-through well and plates (the words and pictures as they are) */
+    var dockGround = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
     override fun onDraw(c: Canvas) {
         val p = live.party ?: return
         val now = SystemClock.uptimeMillis()
         val m = module()
-        UiKit.module(c, RectF().of(m.well))
+        if (dockGround) UiKit.dockWell(c, RectF().of(m.well)) else UiKit.module(c, RectF().of(m.well))
         val on = p.onLive
         // m150: the box is counted over the add-on's entries; drawn over the view (a dead pet entry moves the party one on)
         val boxedAt = if (on) p.viewIndex(live.box.coerceIn(1, p.n) - 1) else -1
@@ -184,7 +189,7 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
 
     private fun drawPlate(c: Canvas, p: Box, mem: PartyModel.Member, picked: Boolean, resOn: Boolean, fill: Float = 0f) {
         pFill.shader = null; pFill.colorFilter = null; pFill.style = Paint.Style.FILL
-        pFill.color = Color.argb(230, 14, 12, 10)
+        pFill.color = Color.argb(if (dockGround) SinglePlayLayout.PLATE_ALPHA else 230, 14, 12, 10)
         c.drawRoundRect(r.of(p), 6f, 6f, pFill)
         if (fill > 0f) holdFill(c, p, fill)                             // under the stripe, icon and name
         // m134 (the user, 2026-11-11: "the pet should ... not have the green dot"): a person's plate has the class stripe, the pet's none

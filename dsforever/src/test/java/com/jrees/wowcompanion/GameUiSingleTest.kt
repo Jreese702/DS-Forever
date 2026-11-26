@@ -27,14 +27,15 @@ class GameUiSingleTest {
     @Test fun singleScreenThePreset() {
         SingleScreen.set(true, SingleScreen.Why.USER)
         assertEquals(UiMode.ON, GameUi.effMode("minimap"))
-        assertEquals(UiMode.NINTENDO, GameUi.effMode("hud"))
-        assertEquals(UiMode.ON, GameUi.effMode("tracker"))
+        // the 1535 polish (the user: "the Nintendo bar is BAD and I hate it"): no Nintendo bar, no stock bar - our Wings stand there
+        assertEquals(UiMode.OFF, GameUi.effMode("hud"))
+        assertEquals("no docks yet: the game's tracker", UiMode.ON, GameUi.effMode("tracker"))
         assertEquals(UiMode.ON, GameUi.effMode("chat"))
         assertEquals(UiMode.OFF, GameUi.effMode("dialogs"))
         assertEquals(UiMode.ON, GameUi.effMode(HudSplit.BUFFS_ID))
-        assertEquals(UiMode.ON, GameUi.effMode(HudSplit.XP_ID))
-        assertTrue("our Nintendo bar", GameUi.swWant(GameUi.SW_NBAR))
-        assertEquals("Nintendo reads as On for the layout bit", UiMode.ON, HudSplit.hideMode(GameUi.hudBitMode()))
+        assertEquals("the XP bar gives its place to the room row", UiMode.OFF, GameUi.effMode(HudSplit.XP_ID))
+        assertFalse("never our Nintendo bar in single screen mode", GameUi.swWant(GameUi.SW_NBAR))
+        assertEquals("the controller UI and the XP bar off, the buffs on: the bit rides Off", UiMode.OFF, GameUi.hudBitMode())
         // the saved choices (Settings) are untouched: the defaults here
         assertEquals(UiMode.OFF, GameUi.mode("minimap")); assertEquals(UiMode.OFF, GameUi.mode("hud"))
         assertFalse("the game's cast bar shows (no bar of ours has every cast yet)", SingleUi.castBarHide(true))

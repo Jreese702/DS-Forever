@@ -636,7 +636,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // Home's own cast bar is not on screen (any room; a Home module over the band), the rooms' bar draws the player's cast in its
         // tracking band - Bags' Use, Character's Enchant / kit pick / Feed Pet, the Spellbook, Macros, every room the same
         strip.castBand = object : Strip.CastBand {
-            override fun state(): Int = if (castView.ownCastBarShown()) RoomCast.NONE else castView.roomCastState()
+            // the 1535 polish: single screen mode's top cast bar (ActionBar nbar25) has every cast - the row never draws a second one
+            override fun state(): Int = if (castView.ownCastBarShown() || single != null) RoomCast.NONE else castView.roomCastState()
             override fun draw(c: android.graphics.Canvas, bar: android.graphics.RectF, nameL: Float, nameR: Float): Long =
                 castView.drawRoomCast(c, bar, nameL, nameR)
         }
@@ -2239,6 +2240,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         report = (::reportPage.isInitialized && reportPage.isOpen) || (::pathReview.isInitialized && pathReview.isOpen) ||
             (::reportNotice.isInitialized && reportNotice.asking),
         npc = ::interactView.isInitialized && interactView.visibility == View.VISIBLE,
+        loot = ::interactView.isInitialized && interactView.visibility == View.VISIBLE && interactView.looting(),
         dialog = ::dialogView.isInitialized && dialogView.covers(),
         spells = spellsOverlay.visibility == View.VISIBLE,
         pause = ::pauseView.isInitialized && pauseView.isOpen,
@@ -2425,6 +2427,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (!play) {
             ui.removeCallbacks(playTick)
             d.show(false)
+            rowReclaim()
             homeView.reclaimFromDocks()
             return
         }
@@ -2432,7 +2435,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val b = single?.box
         if (b != null && roomsRoot != null && SingleDocks.layHomeOnce(homeView, roomsRoot!!, b[0], b[1], b[2], b[3]))
             Log.i("WCHOME", "one screen: Home laid once for the docks (${homeView.width} x ${homeView.height})")
-        homeView.lendToDocks(d.chat, d.party, d.map)
+        homeView.lendToDocks(d.chat, d.party, d.map, d.quest)
+        rowLend(d.row)
         val was = d.up
         d.show(true)
         playStep(animate = was)
@@ -2448,10 +2452,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val laid = homeView.dockLaid()
         val hud = SinglePlayLayout.Hud(GameUi.hudHeight() ?: SinglePlayLayout.Y_DEF, GameUi.hudWidth() ?: SinglePlayLayout.W_DEF,
             GameUi.hudScale() ?: SinglePlayLayout.S_DEF)
-        val p = SinglePlayLayout.plan(SinglePlayLayout.arr(homeView.fightShown()), laid.party, hud, s.screenW, s.screenH, homeView.dockPartyH())
+        val arr = SinglePlayLayout.arr(homeView.fightShown())
+        val p = SinglePlayLayout.plan(arr, laid.party, hud, s.screenW, s.screenH, homeView.dockPartyH(),
+            questH = homeView.dockQuestH(fold = arr == SinglePlayLayout.Arr.IN))
         // the fight's rolls in the map's place, LB's party picture over the party list (NPC's strip, SingleLook rows 9 / 10)
         val l = playLook
-        val hide = SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map)
+        val hide = SinglePlayLayout.hidden(l?.strip, l?.frame == SingleLook.Frame.FULL, laid.chat, laid.map, laid.quest)
         val before = d.plan?.arr
         d.arrange(p, animate && before != null, hide)
         if (before != null && before != p.arr) Log.i("WCHOME", "one screen: the docks ${if (p.arr == SinglePlayLayout.Arr.IN) "into the fight" else "out of the fight"} " +
@@ -2459,9 +2465,40 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         d.talkSync()
     }
 
+    /**
+     * THE ROOM ROW OVER THE GAME (the 1535 polish; the user on test 1533, 2026-11-26: "We need to hide the top screen xp bar so that we
+     * can recreate our home screen row buttons. These hide in combat and out of combat it just ... slides up the home row from the
+     * bottom"): while playing, the rooms column's own bar (the Strip: its rooms, Home's disc, our XP track, its touches) is LENT to the
+     * docks' row window - one bar, never a copy, exactly as Home lends its map and chat - and given back before any panel shows.
+     */
+    private class RowLoan(val parent: ViewGroup, val index: Int, val lp: ViewGroup.LayoutParams?, val ty: Float, val vis: Int)
+    private var rowLoan: RowLoan? = null
+
+    private fun rowLend(into: ViewGroup) {
+        if (strip.parent === into) return
+        val parent = strip.parent as? ViewGroup ?: return
+        if (rowLoan == null) rowLoan = RowLoan(parent, parent.indexOfChild(strip), strip.layoutParams, strip.translationY, strip.visibility)
+        stripBack?.cancel()
+        parent.removeView(strip)
+        into.addView(strip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        strip.translationY = 0f
+        strip.visibility = View.VISIBLE
+    }
+
+    private fun rowReclaim() {
+        val l = rowLoan ?: return
+        rowLoan = null
+        (strip.parent as? ViewGroup)?.removeView(strip)
+        strip.scaleX = 1f; strip.scaleY = 1f; strip.pivotX = 0f; strip.pivotY = 0f
+        if (l.lp != null) l.parent.addView(strip, minOf(l.index, l.parent.childCount), l.lp) else l.parent.addView(strip, minOf(l.index, l.parent.childCount))
+        strip.translationY = l.ty
+        strip.visibility = l.vis
+    }
+
     /** the host goes (onDestroy): nothing of the docks left running or held */
     private fun singlePlayEnd() {
         ui.removeCallbacks(playTick); ui.removeCallbacks(ssAgain)
+        rowReclaim()
         docks?.close(); docks = null
         if (single != null) {
             SingleUi.docks = false

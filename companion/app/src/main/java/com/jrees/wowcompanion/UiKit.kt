@@ -2630,6 +2630,14 @@ object UiKit {
      * ONE HOME MODULE'S WELL, [r] the whole module: Theme.panel with a 2 px Theme.bronzeDim edge, radius [MODULE_R] x [scale].
      * [edgeOnly] = the edge alone (for a module whose content filled the well first, e.g. the map clipped by [moduleClip]).
      */
+    /** the 1535 polish: a module's well over the game in single screen mode's docks - the fill see-through
+     *  (SinglePlayLayout.GROUND_ALPHA), the metal edge softened (EDGE_ALPHA) */
+    fun dockWell(c: Canvas, r: RectF) {
+        pFlat.style = Paint.Style.FILL; pFlat.shader = null; pFlat.color = Theme.panel; pFlat.alpha = SinglePlayLayout.GROUND_ALPHA
+        c.drawRoundRect(r, MODULE_R, MODULE_R, pFlat)
+        module(c, r, alpha = SinglePlayLayout.EDGE_ALPHA, edgeOnly = true)
+    }
+
     fun module(c: Canvas, r: RectF, alpha: Int = 255, edgeOnly: Boolean = false, scale: Float = 1f) {
         val rad = MODULE_R * scale
         if (!edgeOnly) {

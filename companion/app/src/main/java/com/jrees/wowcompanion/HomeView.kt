@@ -5065,6 +5065,13 @@ class HomeView(
 
         fun note(s: String) { noteText = s; noteUntil = System.currentTimeMillis() + NOTE_MS; invalidate() }
 
+        /** the 1535 polish: standing in single screen mode's quest dock - its plate see-through over the game ([dockFold]: its title row
+         *  only, the dock's in-fight size) */
+        var docked = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+        var dockFold = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+
         private fun state(q: HomeQuest) = if (q.ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS
 
         private val pGround by themed { Paint().apply { color = Theme.panel } }
@@ -5094,12 +5101,13 @@ class HomeView(
             // b125: minimized = the title row only once the shrink has landed; while the box eases the kit fades the objective lines
             // with the room they have (UI Art), so no half line peeks
             val q = homeCard()
-            val folded = HomeSettings.questMin &&
+            val folded = (HomeSettings.questMin || (docked && dockFold)) &&
                 h <= UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = true) + 0.5f
             // q64 (the user, 2026-11-17: "I didnt want the rewards on the quests in the home page ... showing the Icon for if there is a
             // usable quest Item"): no reward line; the quest's item at the card's right edge, redrawn while its cooldown runs
             if (!cardHidden) UiKit.questCard(c, RectF(0f, 0f, w, h), q, scale = UiKit.CARD_HOME_SCALE,
-                bgAlpha = if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
+                bgAlpha = if (docked) SinglePlayLayout.CARD_ALPHA
+                    else if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
                 collapsed = folded, itemButton = true)
             if (!cardHidden && q?.item?.let { QuestItem.Cd.left(it.id) > 0.0 } == true) postInvalidateDelayed(250L)
             val n = noteText
@@ -5181,11 +5189,16 @@ class HomeView(
 
         init { ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() }) }       // weakly: [weakly]
 
+        /** the 1535 polish: standing in single screen mode's chat dock over the game - a see-through well, the words shadowed to read */
+        var dockGround = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+
         override fun onDraw(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat()
             UiKit.asBody(tp)
             // the chat's WELL (the harmony pass: every module the same well), the log inside its padding, from the bottom
-            UiKit.module(c, RectF(0f, 0f, w, h))
+            if (dockGround) UiKit.dockWell(c, RectF(0f, 0f, w, h)) else UiKit.module(c, RectF(0f, 0f, w, h))
+            if (dockGround) tp.setShadowLayer(4f, 0f, 1.5f, Color.BLACK) else tp.clearShadowLayer()
             // no "General" tab (user, 15:15: "remove the general tab from the chat ... just visual clutter")
             val pad = UiKit.MODULE_PAD
             // the game's world notice (the shard transfer's countdown) pinned at the top of the well; the log starts under it
@@ -6066,7 +6079,7 @@ class HomeView(
      * (giveBack) needs nothing from here.
      */
     private class DockLoan(val view: View, val parent: ViewGroup, val index: Int, val lp: ViewGroup.LayoutParams?, val alpha: Float,
-                           val tx: Float, val ty: Float, val cover: Float, val keepOut: List<RectF>)
+                           val tx: Float, val ty: Float, val cover: Float, val keepOut: List<RectF>, val vis: Int = View.VISIBLE)
     private val dockLoans = ArrayList<DockLoan>()
     /** [v] stands in a play dock now */
     fun docked(v: View): Boolean = dockLoans.any { it.view === v }
@@ -6074,9 +6087,18 @@ class HomeView(
     val dockedNow: Boolean get() = dockLoans.isNotEmpty()
 
     /** what Home's rest page lays now - the pieces the docks show: its chat, Party mode's list, the map (Home holding it) */
-    data class DockLaid(val chat: Boolean, val party: Boolean, val map: Boolean)
+    data class DockLaid(val chat: Boolean, val party: Boolean, val map: Boolean, val quest: Boolean = false)
     fun dockLaid(): DockLaid = DockLaid(chatPane.visibility == View.VISIBLE && now.containsKey(Part.CHAT),
-        partyView.visibility == View.VISIBLE && now.containsKey(Part.PARTY), lent(mapView) && mapSlot.visibility == View.VISIBLE)
+        partyView.visibility == View.VISIBLE && now.containsKey(Part.PARTY), lent(mapView) && mapSlot.visibility == View.VISIBLE,
+        quest = homeCard() != null)
+
+    /** the 1535 polish (the user: "instead it should show our focused quest box like it does on the bottom screen"): the focused quest's
+     *  card's height for the quest dock - its title row only when [fold] (a fight) or minimized as on Home; null = no focused quest */
+    fun dockQuestH(fold: Boolean): Int? {
+        val q = homeCard() ?: return null
+        questPane.dockFold = fold
+        return kotlin.math.ceil(UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = fold || HomeSettings.questMin)).toInt()
+    }
 
     /** Party mode's list as drawn: its height (the well and the Select tab) at the list's own row size; null in a Party-mode Top fight
      *  (its rows fill whatever box they get) */
@@ -6087,9 +6109,12 @@ class HomeView(
     }
 
     /** Home's chat pane, party list and map into the docks' slots [chat], [party], [map] (each the slot's only child) */
-    fun lendToDocks(chat: ViewGroup, party: ViewGroup, map: ViewGroup) {
+    fun lendToDocks(chat: ViewGroup, party: ViewGroup, map: ViewGroup, quest: ViewGroup? = null) {
         dockLend(chatPane, chat)
         dockLend(partyView, party)
+        if (quest != null) { dockLend(questPane, quest); questPane.translationZ = 0f }
+        // the 1535 polish (the user: "The party mode box and text box bot have solid backgrounds and it needs to be way more see through")
+        chatPane.dockGround = true; partyView.dockGround = true; questPane.docked = quest != null
         if (lent(mapView) && mapView.parent === mapSlot) {
             dockLend(mapView, map)
             mapView.compactCover = 0f; mapView.rimKeepOut = emptyList()       // (Home's card and buffs are not over it there)
@@ -6101,14 +6126,17 @@ class HomeView(
         val parent = v.parent as? ViewGroup ?: return
         val mv = v as? MapView
         dockLoans.add(DockLoan(v, parent, parent.indexOfChild(v), v.layoutParams, v.alpha, v.translationX, v.translationY,
-            mv?.compactCover ?: 0f, mv?.rimKeepOut ?: emptyList()))
+            mv?.compactCover ?: 0f, mv?.rimKeepOut ?: emptyList(), v.visibility))
         parent.removeView(v)
         into.addView(v, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         v.translationX = 0f; v.translationY = 0f; v.alpha = 1f
+        if (v === questPane) v.visibility = View.VISIBLE                 // (a Home layout without the card still has it in the dock)
     }
 
     /** every lent view back where it came from (last lent first), as it was; Home lays its page again */
     fun reclaimFromDocks() {
+        chatPane.dockGround = false; partyView.dockGround = false; questPane.docked = false; questPane.dockFold = false
+        questPane.translationZ = restZ(Part.QUESTS)
         if (dockLoans.isEmpty()) return
         while (dockLoans.isNotEmpty()) {
             val l = dockLoans.removeAt(dockLoans.size - 1)
@@ -6118,6 +6146,7 @@ class HomeView(
             (v.parent as? ViewGroup)?.removeView(v)
             if (l.lp != null) l.parent.addView(v, min(l.index, l.parent.childCount), l.lp) else l.parent.addView(v, min(l.index, l.parent.childCount))
             v.translationX = l.tx; v.translationY = l.ty; v.alpha = l.alpha
+            if (v.visibility != l.vis) v.visibility = l.vis
             if (v === mapView) { mapView.compactCover = l.cover; mapView.rimKeepOut = l.keepOut }
         }
         requestLayout(); invalidate()

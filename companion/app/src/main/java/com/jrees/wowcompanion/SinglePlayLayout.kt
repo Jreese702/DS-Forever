@@ -12,7 +12,7 @@ package com.jrees.wowcompanion
  *  K1 Trail's compass (SPEC w 860, h 76, top 4) and Hub's target bar under it           (530, 0, 1390, 210)
  *  K2 the HUD block (Trail P.lay.base: the bars' top at 540 - y, W x s), our top cast bar over it (nbar18's room), Party mode's rows
  *     under it (Hub PF COL_W 300): at the default HUD (640, 780, 1280, 1080), moving and growing with the live HUD (the hub's prd y/w/s)
- *  K3 our Nintendo bar out of fights (ActionBar NB at the stock bar's centre, scale k x 1.322)                (650, 860, 1270, 1064)
+ *  K3 the Wings AT REST out of fights (ActionBar nbar28; the 1535 polish - no Nintendo bar in single mode)   (290, 760, 1630, 966)
  *  K4 the Wings in fights, their worst crowded envelope (ActionBar NB.TOP: RAISE_MAX 300, PUSH_MAX 228)       (152, 550, 1768, 1080)
  *  K5 our party frames while Party mode is OFF (Hub PF.X 24, PF.Y 250, 4 x 64)                                (24, 250, 324, 506)
  * The rule: no dock piece meets one of them (OUT: K1 K2 K3 K5; IN: K1 K2 K4 K5); a HUD moved or grown shrinks the chat (its lines
@@ -22,6 +22,16 @@ package com.jrees.wowcompanion
  * THE SHIFT between the two ([steps]): each piece's window grows to the union of where it is and where it goes (ONE window update),
  * the piece glides inside it (Motion's COMBAT_GROW 240 ms into the fight, COMBAT_SHRINK 200 ms out of it), the window shrinks to the
  * new box (ONE update) - two window updates a piece a fight edge, none per frame.
+ *
+ * THE 1535 POLISH (the user on test 1533, 2026-11-26): "The chat can fit in the bottom right I think" - the chat stands on the RIGHT,
+ * under the map and the focused-quest card, its foot just over the Wings' resting reach; "The normal quest list should stay hidden and
+ * instead it should show our focused quest box like it does on the bottom screen" - Home's own quest card ([Piece.QUEST], lent as the
+ * map is) under the map (folded to its title row in a fight); "We need to hide the top screen xp bar so that we can recreate our home
+ * screen row buttons. These hide in combat and out of combat it just shifts up the controller buttons a bit and moves them closer
+ * together and makes them smaller when the Healthbars hide and slides up the home row from the bottom" - the room row ([Piece.ROW], the
+ * host's own Strip lent at [ROW_K]) at the bottom centre OUT of combat only, sliding up from under the screen's edge as the fight ends
+ * and back down as one starts ([steps]: [SLIDES]); our Nintendo bar is gone (SingleUi: the controller UI off), so K3 is now the WINGS AT
+ * REST (ActionBar nbar28: the fight spot x [WINGS_REST_K], [WINGS_REST_IN] closer, [WINGS_REST_UP] up, never under the row's top).
  *
  * Pure (no android.*): SinglePlayLayoutTest.
  */
@@ -68,24 +78,55 @@ object SinglePlayLayout {
     /** Party mode's list at least this tall (two rows) and this wide (the tab and one plate a row) */
     const val PARTY_MIN_H = 140
     const val PARTY_MIN_W = 320
-    /** every dock window together at most this many px (about a fifth of the 1920 x 1080 top screen: the compositor's cost) */
-    const val AREA_MAX = 400_000L
+    /** every dock window together at most this many px (about a quarter of the 1920 x 1080 top screen: the compositor's cost; the 1535
+     *  polish added the quest card and the room row, each small) */
+    const val AREA_MAX = 560_000L
     /** the glide's times (Motion.COMBAT_GROW / COMBAT_SHRINK: SinglePlayLayoutTest keeps them equal) */
     const val GROW_MS = 240L
     const val SHRINK_MS = 200L
 
     /** the pieces, each in its own small window (SingleShell.sub ids) */
-    enum class Piece(val sub: String) { MAP("dockR"), PARTY("dockP"), CHAT("dockL"), TALK("dockT") }
+    enum class Piece(val sub: String) { MAP("dockR"), PARTY("dockP"), CHAT("dockL"), TALK("dockT"), QUEST("dockQ"), ROW("dockH") }
+
+    /** the pieces that SLIDE (in from under the screen's bottom edge, out the same way) instead of fading where they stand */
+    val SLIDES = setOf(Piece.ROW)
+
+    // ---- the 1535 polish
+    /** the focused-quest card: its width out of a fight / in one (right-anchored, under the map) and the most it may take */
+    const val QUEST_W_OUT = 440
+    const val QUEST_W_IN = 360
+    const val QUEST_MAX_H = 260
+    const val QUEST_MIN_W = 300
+    /** the room row: the host's Strip (Strip.HEIGHT 145, laid 1240 wide as in the rooms column) at [ROW_K], centred, [ROW_FOOT] over
+     *  the bottom edge */
+    const val ROW_SRC_W = 1240
+    const val ROW_SRC_H = 145
+    const val ROW_K = 0.7f
+    const val ROW_FOOT = 4
+    /** the docks' grounds over the game (the user: "The party mode box and text box bot have solid backgrounds and it needs to be way
+     *  more see through so its not as intrusive"): the wells' fill, their metal edge, a party plate's ground (Home: 255 / 255 / 230) */
+    const val GROUND_ALPHA = 56
+    const val EDGE_ALPHA = 150
+    const val PLATE_ALPHA = 96
+    /** the focused-quest card's plate in its dock (Home's card over the map: UiKit.CARD_OVER_MAP_ALPHA 140) */
+    const val CARD_ALPHA = 110
+    /** ActionBar nbar28's Wings at rest (the add-on's NB.TOP.REST_*: test_wings_rest.py keeps them equal to the file's) */
+    const val WINGS_REST_K = 0.8f
+    const val WINGS_REST_IN = 60
+    const val WINGS_REST_UP = 84
 
     data class KeepOut(val name: String, val box: Box)
 
-    /** one arrangement: [party] null without Party mode; [talk] where hold to talk's pop-up stands while it is up */
-    data class Plan(val arr: Arr, val map: Box, val party: Box?, val chat: Box, val talk: Box) {
+    /** one arrangement: [party] null without Party mode; [talk] where hold to talk's pop-up stands while it is up; [quest] the focused
+     *  quest's card (null: no focused quest); [row] the room row (out of a fight only) */
+    data class Plan(val arr: Arr, val map: Box, val party: Box?, val chat: Box, val talk: Box, val quest: Box? = null, val row: Box? = null) {
         /** the chat lines that fit the chat's box */
         val chatLines: Int get() = maxOf(1, (chat.h - 2 * PANE_PAD + MSG_GAP) / LINE_H)
-        fun box(p: Piece): Box? = when (p) { Piece.MAP -> map; Piece.PARTY -> party; Piece.CHAT -> chat; Piece.TALK -> talk }
+        fun box(p: Piece): Box? = when (p) {
+            Piece.MAP -> map; Piece.PARTY -> party; Piece.CHAT -> chat; Piece.TALK -> talk; Piece.QUEST -> quest; Piece.ROW -> row
+        }
         /** the pieces that stand while playing (the talk pop-up only while it is up) */
-        fun boxes(): Map<Piece, Box?> = mapOf(Piece.MAP to map, Piece.PARTY to party, Piece.CHAT to chat)
+        fun boxes(): Map<Piece, Box?> = mapOf(Piece.MAP to map, Piece.PARTY to party, Piece.CHAT to chat, Piece.QUEST to quest, Piece.ROW to row)
     }
 
     /** the arrangement Home's fight word asks for */
@@ -100,15 +141,14 @@ object SinglePlayLayout {
     /** Party mode's list: 440 wide (the paired rows' names whole), at most 320 tall (its own height: [plan]'s partyH) */
     private val PARTY_OUT = Box(16, 220, 456, 540)
     private val PARTY_IN = Box(16, 88, 456, 408)
-    private val CHAT_OUT_PARTY = Box(16, 560, 556, 840)
-    /** Party mode off: our party frames are back at K5, so the chat starts under them */
-    private val CHAT_OUT_SOLO = Box(16, 520, 556, 840)
-    private val CHAT_IN_PARTY = Box(16, 416, 456, 548)
-    /** Party mode off in a fight: above K5 (the frames) and above K4 (the Wings' envelope): the 3 newest lines */
-    private val CHAT_IN_SOLO = Box(16, 96, 456, 228)
+    /** the 1535 polish: the chat on the RIGHT, its foot over the Wings at rest (K3) out of a fight / over their widest reach (K4) in
+     *  one; its top under the quest card (else this tall) */
+    private val CHAT_OUT = Box(1364, 472, 1904, 752)
+    private val CHAT_IN = Box(1464, 352, 1904, 542)
 
     val K1 = Box(530, 0, 1390, 210)
-    val K3 = Box(650, 860, 1270, 1064)
+    /** the 1535 polish: our Wings AT REST out of fights (no Nintendo bar in single screen mode any more) */
+    val K3 = Box(290, 760, 1630, 966)
     val K4 = Box(152, 550, 1768, 1080)
     val K5 = Box(24, 250, 324, 506)
 
@@ -147,7 +187,7 @@ object SinglePlayLayout {
         val out = ArrayList<KeepOut>(5)
         out += KeepOut("K1 compass + target bar", sc.place(K1, Anchor.CENTRE))
         out += KeepOut("K2 HUD block", sc.place(k2(hud, partyMode), Anchor.CENTRE))
-        if (arr == Arr.OUT) out += KeepOut("K3 Nintendo bar", sc.place(K3, Anchor.CENTRE))
+        if (arr == Arr.OUT) out += KeepOut("K3 Wings at rest", sc.place(K3, Anchor.CENTRE))
         else out += KeepOut("K4 Wings", sc.place(K4, Anchor.CENTRE))
         if (!partyMode) out += KeepOut("K5 party frames", sc.place(K5, Anchor.LEFT))
         return out
@@ -155,10 +195,12 @@ object SinglePlayLayout {
 
     /**
      * THE ARRANGEMENT for [arr] on a [w] x [h] screen: [partyMode] = Party mode's list shows (PartyModel: on and routing), [hud] the live
-     * HUD. The map top right, the party list and the chat on the left; the chat shrinks (lines, then width) and the map shrinks (to 240)
-     * to keep clear of every keep-out; the talk pop-up over the party list (or over the chat's top).
+     * HUD, [partyH] the list's own height, [questH] the focused quest's card's (null = no focused quest: no card). The map top right, the
+     * quest card under it, the chat under that on the right (the 1535 polish); the party list on the left; the room row at the bottom
+     * centre out of a fight. The chat shrinks (lines, then width) and the map shrinks (to 240) to keep clear of every keep-out; the talk
+     * pop-up over the party list (or over the chat).
      */
-    fun plan(arr: Arr, partyMode: Boolean, hud: Hud = Hud(), w: Int = BASE_W, h: Int = BASE_H, partyH: Int? = null): Plan {
+    fun plan(arr: Arr, partyMode: Boolean, hud: Hud = Hud(), w: Int = BASE_W, h: Int = BASE_H, partyH: Int? = null, questH: Int? = null): Plan {
         val sc = Screen(w, h)
         val keeps = virtualKeeps(sc, arr, partyMode, hud).map { it.box }
         var map = sc.place(if (arr == Arr.OUT) MAP_OUT_BOX else MAP_IN_BOX, Anchor.RIGHT)
@@ -168,37 +210,66 @@ object SinglePlayLayout {
             // finger meant for the game
             fitParty(partyH?.let { ph -> b.copy(b = b.t + ph.coerceIn(PARTY_MIN_H, b.h)) } ?: b, keeps)
         }
-        var chat = sc.place(when {
-            arr == Arr.OUT && partyMode -> CHAT_OUT_PARTY
-            arr == Arr.OUT -> CHAT_OUT_SOLO
-            partyMode -> CHAT_IN_PARTY
-            else -> CHAT_IN_SOLO
-        }, Anchor.LEFT)
-        chat = fit(chat, keeps)
-        var talk = party?.let { Box(it.l, it.t, it.l + TALK_W, it.t + TALK_H) } ?: Box(chat.l, chat.t, chat.l + TALK_W, chat.t + TALK_H)
-        // the pop-up keeps clear too: narrower first, then up (it is over our own pieces while it lasts - the party frames K5 too)
-        val solo = if (!partyMode) sc.place(K5, Anchor.LEFT) else null
-        for (k in keeps) if (k != solo && talk.hits(k, GAP)) {
-            val nr = k.l - GAP
-            if (nr - talk.l >= TALK_MIN_W && k.l > talk.l) talk = talk.copy(r = minOf(talk.r, nr))
-            if (talk.hits(k, GAP) && k.t > talk.t) talk = talk.shift(0, (k.t - GAP) - talk.b)
+        val chat0 = sc.place(if (arr == Arr.OUT) CHAT_OUT else CHAT_IN, Anchor.RIGHT)
+        // the focused quest's card under the map, right-anchored; never into the chat's least room
+        val quest = questH?.let { qh ->
+            val qw = if (arr == Arr.OUT) QUEST_W_OUT else QUEST_W_IN
+            val top = map.b + GAP
+            val most = (chat0.b - CHAT_MIN_H - GAP) - top
+            val hh = minOf(qh, QUEST_MAX_H, most).coerceAtLeast(1)
+            fitRight(Box(map.r - qw, top, map.r, top + hh), keeps, QUEST_MIN_W, hh)
+        }
+        var chat = if (quest != null && quest.b + GAP > chat0.t) chat0.copy(t = quest.b + GAP) else chat0
+        chat = fitRight(chat, keeps, CHAT_MIN_W, CHAT_MIN_H)
+        var talk: Box
+        if (party != null) {
+            talk = Box(party.l, party.t, party.l + TALK_W, party.t + TALK_H)
+            // the pop-up keeps clear too: narrower first, then up (it is over our own pieces while it lasts)
+            for (k in keeps) if (talk.hits(k, GAP)) {
+                val nr = k.l - GAP
+                if (nr - talk.l >= TALK_MIN_W && k.l > talk.l) talk = talk.copy(r = minOf(talk.r, nr))
+                if (talk.hits(k, GAP) && k.t > talk.t) talk = talk.shift(0, (k.t - GAP) - talk.b)
+            }
+        } else {
+            // over the chat on the right: up first (its foot on the chat's), then narrower from the left
+            talk = Box(chat.r - TALK_W, chat.t, chat.r, chat.t + TALK_H)
+            for (i in 0 until 4) {
+                val k = keeps.firstOrNull { talk.hits(it, GAP) } ?: break
+                val was = talk
+                talk = when {
+                    k.t > talk.t -> talk.shift(0, (k.t - GAP) - talk.b)
+                    k.r < talk.r && talk.r - (k.r + GAP) >= TALK_MIN_W -> talk.copy(l = maxOf(talk.l, k.r + GAP))
+                    else -> talk
+                }
+                if (talk == was) break
+            }
         }
         if (talk.t < 0) talk = talk.shift(0, -talk.t)
-        return Plan(arr, sc.px(map), party?.let { sc.px(it) }, sc.px(chat), sc.px(talk))
+        // the room row: out of a fight, centred at the bottom (the HUD's place - the bars hide out of combat - under the Wings at rest)
+        val row = if (arr == Arr.OUT) {
+            val rw = Math.round(ROW_SRC_W * ROW_K); val rh = Math.round(ROW_SRC_H * ROW_K)
+            val l = (BASE_W - rw) / 2
+            sc.place(Box(l, BASE_H - ROW_FOOT - rh, l + rw, BASE_H - ROW_FOOT), Anchor.CENTRE)
+        } else null
+        return Plan(arr, sc.px(map), party?.let { sc.px(it) }, sc.px(chat), sc.px(talk), quest?.let { sc.px(it) }, row?.let { sc.px(it) })
     }
 
-    /** the chat kept clear of [keeps]: its lines first (the bottom up), then its width, at last its top down under one */
-    private fun fit(start: Box, keeps: List<Box>): Box {
+    /** whether piece [p] is held clear of the keep-out named [name]: the room row stands in the HUD's place under the Wings at rest by
+     *  design (the user's words: the bars hide out of combat and the row slides up there), so K2 / K3 are not its */
+    fun keptFrom(p: Piece, name: String): Boolean = !(p == Piece.ROW && (name.startsWith("K2") || name.startsWith("K3")))
+
+    /** a right-anchored piece kept clear of [keeps]: its bottom up first, then narrower from the left, at last its top down */
+    private fun fitRight(start: Box, keeps: List<Box>, minW: Int, minH: Int): Box {
         var c = start
         repeat(4) {
             val k = keeps.firstOrNull { c.hits(it, GAP) } ?: return c
             val nb = k.t - GAP
-            val nr = k.l - GAP
+            val nl = k.r + GAP
             val nt = k.b + GAP
             c = when {
-                k.t > c.t && nb - c.t >= CHAT_MIN_H -> c.copy(b = minOf(c.b, nb))
-                k.l > c.l && nr - c.l >= CHAT_MIN_W -> c.copy(r = minOf(c.r, nr))
-                k.b < c.b && c.b - nt >= CHAT_MIN_H -> c.copy(t = maxOf(c.t, nt))
+                k.t > c.t && nb - c.t >= minH -> c.copy(b = minOf(c.b, nb))
+                k.r < c.r && c.r - nl >= minW -> c.copy(l = maxOf(c.l, nl))
+                k.b < c.b && c.b - nt >= minH -> c.copy(t = maxOf(c.t, nt))
                 else -> return c
             }
         }
@@ -241,15 +312,21 @@ object SinglePlayLayout {
         val out = ArrayList<Step>()
         for (p in Piece.values()) {
             if (p == Piece.TALK) continue
-            val a = from[p]; val b = to[p]
-            if (a == b) continue
+            val a0 = from[p]; val b0 = to[p]
+            if (a0 == b0) continue
+            // a sliding piece (the room row) comes up from under the bottom edge and goes back down there, whole (no fade)
+            val a = if (p in SLIDES && a0 == null) below(b0!!) else a0
+            val b = if (p in SLIDES && b0 == null) below(a0!!) else b0
             val win = when { a == null -> b; b == null -> a; else -> a.union(b) }
             out += Step.Place(p, win)
             out += Step.Glide(p, a, b, ms)
-            out += Step.Place(p, b)
+            out += Step.Place(p, b0)
         }
         return out
     }
+
+    /** [b] moved down just past the screen's bottom edge (its height and a gap): where a sliding piece comes from / goes to */
+    fun below(b: Box): Box = b.shift(0, b.h + GAP + ROW_FOOT)
 
     /** a glide's box at [k] (0..1, the curve applied) between [a] and [b] (either null: the other, faded by the caller) */
     fun at(a: Box?, b: Box?, k: Float): Box? {
@@ -266,9 +343,11 @@ object SinglePlayLayout {
      * place (NPC's strip [SingleNpc.ROLLS]), the party list while LB's party picture stands over it (NPC's strip [SingleNpc.LB], display
      * only) or while our window covers the screen ([fullFrame])
      */
-    fun hidden(strip: String?, fullFrame: Boolean, chatLaid: Boolean, mapLaid: Boolean): Set<Piece> {
+    fun hidden(strip: String?, fullFrame: Boolean, chatLaid: Boolean, mapLaid: Boolean, questLaid: Boolean = true): Set<Piece> {
         val h = HashSet<Piece>()
         if (!chatLaid) h += Piece.CHAT
+        if (!questLaid) h += Piece.QUEST
+        if (fullFrame) h += Piece.ROW
         if (!mapLaid || strip == SingleNpc.ROLLS) h += Piece.MAP
         if (strip == SingleNpc.LB || fullFrame) h += Piece.PARTY
         return h

@@ -9,11 +9,18 @@ package com.jrees.wowcompanion
  * | element | here |
  * |---|---|
  * | minimap, chat window | ON - OFF while the play docks are built ([docks]: Home's own map and chat stand over the game instead) |
- * | quest tracker | ON (the game draws it) |
- * | controller UI ("hud") | NINTENDO (the stock gamepad bar replaced by our Nintendo bar: `uisw` NBAR_ON) |
- * | buffs, XP bar | ON |
+ * | quest tracker | ON - OFF while the play docks are built (Home's own focused-quest card stands under the map instead) |
+ * | controller UI ("hud") | OFF: no Nintendo bar, no stock bar (our Wings stand there in and out of fights: ActionBar nbar28) |
+ * | buffs | ON |
+ * | XP bar | OFF (Home's room row slides up in its place out of fights, our XP track on it) |
  * | NPC windows ("dialogs") | OFF (ours, over the game: the user's pick "Ours over the game") |
  * | the game's cast bar | shown - hidden once the add-on says single screen mode is on ([addonSingle]: ActionBar nbar25's top cast bar has every cast) |
+ *
+ * THE 1535 POLISH (the user on test 1533, 2026-11-26: "the Nintendo bar is BAD and I hate it. I love the top screen bar that we just
+ * built"; "The normal quest list should stay hidden and instead it should show our focused quest box like it does on the bottom screen";
+ * "We need to hide the top screen xp bar so that we can recreate our home screen row buttons"): the controller UI and the XP bar OFF, the
+ * tracker OFF with the docks. Every one is hidden by the add-on's own alpha switches (Hub's element words, Tracker.lua's alpha), never a
+ * CVar, and comes back as saved the moment the mode is off (two screens read the saved modes) or the add-on reloads without the app.
  *
  * Pure (no android.*).
  */
@@ -25,10 +32,10 @@ object SingleUi {
 
     /** the mode element [id] has in single screen mode; [saved] = the player's own choice (kept for anything not listed) */
     fun mode(id: String, saved: UiMode): UiMode = when (id) {
-        "minimap", "chat" -> if (docks) UiMode.OFF else UiMode.ON
-        "tracker" -> UiMode.ON
-        HudSplit.CONTROLLER_ID -> UiMode.NINTENDO
-        HudSplit.BUFFS_ID, HudSplit.XP_ID -> UiMode.ON
+        "minimap", "chat", "tracker" -> if (docks) UiMode.OFF else UiMode.ON
+        HudSplit.CONTROLLER_ID -> UiMode.OFF
+        HudSplit.BUFFS_ID -> UiMode.ON
+        HudSplit.XP_ID -> UiMode.OFF
         "dialogs" -> UiMode.OFF
         else -> saved
     }
