@@ -898,9 +898,12 @@ object PadMapModel {
     const val P4_SINGLE_ON = 1
     fun page4(code: Int): List<Pair<String, Int>> = listOf(ROW_PADTAB to 39, ROW_PADTAB to 38, ROW_PADTAB to 0, ROW_PADTAB to code)
     /** the int/1533 review (Book b87, PadMap m202): the app's session bump after a SHORT fire (HoldRelease.bump, 0-3 steps of 34 ms),
-     *  page-4 codes 2-5 - the add-on's fire point adds it, so the top screen's ring fills when the launcher lets the press go */
-    const val P4_BUMP_0 = 2
-    const val P4_BUMP_LAST = 5
+     *  page-4 codes - the add-on's fire point adds it, so the top screen's ring fills when the launcher lets the press go. Round 2
+     *  (Book b88): codes 11-14, were 2-5 - a swallowed pick (TapPad's 0.25 s repeat guard took the batch's 0: a column-0 tab touch just
+     *  before) leaves 39, 38, code for the SECOND page, whose 2 / 3 turn and save Bar in Party mode; its 11-14 are the Spellbook room's
+     *  tab touches (nothing outside that room on its book; never in the Controller room, where column 0 is touched) */
+    const val P4_BUMP_0 = 11
+    const val P4_BUMP_LAST = 14
     fun bumpCells(steps: Int): List<Pair<String, Int>> = page4(P4_BUMP_0 + steps.coerceIn(0, P4_BUMP_LAST - P4_BUMP_0))
     /** every page-4 code in use: SingleTopTest keeps them apart */
     val PAGE4_CODES: kotlin.collections.Map<String, IntRange> = mapOf("single screen mode" to P4_SINGLE_OFF..P4_SINGLE_ON,

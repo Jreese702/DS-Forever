@@ -1559,6 +1559,13 @@ fun XServerScreen(
                 // to the window there while the button was held) is handed to hold to cast as one - a kept press stays down for the game
                 // to its fill and casts the hold there (HoldRelease.cancelUp); any other press gets its up as before
                 val cancelUp = it.event.action == KeyEvent.ACTION_UP && it.event.isCanceled
+                // round 2 of the review: a REAL up (the player let go; Android hands it to this window even after it cancelled the
+                // down) first lets go a kept press that key made - its up came cancelled and it was still down for the game to its
+                // fill (HoldCast.realUp: the tap, as a release before the fill). Every press's source (this device, this key) is
+                // taken at its down edge while the handlers write it
+                val realUp = it.event.action == KeyEvent.ACTION_UP && !it.event.isCanceled && it.event.repeatCount == 0
+                if (realUp) com.jrees.wowcompanion.HoldCast.realUp(it.event.deviceId, it.event.keyCode)
+                com.jrees.wowcompanion.HoldCast.inputFrom(it.event.deviceId, it.event.keyCode)
                 if (cancelUp) com.jrees.wowcompanion.HoldCast.canceling(true)
                 try {
                     if (assignedSlot > 0) {
@@ -1572,6 +1579,7 @@ fun XServerScreen(
                     }
                 } finally {
                     if (cancelUp) com.jrees.wowcompanion.HoldCast.canceling(false)
+                    com.jrees.wowcompanion.HoldCast.inputFrom(0, 0)
                 }
             }
             if (!handled && isKeyboard) {
@@ -1629,6 +1637,9 @@ fun XServerScreen(
                 // DS Forever (the int/1533 review): a joystick's ACTION_CANCEL (the keys moved to the other screen while held: its hat is
                 // let go, ExternalController) is handed to hold to cast as a cancel, as a cancelled key's up above
                 val cancelPad = it.event.actionMasked == MotionEvent.ACTION_CANCEL
+                // round 2: a D-pad press made by this motion has the hat's direction as its source (its real up: ExternalController's
+                // first released reading after a cancel, HoldCast.hatUp)
+                com.jrees.wowcompanion.HoldCast.inputFrom(it.event.deviceId, com.jrees.wowcompanion.HoldCast.SRC_MOTION)
                 if (cancelPad) com.jrees.wowcompanion.HoldCast.canceling(true)
                 try {
                     if (assignedSlot > 0) {
@@ -1642,6 +1653,7 @@ fun XServerScreen(
                     }
                 } finally {
                     if (cancelPad) com.jrees.wowcompanion.HoldCast.canceling(false)
+                    com.jrees.wowcompanion.HoldCast.inputFrom(0, 0)
                 }
             }
             if (PluviaApp.touchpadView?.hasPointerCapture() != true && !PluviaApp.isOverlayPaused) {

@@ -6110,22 +6110,29 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private var bumpSentAt: Long? = null
     private var bumpSentWant: Int? = null
     private var bumpTries = 0
+    /** round 2: the last padmap's `hold.lk` (a lower one = a new add-on load: the tries start again) */
+    private var bumpLk: Int? = null
     private val bumpAgain = Runnable { lastPadMap?.let { holdBumpCheck(it) } }
 
     /** the launcher's session bump (HoldRelease.bumpSteps: later fires after a SHORT one) vs the add-on's `hold.hb`: [holdTicksCheck]'s
-     *  rules (HoldCast.bumpToSend) - so the top screen's ring fills when the launcher lets the press go; an older add-on: nothing */
+     *  rules (HoldCast.bumpToSend) - so the top screen's ring fills when the launcher lets the press go; an older add-on: nothing.
+     *  Round 2 of the int/1533 review: a try counts only when it went (the game live: one refused waits for the next current padmap),
+     *  and the tries start again per add-on load and per minute (HoldCast.bumpTriesAgain) - three lost to a loading screen no longer
+     *  give up for the session. In a fight the add-on steps its own (PadMap m203) */
     private fun holdBumpCheck(m: PadMapModel.Map) {
         val want = HoldCast.release.bumpSteps
-        if (bumpSentWant != want) { bumpSentAt = null; bumpTries = 0 }
         val now = SystemClock.elapsedRealtime()
+        if (HoldCast.bumpTriesAgain(bumpSentWant != want, m.holdLooks, bumpLk, bumpSentAt?.let { now - it })) { bumpSentAt = null; bumpTries = 0 }
+        if (m.holdLooks != null) bumpLk = m.holdLooks
         ui.removeCallbacks(bumpAgain)
         if (m.holdHb == null || m.holdHb == want) { if (m.holdHb == want) { bumpSentAt = null; bumpSentWant = null; bumpTries = 0 }; return }
         if (page3Busy(now, "bump")) { ui.postDelayed(bumpAgain, CAST_AFTER_TOP_MS); return }
         val send = HoldCast.bumpToSend(want, m.holdHb, m.combat || homeView.inFight(), bumpSentAt?.let { now - it }, bumpTries)
         if (send == null) { if (bumpTries < HoldCast.SEND_TRIES) ui.postDelayed(bumpAgain, TopCombatBar.RESEND_MS); return }
-        bumpSentAt = now; bumpSentWant = want
         val sent = padTabTap(PadMapModel.bumpCells(send))
         Log.i(HoldCast.TAG, "hold bump: $send steps ${if (sent) "sent" else "not sent"}")
+        if (!sent) return
+        bumpSentAt = now; bumpSentWant = want
         if (++bumpTries < HoldCast.SEND_TRIES) ui.postDelayed(bumpAgain, TopCombatBar.RESEND_MS + 200L)
     }
 

@@ -472,8 +472,50 @@ object HoldCast {
     /** XServerScreen: the event handed to the launcher's handlers now is Android's cancel ([on]), until it says false */
     @JvmStatic fun canceling(on: Boolean) { cancelIn = on }
 
+    // ---------------------------------------------------------------- the int/1533 review, round 2: A KEPT PRESS'S REAL RELEASE
+    /** the code XServerScreen gives a joystick's motion ([inputFrom]): a D-pad control pressed by it came from the hat's own direction
+     *  ([hatCode]); above every key code */
+    const val SRC_MOTION = 0x10000
+    /** the hat's direction [dir] (0 up, 1 right, 2 down, 3 left) as a press's source code */
+    fun hatCode(dir: Int): Int = SRC_MOTION + 1 + dir
+    private fun srcKey(device: Int, code: Int): Long = (device.toLong() shl 32) or (code.toLong() and 0xFFFFFFFFL)
+    /** where the input the launcher's handlers write now came from (a key's device + key code, a motion's [SRC_MOTION]); 0 = unknown
+     *  (a resend, the on-screen pad) */
+    @Volatile private var srcIn = 0L
+    /** each control's press, its source (taken at its down edge; 0 = unknown: no real up can name it) */
+    private val srcOf = LongArray(HoldRelease.CTLS)
+
+    /** XServerScreen, around its handlers: the event in hand is device [device]'s key [code] (or [SRC_MOTION]); 0, 0 = none */
+    @JvmStatic fun inputFrom(device: Int, code: Int) { srcIn = if (code <= 0) 0L else srcKey(device, code) }
+
+    /** a press's source at its down edge: the event's key, or for a D-pad control pressed by a motion its hat direction */
+    private fun pressSrc(ctl: Int): Long {
+        val s = srcIn
+        if (s == 0L) return 0L
+        if ((s and 0xFFFFFFFFL).toInt() != SRC_MOTION) return s
+        val dir = ctl - HoldRelease.UP
+        return if (dir in 0..3) srcKey((s ushr 32).toInt(), hatCode(dir)) else 0L
+    }
+
+    /**
+     * XServerScreen, BEFORE its handlers: device [device]'s key [code] came up for real (not Android's cancel). A KEPT press made by that
+     * key (its up came cancelled, the keys came back, the player let go before the fill) is let go now ([HoldRelease.realUp]: the tap,
+     * as a release before the fill); the state is sent again after the event in hand (whose own write carries it too)
+     */
+    @JvmStatic @Synchronized fun realUp(device: Int, code: Int) {
+        if (code <= 0) return
+        val s = srcKey(device, code)
+        var changed = false
+        for (c in 0 until HoldRelease.CTLS) if (srcOf[c] == s && release.realUp(c)) { srcOf[c] = 0L; changed = true }
+        if (!changed) return
+        schedule(release.nextAt())
+        later(0L) { resend?.run() }
+    }
+    /** ExternalController: the hat's direction [dir] read released for the first time after Android's cancel (its real up) */
+    @JvmStatic fun hatUp(device: Int, dir: Int) { if (dir in 0..3) realUp(device, hatCode(dir)) }
+
     /** WinHandler (main thread, player 1): the state it is about to write - A / X / Y / the D-pad's edges onto [release] (an up while
-     *  [canceling]: Android's cancel, [HoldRelease.cancelUp]) */
+     *  [canceling]: Android's cancel, [HoldRelease.cancelUp]; a down: its source, [inputFrom]) */
     @JvmStatic @Synchronized fun padIn(buttons: Int, up: Boolean, right: Boolean, down: Boolean, left: Boolean, now: Long) {
         val b = buttons and 0xFFFF
         inDpad[0] = up; inDpad[1] = right; inDpad[2] = down; inDpad[3] = left
@@ -481,7 +523,10 @@ object HoldCast {
         for (c in 0 until HoldRelease.CTLS) {
             val was = HoldRelease.isDown(c, lastButtons, lastDpad)
             val now2 = HoldRelease.isDown(c, b, inDpad)
-            if (was != now2) { if (!now2 && cancel) release.cancelUp(c, now) else release.edge(c, now2, now) }
+            if (was != now2) {
+                if (now2) srcOf[c] = pressSrc(c)
+                if (!now2 && cancel) release.cancelUp(c, now) else release.edge(c, now2, now)
+            }
         }
         lastButtons = b
         System.arraycopy(inDpad, 0, lastDpad, 0, 4)
@@ -500,7 +545,7 @@ object HoldCast {
     /** player 1's controller changed (or the session ended: [all]): pending fires off; a forced button stays up for the game until it
      *  reads up (never a second down for a press still held) */
     @JvmStatic @Synchronized fun padReset(all: Boolean) {
-        if (all) { release.reset(); lastButtons = 0; java.util.Arrays.fill(lastDpad, false) }
+        if (all) { release.reset(); lastButtons = 0; java.util.Arrays.fill(lastDpad, false); srcOf.fill(0L) }
         else if (release.cancelPending()) runCatching { resend?.run() }                // a KEPT press: its up for the game now
         schedule(HoldRelease.NEVER)
     }
@@ -559,11 +604,12 @@ object HoldCast {
     }
 
     /**
-     * THE SESSION'S BUMP TO THE ADD-ON (the int/1533 review; Book b87's page-4 codes 2-5, PadMap m202's `hold.hb`): after a SHORT fire
+     * THE SESSION'S BUMP TO THE ADD-ON (the int/1533 review; Book b88's page-4 codes 11-14, PadMap m202's `hold.hb`): after a SHORT fire
      * the launcher lets every kept press go [HoldRelease.BUMP_STEP_MS] later (up to 102 ms), but the add-on's ring - the only one in
      * single screen mode - filled to F without it, full up to 0.1 s before the cast. [want] the app's steps (release.bumpSteps), [have]
      * the padmap's `hold.hb` (null = an add-on before m202: nothing to send); [ticksToSend]'s rules (out of a fight, re-sent every
-     * TopCombatBar.RESEND_MS until it says it, [SEND_TRIES] a wish). The steps to send, or null
+     * TopCombatBar.RESEND_MS until it says it, [SEND_TRIES] a wish). The steps to send, or null. In a fight the add-on steps its own
+     * (PadMap m203: it sees a SHORT fire itself), so the ring follows there too; this send is the app's word out of a fight
      */
     fun bumpToSend(want: Int, have: Int?, inFight: Boolean, sinceSendMs: Long?, tries: Int = 0): Int? {
         if (have == null || have == want || want !in 0..3) return null
@@ -573,6 +619,15 @@ object HoldCast {
     }
     /** CompanionHost's bump sender (weakly held there): a SHORT fire changed the bump */
     @Volatile var onBumpWanted: (() -> Unit)? = null
+    /** the bump's tries start again this long after the last one (round 2: tries lost to a loading screen never gave up for the session) */
+    const val BUMP_REFRESH_MS = 60_000L
+    /**
+     * The int/1533 review, round 2: the bump wish's tries ([SEND_TRIES]) start again - a new wish ([newWish]), a new add-on load (the
+     * padmap's `hold.lk` [lk], the looks its hold clock was given since its load, lower than the last padmap's [lastLk]: a /reload or a
+     * relog), or [BUMP_REFRESH_MS] since the last try ([sinceSendMs]). Bounded: [SEND_TRIES] per load or per minute, out of fights
+     */
+    fun bumpTriesAgain(newWish: Boolean, lk: Int?, lastLk: Int?, sinceSendMs: Long?): Boolean =
+        newWish || (lk != null && lastLk != null && lk < lastLk) || (sinceSendMs != null && sinceSendMs >= BUMP_REFRESH_MS)
 
     /** the Controller room's hint and Settings' tile: the fire point as the room writes it (F at 60 fps, rounded: 0.5 / 0.7 / 0.9 s) */
     fun holdWord(): String = when (CastSettings.holdTime) {

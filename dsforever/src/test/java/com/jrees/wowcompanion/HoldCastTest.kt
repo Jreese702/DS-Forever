@@ -595,7 +595,7 @@ class HoldCastTest {
     /**
      * THE int/1533 REVIEW (Book b87, PadMap m202): after a SHORT fire the launcher lets every later kept press go [HoldRelease.BUMP_STEP_MS]
      * later (up to 102 ms), but the add-on's ring - the only one in single screen mode - filled to F without it: full and "charged" up to
-     * 0.1 s before the cast. The app now tells the add-on its steps (page-4 codes 2-5) until the padmap's `hold.hb` says them, by the hold
+     * 0.1 s before the cast. The app now tells the add-on its steps (page-4 codes 2-5; Book b88: 11-14) until the padmap's `hold.hb` says them, by the hold
      * time's rules (out of a fight, re-sent, SEND_TRIES a wish); an add-on before m202 (no hb) is sent nothing
      */
     @Test fun theSessionBumpReachesTheAddOnsRing() {
@@ -611,10 +611,24 @@ class HoldCastTest {
         assertNull("a send just went", HoldCast.bumpToSend(2, 0, false, 1_000L))
         assertEquals(2, HoldCast.bumpToSend(2, 0, false, TopCombatBar.RESEND_MS))
         assertNull("the wish's sends spent", HoldCast.bumpToSend(2, 0, false, null, tries = HoldCast.SEND_TRIES))
-        assertEquals(listOf(PadMapModel.ROW_PADTAB to 39, PadMapModel.ROW_PADTAB to 38, PadMapModel.ROW_PADTAB to 0, PadMapModel.ROW_PADTAB to 2),
+        // round 2 (Book b88): codes 11-14, not 2-5 - a swallowed fourth-page pick (TapPad's 0.25 s guard: a column-0 tab touch just
+        // before) leaves 39, 38, code: the SECOND page's code runs, and its 2 / 3 turn (and save) Bar in Party mode; its 11-14 are the
+        // Spellbook room's tab touches, which act only with that room on its book (never in the Controller room, column 0's)
+        assertEquals(listOf(PadMapModel.ROW_PADTAB to 39, PadMapModel.ROW_PADTAB to 38, PadMapModel.ROW_PADTAB to 0, PadMapModel.ROW_PADTAB to 11),
             PadMapModel.bumpCells(0))
-        assertEquals(PadMapModel.ROW_PADTAB to 5, PadMapModel.bumpCells(3).last())
-        assertEquals(2..5, PadMapModel.PAGE4_CODES["hold bump"])
+        assertEquals(PadMapModel.ROW_PADTAB to 14, PadMapModel.bumpCells(3).last())
+        assertEquals(11..14, PadMapModel.PAGE4_CODES["hold bump"])
+        assertTrue("no second-page code that acts outside its own room (1-10: Party mode's bar, Bar in Party mode, the Bind box, the chooser)",
+            PadMapModel.PAGE4_CODES["hold bump"]!!.none { it in 1..10 })
+        // round 2: the wish's tries start again - a new wish, a new add-on load (hold.lk lower than the last padmap's), a minute since
+        // the last try (three tries lost to a loading screen no longer give up for the session)
+        assertTrue("a new wish", HoldCast.bumpTriesAgain(true, 40, 40, 1_000L))
+        assertTrue("a /reload: the clock's looks from 0 again", HoldCast.bumpTriesAgain(false, 2, 40, 1_000L))
+        assertTrue("a minute since the last try", HoldCast.bumpTriesAgain(false, 40, 40, HoldCast.BUMP_REFRESH_MS))
+        assertFalse("the same load, a try just went", HoldCast.bumpTriesAgain(false, 41, 40, HoldCast.BUMP_REFRESH_MS - 1))
+        assertFalse("nothing known", HoldCast.bumpTriesAgain(false, null, 40, null))
+        assertFalse(HoldCast.bumpTriesAgain(false, 40, null, null))
+        assertEquals(60_000L, HoldCast.BUMP_REFRESH_MS)
         fun map(hold: JSONObject) = PadMapModel.parse(JSONObject().put("type", "padmap").put("v", "m202").put("m", JSONObject().put("page", 1)
             .put("pages", 3).put("sets", org.json.JSONArray()).put("hold", hold)))!!
         assertEquals(2, map(JSONObject().put("on", true).put("n", 3).put("hb", 2)).holdHb)
@@ -651,6 +665,9 @@ class HoldCastTest {
         assertTrue("the launcher's steps vs the padmap's hb", chk.contains("val want = HoldCast.release.bumpSteps") && chk.contains("m.holdHb"))
         assertTrue("its rules", chk.contains("HoldCast.bumpToSend(want, m.holdHb, m.combat || homeView.inFight()"))
         assertTrue("its cells", chk.contains("padTabTap(PadMapModel.bumpCells(send))"))
+        assertTrue("round 2: a try counts only when it went (the game live)", chk.contains("if (!sent) return") &&
+            chk.indexOf("if (!sent) return") < chk.indexOf("++bumpTries"))
+        assertTrue("round 2: the tries start again per load / per minute", chk.contains("HoldCast.bumpTriesAgain(bumpSentWant != want, m.holdLooks, bumpLk"))
         assertTrue("the SHORT fire's ask, weakly held", host.contains("HoldCast.onBumpWanted = { me.get()?.let { h -> h.ui.post { h.lastPadMap?.let { m -> h.holdBumpCheck(m) } } } }"))
     }
 }

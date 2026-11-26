@@ -68,10 +68,10 @@ def sent_cc(L, n0):
 
 
 # ------------------------------------------------------------------------------------------------ 0 the tags
-check('local PV = "m202"' in SRC["padmap"] and "m190 THE SWING WITH OUR TOP CAST BAR" in SRC["padmap"]
+check('local PV = "m203"' in SRC["padmap"] and "m190 THE SWING WITH OUR TOP CAST BAR" in SRC["padmap"]
       and "m187 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["padmap"]
       and "m179 THE COMBAT BAR ON THE TOP SCREEN" in SRC["padmap"], "0. PadMap m190 (m187's and m179's notes kept)")
-check('local BV = "b87"' in SRC["book"] and "b77 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["book"]
+check('local BV = "b88"' in SRC["book"] and "b77 THE CAST BAR IN A TOP-SCREEN FIGHT" in SRC["book"]
       and "for k = 0, 1 do P3[24 + k]" in SRC["book"] and "b78 THE SWING WITH OUR TOP CAST BAR" in SRC["book"]
       and "for k = 0, 1 do P3[26 + k]" in SRC["book"], "0. Book b78 (b77's codes 24 / 25 kept) and its codes 26 / 27")
 check(len(re.findall(r'(?m)^local ', SRC["padmap"])) <= 200, "0. PadMap's main chunk keeps to Lua 5.1's 200 locals")

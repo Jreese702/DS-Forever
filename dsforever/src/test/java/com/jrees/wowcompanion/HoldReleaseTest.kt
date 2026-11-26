@@ -476,10 +476,106 @@ class HoldReleaseTest {
         assertTrue(keys.contains("com.jrees.wowcompanion.HoldCast.canceling(true)") && keys.contains("com.jrees.wowcompanion.HoldCast.canceling(false)"))
         val motion = x.substringAfter("val onMotionEvent: (AndroidEvent.MotionEvent) -> Boolean = {").substringBefore("val onGuestProgramTerminated:")
         assertTrue("a joystick ACTION_CANCEL too", motion.contains("MotionEvent.ACTION_CANCEL") && motion.contains("com.jrees.wowcompanion.HoldCast.canceling(true)"))
+        // round 2: the press's source around the handlers (a key's device + keycode, a motion's hat), a REAL up handed over before them
+        assertTrue("a key's source", keys.contains("com.jrees.wowcompanion.HoldCast.inputFrom(it.event.deviceId, it.event.keyCode)") &&
+            keys.contains("com.jrees.wowcompanion.HoldCast.inputFrom(0, 0)"))
+        assertTrue("a real (not cancelled) up first", keys.contains("val realUp = it.event.action == KeyEvent.ACTION_UP && !it.event.isCanceled") &&
+            keys.indexOf("com.jrees.wowcompanion.HoldCast.realUp(it.event.deviceId, it.event.keyCode)") in 0 until keys.indexOf("handled = winHandler.onKeyEvent(it.event)"))
+        assertTrue("a motion's source: its hat", motion.contains("com.jrees.wowcompanion.HoldCast.inputFrom(it.event.deviceId, com.jrees.wowcompanion.HoldCast.SRC_MOTION)") &&
+            motion.contains("com.jrees.wowcompanion.HoldCast.inputFrom(0, 0)"))
         val ec = src("app", "src/main/java/com/winlator/inputcontrols/ExternalController.java")
         assertTrue("the hat's cancel is taken and centred (its axes are the last ones)", ec.contains("isJoystickCancel(event)") &&
             ec.contains("java.util.Arrays.fill(this.state.dpad, false);"))
+        assertTrue("round 2: the hat's directions down at the cancel are held off until it reads them released (no second press)",
+            ec.contains("hatCut[i] = true") && ec.contains("if (hatCut[i])"))
+        assertTrue("round 2: that released reading is the hat's real up for hold to cast", ec.contains("com.jrees.wowcompanion.HoldCast.hatUp(event.getDeviceId(), i)"))
+        assertTrue("round 2: the sticks and the analog triggers let go at the cancel", ec.contains("axisL2 = 0f; axisR2 = 0f; applyTriggers();") &&
+            ec.contains("state.thumbLX = 0f; state.thumbLY = 0f; state.thumbRX = 0f; state.thumbRY = 0f;"))
         val w = src("app", "src/main/java/com/winlator/winhandler/WinHandler.java")
         assertTrue("the kept downs on, the forced ups off", w.contains("o.buttons = (short) ((s.buttons | (k & 0x0D)) & ~(m & 0x0D));"))
+    }
+
+    // 15 the int/1533 review, round 2: A REAL RELEASE AFTER THE KEYS COME BACK. A palm cancelled X's up (KEPT: down for the game to its
+    // fill), the keys came back and the player let X go BEFORE the fill: Android hands that up to the game's window although its down was
+    // cancelled (InputDispatcher lets an inconsistent key up through), but the controller already read X up, so no edge reached hold to
+    // cast and the kept X cast the HOLD at the fill. Now that real up lets a KEPT press go at once - a release before the fill, the tap
+    @Test fun aRealUpLetsAKeptPressGoBeforeItsFill() {
+        val e = engine()
+        val fires = ArrayList<Int>()
+        e.onFire = { p, _ -> fires += p }
+        e.edge(X, true, 1000); e.keep("PAD3", 5, 0, 3, 1100); e.cancelUp(X, 1300)
+        assertTrue("KEPT, the real up at 1500 (before F 1678): let go, the state sent again", e.realUp(X))
+        assertEquals(HoldRelease.IDLE, e.state(X)); assertEquals(0, e.keptMask); assertFalse(gameX(e, false))
+        assertEquals(HoldRelease.NEVER, e.nextAt())
+        assertFalse("nothing at F: the release decided (the tap)", e.due(1678)); assertEquals(emptyList<Int>(), fires)
+        // anything not KEPT: nothing (a held press's own up is its edge; a fired one is up for the game already)
+        val c = engine()
+        c.edge(X, true, 1000); c.keep("PAD3", 5, 0, 3, 1100)
+        assertFalse(c.realUp(X)); assertEquals(HoldRelease.CONFIRMED, c.state(X))
+        val f = engine()
+        f.edge(X, true, 1000); f.keep("PAD3", 5, 0, 3, 1100); f.cancelUp(X, 1300); f.due(1678)
+        assertFalse("its fill came first: the real up afterwards is nothing", f.realUp(X)); assertEquals(HoldRelease.IDLE, f.state(X))
+        assertFalse(engine().realUp(-1)); assertFalse(engine().realUp(HoldRelease.CTLS))
+    }
+
+    @Test fun theRealUpThroughHoldCastByItsSource() {
+        HoldCast.gates = { true }
+        val later0 = HoldCast.later; val sched0 = HoldCast.schedule
+        val posted = ArrayList<() -> Unit>()
+        HoldCast.later = { _, f -> posted += f }
+        var scheduled = HoldRelease.NEVER
+        HoldCast.schedule = { scheduled = it }
+        var resent = 0
+        HoldCast.setResend { resent++ }
+        var now = 30_000L
+        HoldCast.clock = { now }; HoldCast.bandClock = { now }
+        val pad = 7; val other = 8; val keyX = 99; val keyY = 100
+        fun keep(pos: Int, key: String) =
+            HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", pos).put("hk", "keep").put("key", key).put("need", 3))
+        try {
+            HoldCast.padReset(true)
+            HoldCast.onMap(JSONObject().put("type", "holdmap").put("on", true).put("b", "bare:5").put("why", "on").put("cn", 3).put("ft", 17))
+            // X pressed by device 7's KEYCODE_BUTTON_X (99): its source taken at the down edge
+            HoldCast.inputFrom(pad, keyX)
+            try { HoldCast.padIn(1 shl 2, false, false, false, false, now) } finally { HoldCast.inputFrom(0, 0) }
+            now += 100; keep(5, "PAD3")
+            now = 30_300L
+            HoldCast.canceling(true)
+            try { HoldCast.padIn(0, false, false, false, false, now) } finally { HoldCast.canceling(false) }
+            assertEquals(HoldRelease.KEPT, HoldCast.release.state(X))
+            // another device's X, this device's Y: not this press
+            HoldCast.realUp(other, keyX); HoldCast.realUp(pad, keyY)
+            assertEquals(HoldRelease.KEPT, HoldCast.release.state(X)); assertEquals(0, posted.size)
+            // its own real up (before the handlers): let go, the timer off, the state sent again after the event in hand
+            now = 30_500L
+            HoldCast.realUp(pad, keyX)
+            assertEquals(HoldRelease.IDLE, HoldCast.release.state(X)); assertEquals(0, HoldCast.keptMask())
+            assertEquals(HoldRelease.NEVER, scheduled)
+            assertEquals(1, posted.size); posted.removeAt(0)(); assertEquals(1, resent)
+            // THE HAT: D-pad Up pressed by a motion of device 7 (its source: the hat's up); the cut's released reading lets it go
+            HoldCast.inputFrom(pad, HoldCast.SRC_MOTION)
+            try { HoldCast.padIn(0, true, false, false, false, now) } finally { HoldCast.inputFrom(0, 0) }
+            now += 100; keep(2, "PADDUP")
+            now += 200
+            HoldCast.canceling(true)
+            try { HoldCast.padIn(0, false, false, false, false, now) } finally { HoldCast.canceling(false) }
+            assertEquals(HoldRelease.KEPT, HoldCast.release.state(UP))
+            HoldCast.hatUp(pad, 1); HoldCast.hatUp(other, 0)
+            assertEquals("the hat's right, another device's up: not this press", HoldRelease.KEPT, HoldCast.release.state(UP))
+            HoldCast.hatUp(pad, 0)
+            assertEquals(HoldRelease.IDLE, HoldCast.release.state(UP)); assertEquals(0, HoldCast.keptMask())
+            posted.removeAt(0)(); assertEquals(2, resent)
+            // a press with no known source (the on-screen pad, a resend): KEPT to its fill as before (no real up can name it)
+            now += 1000
+            HoldCast.padIn(1 shl 2, false, false, false, false, now)
+            now += 100; keep(5, "PAD3")
+            now += 100
+            HoldCast.canceling(true)
+            try { HoldCast.padIn(0, false, false, false, false, now) } finally { HoldCast.canceling(false) }
+            HoldCast.realUp(0, 0); HoldCast.realUp(pad, keyX)
+            assertEquals(HoldRelease.KEPT, HoldCast.release.state(X))
+        } finally {
+            HoldCast.setResend(null); HoldCast.later = later0; HoldCast.schedule = sched0; HoldCast.inputFrom(0, 0)
+        }
     }
 }

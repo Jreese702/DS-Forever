@@ -166,6 +166,19 @@ class HoldRelease {
         keptMask = keptMask or bitOf(ctl)
     }
 
+    /**
+     * The int/1533 review, round 2: the player's REAL release of [ctl] (not Android's cancel) reached the launcher while the controller
+     * already read it up - its up came cancelled, the keys came back, and the player let go before the fill. Android hands that up to
+     * the game's window although its down was cancelled (InputDispatcher lets an inconsistent key up through), but it changes no state,
+     * so no edge says it. A [KEPT] press is let go now: a release before the fill, the router runs the tap, as in normal play. Anything
+     * else: nothing (a held press's own up is its edge; a fired one is up for the game already). True = the output changed (send again)
+     */
+    @Synchronized fun realUp(ctl: Int): Boolean {
+        if (ctl !in 0 until CTLS || st[ctl] != KEPT) return false
+        letGo(ctl)
+        return true
+    }
+
     /** another word for position [pos] (a press that was not kept, an up, a kept press's release): a confirmed press there waits for
      *  its own keep word again (a stale keep of a quick tap before it is closed by that tap's own words); a KEPT one there is let go
      *  at once (its up came already). True = the output changed (send the state again) */

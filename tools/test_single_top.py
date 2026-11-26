@@ -61,9 +61,9 @@ def part_a():
     print("\n-- A the channel (Book b86 / PadMap m199)")
     pm_src = src("WowCompanionSpells", "PadMap.lua")
     bk_src = src("WowCompanionSpells", "Book.lua")
-    chk("A0. PadMap m201 (the 1533 merge; m200 the lease said at its lapse, m199 the mode), Book b86 and their notes", 'local PV = "m202"' in pm_src
+    chk("A0. PadMap m201 (the 1533 merge; m200 the lease said at its lapse, m199 the mode), Book b86 and their notes", 'local PV = "m203"' in pm_src
         and "m199 SINGLE SCREEN MODE" in pm_src and "m200 THE SINGLE SCREEN LEASE SAID" in pm_src
-        and 'local BV = "b87"' in bk_src and "b86 SINGLE SCREEN MODE" in bk_src and "b86 THE FOURTH PAGE" in bk_src)
+        and 'local BV = "b88"' in bk_src and "b86 SINGLE SCREEN MODE" in bk_src and "b86 THE FOURTH PAGE" in bk_src)
     W = tep.tct.boot()
     pm = 'WowCompanion.padMap'
     chk("A1. the API is there (single / singleSet / SS_TTL)",
@@ -329,16 +329,17 @@ def part_d():
 
 # ------------------------------------------------------------------------------------------------------------ E the hold's bump
 def part_e():
-    """The int/1533 review (Book b87 / PadMap m202): the fourth page's codes 2-5 = the app's session bump after a SHORT hold fire, 0-3
+    """The int/1533 review (Book b87 / PadMap m202; round 2 Book b88: codes 11-14): the fourth page's codes = the app's session bump after a SHORT hold fire, 0-3
     steps of 34 ms - PadMap's fire point (holdSecs: ActionBar's ring, the only one in single screen mode) holds it, so the ring fills when
     the launcher lets the press go. In memory only; the mode's codes 0 / 1 untouched; no trace."""
-    print("\n-- E the hold's bump (Book b87 / PadMap m202)")
+    print("\n-- E the hold's bump (Book b88 / PadMap m203)")
     pm_src = src("WowCompanionSpells", "PadMap.lua")
     bk_src = src("WowCompanionSpells", "Book.lua")
-    chk("E0. PadMap m202, Book b87 and their notes", 'local PV = "m202"' in pm_src and "m202 THE int/1533 REVIEW" in pm_src
-        and 'local BV = "b87"' in bk_src and "b87 THE int/1533 REVIEW" in bk_src
-        and 'for k = 0, 3 do P2.P4[2 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdBump) == "function" '
-            'then pcall(pm.holdBump, k) end end end' in bk_src)
+    chk("E0. PadMap m203, Book b88 (round 2: the codes 11-14) and their notes", 'local PV = "m203"' in pm_src and "m202 THE int/1533 REVIEW" in pm_src
+        and 'local BV = "b88"' in bk_src and "b87 THE int/1533 REVIEW" in bk_src and "b88 THE int/1533 REVIEW, ROUND 2" in bk_src
+        and 'for k = 0, 3 do P2.P4[11 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdBump) == "function" '
+            'then pcall(pm.holdBump, k) end end end' in bk_src
+        and "P2.P4[2 + k]" not in bk_src)
     W = tep.tct.boot()
     pm = 'WowCompanion.padMap'
     if W.eval('type(%s.holdBump) ~= "function" or type(%s.holdSecs) ~= "function"' % (pm, pm)):
@@ -347,17 +348,44 @@ def part_e():
     db0 = W.eval(SER)
     f0 = float(W.eval(pm + '.holdSecs()'))
     ss0 = W.eval(pm + '.dpadState()').ss
-    for k, steps in ((3, 1), (5, 3), (2, 0), (4, 2)):
+    # b88: codes 11-14 (were 2-5: a swallowed pick left 39, 38, 2 / 3 = the second page's Bar in Party mode on / off, saved)
+    for k, steps in ((12, 1), (14, 3), (11, 0), (13, 2)):
         tep.tct.padtab(W, 39, 38, 0, k)
         W.execute('runTimers(NOW + 1)')
         f = float(W.eval(pm + '.holdSecs()'))
         chk("E1. 39, 38, 0, %d: %d step(s) - F %.3f -> %.3f s" % (k, steps, f0, f), abs(f - (f0 + 0.034 * steps)) < 1e-9, (f0, f))
     chk("E2. the mode untouched (ss as it was)", W.eval(pm + '.dpadState()').ss == ss0, (ss0, W.eval(pm + '.dpadState()').ss))
+    for k in (2, 3, 4, 5):
+        tep.tct.padtab(W, 39, 38, 0, k)
+        W.execute('runTimers(NOW + 1)')
+    chk("E2b. the old codes 2-5 on the fourth page: nothing (still 2 steps)", abs(float(W.eval(pm + '.holdSecs()')) - (f0 + 0.068)) < 1e-9,
+        float(W.eval(pm + '.holdSecs()')))
     tep.tct.padtab(W, 39, 38, 0)
     W.execute('NOW = NOW + 3; runTimers(NOW + 1)')
-    tep.tct.padtab(W, 2)
+    tep.tct.padtab(W, 39, 38, 11)
     W.execute('runTimers(NOW + 1)')
-    chk("E3. a stale pick (3 s): a late 2 is not the bump (still 2 steps)", abs(float(W.eval(pm + '.holdSecs()')) - (f0 + 0.068)) < 1e-9)
+    chk("E3. a stale pick (3 s): a late 11 is not the bump (the second page's own code; still 2 steps)",
+        abs(float(W.eval(pm + '.holdSecs()')) - (f0 + 0.068)) < 1e-9)
+    # E6 THE SWALLOWED PICK (round 2): TapPad's 0.25 s guard dropped the batch's 0 (a column-0 tab touch just before) - 39, 38, then
+    # the code alone run the SECOND page's code: for 11-14 the Spellbook room's tab touches, nothing outside that room; Bar in Party
+    # mode (the second page's 2 / 3, saved) never moves
+    # (the bump's codes as Book wires them: a swallowed 0 leaves 39, 38, each of them; Bar in Party mode's setter counted while it runs)
+    mb = re.search(r'for k = 0, 3 do P2\.P4\[(\d+) \+ k\] = function\(\) local pm = WC\.padMap; if type\(pm\) == "table" and '
+                   r'type\(pm\.holdBump\) == "function"', bk_src)
+    base = int(mb.group(1)) if mb else -1
+    psh = W.eval('WowCompanionSpellsDB.castBarPShow')
+    W.execute('PSHOWS = 0; PSHOW0 = WowCompanion.castBarPartyShow; WowCompanion.castBarPartyShow = function(...) PSHOWS = PSHOWS + 1; '
+              'if type(PSHOW0) == "function" then return PSHOW0(...) end end')
+    for k in range(4):
+        tep.tct.padtab(W, 39, 38, base + k)
+        W.execute('runTimers(NOW + 1)')
+    seen = W.eval('PSHOWS')
+    W.execute('WowCompanion.castBarPartyShow = PSHOW0; PSHOW0 = nil')
+    chk("E6. a swallowed pick (39, 38, then each bump code %d-%d alone): Bar in Party mode never set (castBarPartyShow not called), "
+        "the bump as it was" % (base, base + 3),
+        base >= 0 and seen == 0 and W.eval('WowCompanionSpellsDB.castBarPShow') == psh
+        and abs(float(W.eval(pm + '.holdSecs()')) - (f0 + 0.068)) < 1e-9, (base, psh, seen))
+
     chk("E4. nothing saved", W.eval('SER(WowCompanionSpellsDB, 0)') == db0)
     bad = re.compile(r'SetCVar|SetBinding|SetOverrideBinding|CreateMacro|EditMacro|DeleteMacro|RegisterStateDriver|SaveBindings|ALT-|F1[0-2]?\b')
     blk = pm_src[pm_src.index("-- m202 THE APP'S SESSION BUMP"):pm_src.index("function OV.hold.setTicks(n)")]
