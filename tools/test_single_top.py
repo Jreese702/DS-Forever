@@ -16,6 +16,9 @@ bottom screen carries it now), off-device: the REAL add-on files under the stub 
     (the fill part way, its name), no Wings out of the fight, gone after its finish; no cast: nothing; a fight with the mode on: the
     Wings and our bar (as a Top-screen fight); Edit Home's preview still its own; plain frames only, nothing secure or written.
   C NO TRACE (the source): the new code calls no SetCVar / SetBinding / macro API and no Alt / F-key chord.
+  D HOLD TO CAST x THE DOCKS (the 1533 merge, ActionBar nbar26): the hold badge's glowing ring and the takeover's gold checked ring
+    round every slot stay inside each Wings half's box (the solver's rect: SinglePlayLayout's K4) and inside the Nintendo bar's focus
+    glow, which keeps clear of every OUT dock box - no hold piece under a play dock.
 No device is read. Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -257,8 +260,75 @@ def part_c():
     chk("C2. PadMap's mode is never in WowCompanionSpellsDB", "WowCompanionSpellsDB" not in code)
 
 
+# ------------------------------------------------------------------------------------------------------------ D hold to cast x the docks
+def part_d():
+    """The 1533 merge (hold to cast's visuals x single screen mode's docks): the hold badge's glowing ring (hb.ring's glow, the
+    circglw atlas at (HOLD_R + 8) x 1.7 - the largest it draws) and the takeover's gold checked ring (b.hsel, b.sz + 8) round every
+    one of the eight slots, both glyph layouts, stay inside what the docks keep out of: in fights inside each Wings half's box
+    (NB.halfArt: the solver's rect, so inside SinglePlayLayout's K4 envelope), out of fights inside the Nintendo bar's own focus-glow
+    reach (FOCUS / 2 past a slot), which stays clear of every OUT dock box (SinglePlayLayout.kt's K3 and its boxes, 1.322 px a unit)."""
+    print("\n-- D hold to cast's ring and takeover clear of the play docks (the 1533 merge)")
+    import test_top_castbar as ttc
+    L = ttc.boot()
+    G = L.globals()
+    NB = G.WowCompanion.nbar
+    T = NB.TOP
+    glow = (NB.HOLD_R + 8) * 1.7 / 2.0              # hb.ring's glow half (its no-atlas disc, (HOLD_R + 14) / 2, is smaller)
+    chk("D0. the glow is the largest hold piece (the track ring and the fallback disc inside it)",
+        glow >= (NB.HOLD_R + 8) / 2.0 and glow >= (NB.HOLD_R + 14) / 2.0, glow)
+    a = NB.halfArt()
+    mk = L.eval('function(p, circle, sz) return { p = p, circle = circle, sz = sz } end')
+
+    def reach(ox, oy):
+        """the hold pieces' farthest reach from the diamond's centre: |x|, up, down (units, y up)"""
+        rx = up = dn = 0.0
+        for lay in ("plain", "swap"):
+            for p in range(1, 9):
+                circle = p >= 5
+                sz = NB.BC if circle else NB.B
+                at = (NB.AT_SWAP[p] if (lay == "swap" and NB.AT_SWAP[p] is not None) else NB.AT[p])
+                cx, cy = at[1] * ox, at[2] * oy
+                hx, hy = L.eval('function(f, b, l) return f(b, l) end')(NB.holdSpot, mk(p, circle, sz), lay)
+                bx, by = cx + hx, cy + hy
+                ring = (sz + 8) / 2.0
+                rx = max(rx, abs(bx) + glow, abs(cx) + ring)
+                up = max(up, by + glow, cy + ring)
+                dn = max(dn, -by + glow, -cy + ring)
+        return rx, up, dn
+
+    rx, up, dn = reach(T.OFF_X, T.OFF_Y)
+    chk("D1. the Wings: the hold ring and the takeover's ring inside each half's box across (NB.halfArt inner / outer)",
+        rx <= min(a.inner, a.outer) + 1e-6, (rx, a.inner, a.outer))
+    chk("D2. ... and up / down (NB.halfArt up / down: the solver's rect, SinglePlayLayout's K4)", up <= a.up + 1e-6 and dn <= a.down + 1e-6,
+        (up, a.up, dn, a.down))
+    # the Nintendo bar (out of fights): each diamond OFF from its centre; the pieces inside its slots' own focus glow
+    nx, nu, nd = reach(NB.OFF, NB.OFF)
+    edge = NB.OFF + max(NB.B, NB.BC) / 2.0
+    focus = NB.FOCUS / 2.0
+    chk("D3. the Nintendo bar: the hold ring and the takeover's ring inside the slots' focus glow (FOCUS / 2 past the outer slots)",
+        nx <= edge + focus + 1e-6 and nu <= edge + focus + 1e-6 and nd <= edge + focus + 1e-6, (nx, nu, nd, edge + focus))
+    kt = open(os.path.join(ROOT, "companion", "app", "src", "main", "java", "com", "jrees", "wowcompanion", "SinglePlayLayout.kt"),
+              encoding="utf-8").read()
+
+    def box(name):
+        m = re.search(r'\b%s\s*=\s*Box\((\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)' % name, kt)
+        return tuple(int(m.group(i)) for i in range(1, 5)) if m else None
+
+    k3 = box("K3")
+    outs = {n: box(n) for n in ("CHAT_OUT_PARTY", "CHAT_OUT_SOLO", "PARTY_OUT", "MAP_OUT_BOX")}
+    chk("D4. SinglePlayLayout's K3 and OUT boxes read", k3 is not None and all(outs.values()), (k3, outs))
+    if k3 and all(outs.values()):
+        margin = focus * 1.322                      # past K3's slot edges, px (the bar at 100 %: k x 1.322 a unit)
+        grown = (k3[0] - margin, k3[1] - margin, k3[2] + margin, k3[3] + margin)
+
+        def apart(b):
+            return b[2] <= grown[0] or grown[2] <= b[0] or b[3] <= grown[1] or grown[3] <= b[1]
+        chk("D5. ... K3 grown by that reach meets no OUT dock (the chat, the party list, the map)", all(apart(b) for b in outs.values()),
+            {n: apart(b) for n, b in outs.items()})
+
+
 def main():
-    for fn in (part_a, part_b, part_c):
+    for fn in (part_a, part_b, part_c, part_d):
         try:
             fn()
         except Exception as e:      # noqa: BLE001
