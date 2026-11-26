@@ -452,14 +452,14 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             override fun write(s: String) { prefs.edit().putString("all", s).apply() }
         })
         // (the static listeners hold this view weakly: [weakly])
-        ChatFilter.onChange(weakly(this) { v -> if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) v.filterChanged() else v.main.post { v.filterChanged() } })
+        context.atHostEnd(ChatFilter.onChange(weakly(this) { v -> if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) v.filterChanged() else v.main.post { v.filterChanged() } }))
         // hold to talk's last used chat, per character (the user's pick, 2026-11-16: "Remember per character"); never the words
         val talkPrefs = c.applicationContext.getSharedPreferences("chat_talk", Context.MODE_PRIVATE)
         TalkKeep.init(object : TalkKeep.Store {
             override fun read(): String? = talkPrefs.getString("all", null)
             override fun write(s: String) { talkPrefs.edit().putString("all", s).apply() }
         })
-        TalkKeep.onChange(weakly(this) { v -> v.main.post { v.onTalkChannel() } })
+        context.atHostEnd(TalkKeep.onChange(weakly(this) { v -> v.main.post { v.onTalkChannel() } }))
         applySendState()
     }
 

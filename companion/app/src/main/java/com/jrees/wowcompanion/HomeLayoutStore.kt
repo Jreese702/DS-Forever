@@ -81,7 +81,7 @@ object HomeLayoutStore {
     private var cache: HomeLayout? = null
     private val listeners = ArrayList<() -> Unit>()
     /** a change of the active record (edit mode's autosave, a facade setter, a reset, another character): HomeSettings' listeners hear it */
-    fun onChange(l: () -> Unit) { synchronized(listeners) { listeners.add(l) } }
+    fun onChange(l: () -> Unit): () -> Unit { synchronized(listeners) { listeners.add(l) }; return { synchronized(listeners) { listeners.remove(l) } } }   // its removal: HostEnds
     private fun changed() { val ls = synchronized(listeners) { listeners.toList() }; for (l in ls) l() }
 
     private fun key(w: String?) = if (w == null) KEY_DEFAULT else KEY_PREFIX + w
@@ -94,7 +94,7 @@ object HomeLayoutStore {
     fun owner(): Owner = Owner(who, if (pending) pendingName else who?.let { CharKey.nameOf(it) })
     private val ownerListeners = ArrayList<() -> Unit>()
     /** the active record's owner changed (another character, a key that arrived, a key let go): edit mode re-checks its owner */
-    fun onOwner(l: () -> Unit) { synchronized(ownerListeners) { ownerListeners.add(l) } }
+    fun onOwner(l: () -> Unit): () -> Unit { synchronized(ownerListeners) { ownerListeners.add(l) }; return { synchronized(ownerListeners) { ownerListeners.remove(l) } } }
     private fun ownerChanged() { val ls = synchronized(ownerListeners) { ownerListeners.toList() }; for (l in ls) l() }
 
     /** how a draft opened on [opened] may be saved now: to the same owner as it is, by its own changes only once the pending name's key

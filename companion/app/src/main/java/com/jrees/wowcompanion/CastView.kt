@@ -929,7 +929,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
      */
     var fightItems: Map<Int, Int>? = null
         set(v) { if (field != v) { field = v; invalidate() } }
-    init { ItemCd.onChange(weakly(this) { v -> v.postInvalidate() }) }       // weakly: [weakly]
+    init { context.atHostEnd(ItemCd.onChange(weakly(this) { v -> v.postInvalidate() })) }       // weakly: [weakly]
 
     /**
      * THE D-PAD'S IN-COMBAT SPELLS (Track C; the user after test15: "The DS toolbar buttons are still not changing in combat like they
@@ -1377,7 +1377,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         buildPaths()
         // a theme picked in Settings: the toolbar's metal follows (a weak hold: a CastView that is gone is never kept for this)
         val me = java.lang.ref.WeakReference(this)
-        Theme.onChange { me.get()?.let { v -> v.mainHandler.post { v.themeArt(); v.invalidate() } } }
+        context.atHostEnd(Theme.onChange { me.get()?.let { v -> v.mainHandler.post { v.themeArt(); v.invalidate() } } })
         pad = PadInput(
             onPad = { lt, rt, lb, rb -> onPad(lt, rt, lb, rb) },
             onStatus = { ok, _ -> padOk = ok; invalidate() },
@@ -1561,7 +1561,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         return out
     }
     private val swirlCache = HashMap<String, Bitmap>()
-    init { MemWatch.source("cast") { swirlCache.values.sumOf { it.byteCount.toLong() } + iconReady.values.sumOf { it.byteCount.toLong() } } }
+    init { context.atHostEnd(MemWatch.source("cast") { swirlCache.values.sumOf { it.byteCount.toLong() } + iconReady.values.sumOf { it.byteCount.toLong() } }) }
 
     /** the companion mark on a "DS Bar" slot: a dark gold-rimmed disc with two small stacked screens in it */
     private fun drawDsMark(c: Canvas, cx: Float, cy: Float, r: Float) {

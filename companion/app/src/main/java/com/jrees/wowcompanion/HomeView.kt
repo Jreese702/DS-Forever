@@ -133,11 +133,11 @@ class HomeView(
         flow.setRest(HomeSettings.rest)
         // every static listener here holds this Home WEAKLY ([weakly], the 1528 blocker): a Home made again never keeps the old one
         HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }   // m194: the hold's flash on the add-on's word (its release)
-        HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } })  // GitHub #43: the tap-to-cast bar's own choices
+        context.atHostEnd(HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } }))  // GitHub #43: the tap-to-cast bar's own choices
         // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
-        HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } })
+        context.atHostEnd(HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } }))
         partyView.boxShown = { !editLive() }                              // fix round 1: never a second gold box beside edit mode's
-        HomeSettings.onChange(weakly(this) { v -> v.post { v.homeSettingsChanged() } })
+        context.atHostEnd(HomeSettings.onChange(weakly(this) { v -> v.post { v.homeSettingsChanged() } }))
         homeInitRest()
     }
 
@@ -2205,11 +2205,11 @@ class HomeView(
     private var laidPartyModule = false
     init {
         // QOL > Party > Party mode flipped: the module comes or goes at once
-        GameUi.onChange(weakly(this) { v -> v.post {
+        context.atHostEnd(GameUi.onChange(weakly(this) { v -> v.post {
             if (v.PARTY_MODULE != v.laidPartyModule) v.partyChanged()
             // EDIT TABS: the Party mode tab comes and goes with QOL > Party (open on it when it goes: Out of combat)
             v.edit?.let { m -> if (m.tabs.contains(HomeTab.PARTY) != v.PARTY_MODULE) v.editRun(m.tabsAre(v.PARTY_MODULE)) }
-        } })   // weakly: [weakly]
+        } }))   // weakly: [weakly]
     }
 
     /** a party document (or a box) changed what Home draws: re-placed when the module's size changed, else redrawn */
@@ -5251,7 +5251,7 @@ class HomeView(
 
         fun refresh() { cache.keys.retainAll(chat.all.toSet()); invalidate() }
 
-        init { ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() }) }       // weakly: [weakly]
+        init { context.atHostEnd(ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() })) }       // weakly: [weakly]
 
         override fun onDraw(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat()

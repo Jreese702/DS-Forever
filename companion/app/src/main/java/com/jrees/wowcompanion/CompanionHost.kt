@@ -63,6 +63,12 @@ interface HostShell {
  * EVERY EDIT THAT USED TO GO TO MainActivity.kt GOES HERE (shared file: list it in AGENT_LOG first).
  */
 class CompanionHost(base: Context, private val shell: HostShell) : ContextWrapper(base) {
+    /**
+     * WHAT THIS HOST AND ITS VIEWS LEFT IN THE PROCESS (HostEnds; HostsReleasedTest): the settings' and stores' listeners, the hooks on
+     * the process-wide objects, the memory sources, the controller registrations, the sweep receiver - all taken off at [onDestroy], a
+     * hook only while it is still this host's (a newer host's own is never touched)
+     */
+    internal val ends = HostEnds()
 
     /** SINGLE SCREEN MODE (SingleScreen, 2026-11-25): this host's top window over the game, null = two screens (every single-mode
      *  branch below is `single != null`: two screens run exactly as before) */
@@ -610,12 +616,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             runCatching { RealmFix.keepIn(getSharedPreferences(RealmFix.PREF_BAK, MODE_PRIVATE), file, real, removed, System.currentTimeMillis()) }
                 .getOrDefault(false)
         }
+        ends.own(RealmFix::keepRemoved, null)
         // the k6 review round 2 (items A-C): every fold asks the whole device whether the name is under one realm only
         RealmFix.census = { real -> realmCensus(real) }
+        ends.own(RealmFix::census, null)
         Theme.init(this)                     // the saved theme (Settings > System > Theme), before any view copies a colour
         GameUi.init(this)
         PolestarQol.init(this)
         GameInput.onStatus = { s -> ui.post { status.text = s.take(110) } }
+        ends.own(GameInput::onStatus, {})
         // NOTE: do NOT set FLAG_NOT_FOCUSABLE. It leaves display 4 with no focused window, so
         // the first touch waits 5 s for a focus target and the system ANRs us at 0% CPU. This
         // device has per-display focus, so holding focus here does not take it from the game.
@@ -640,10 +649,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         root.addView(strip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Strip.HEIGHT)
             .apply { topMargin = -Strip.RISE - Strip.TRACKS })
         // the tracking bar in the bottom bar (UI Art's glue, listed in AGENT_LOG e8f3d1c): the numbers stay in the Character room
-        CharacterBars.listen {
+        ends.add(CharacterBars.listen {
             strip.xp = CharacterBars.xp?.takeIf { it.show }?.let { Strip.Track(if (it.rested) "rested" else "xp", it.fill, if (it.rest > 0) it.restReach else 0f) }
             strip.reputation = CharacterBars.watch?.let { Strip.Track(when (it.colour) { "1", "2" -> "red"; "3" -> "orange"; "4" -> "yellow"; "blue" -> "blue"; else -> "green" }, it.fill) }
-        }
+        })
 
         mapView = MapView(this)
         worldMapRoom = WorldMapRoomView(this).apply { loadArt() }
@@ -652,7 +661,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             where = { lastMap },
             // TODO(map session): centre the map on the quest once MapView has a focusOn(x, y)
             onShowOnMap = { _ -> show(Room.MAP) })
-        PoiHarvest.init(this) { refreshServices() }
+        val seedReady: () -> Unit = { refreshServices() }
+        PoiHarvest.init(this, seedReady); ends.add { PoiHarvest.seedReadyOff(seedReady) }
         castView = CastView(this) { key -> GameInput.key(key) }
         // feat/wk-itemcast (the user, 2026-11-16: "the cast bar for using Items from my bag or applying enchants is not visible"): while
         // Home's own cast bar is not on screen (any room; a Home module over the band), the rooms' bar draws the player's cast in its
@@ -682,11 +692,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the 1528 audit: the host's own static listeners hold it WEAKLY ([weakly]; HomeViewsReleasedTest): a host made again (the bottom
         // screen's DsForeverScreen) is never kept - with its whole Home - by the old one's, and the ones that send the add-on taps send
         // nothing once its screen is gone
-        HomeSettings.onChange(weakly(this) { h -> h.ui.post { h.talkDraw() } })
+        ends.add(HomeSettings.onChange(weakly(this) { h -> h.ui.post { h.talkDraw() } }))
         // movable Home: a new layout (a preset, the swap, another character's) tells the add-on its DS toolbar sides (out of combat)
-        HomeLayoutStore.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.mirrorCheck(it); h.topCheck(it); h.castCheck(it); h.swingCheck(it) } } })
+        ends.add(HomeLayoutStore.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.mirrorCheck(it); h.topCheck(it); h.castCheck(it); h.swingCheck(it) } } }))
         // feat/top-castbar: the Swing timer setting goes to the add-on's top bar too (PadMap m190), on its change as on the layout's
-        HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.swingCheck(it) } } })
+        ends.add(HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.lastDpad?.let { h.swingCheck(it) } } }))
         characterView = CharacterView(this)
         // B leaves the cursor -> Home (user ruling, every room)
         characterView.onLeave = { roomLeft(Room.CHARACTER) }
@@ -697,6 +707,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // tab 4 (PvP): the PVP session's page inside the room's frame (its PvpRankTab, UI Art's SPEC 6)
         characterView.pvpDrawer = PvpRankTab::draw
         PvpRankTab.onChange = { characterView.invalidate() }
+        ends.own(PvpRankTab::onChange, null)
         // LATER item 11 (the user: "when reloading from the settings, the bottom screen should enter its loading menu and return
         // to home"): the key sent, the start screen covers the bottom screen until the game's new hello, then Home
         val reload = { if (GameInput.reload()) reloadStarted() }
@@ -755,9 +766,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         settings.pad.onLeave = { show(Room.HOME) }
         // feat/beautify: General's Theme tile opens themes' Theme maker (its premade gallery a step inside it)
         GeneralTiles.onOpenTheme = { settings.openThemeMaker() }
+        ends.own(GeneralTiles::onOpenTheme, null)
         // the maker's live mini Home in the DRAFT theme (the beautify pass, 2026-11-17): the Settings stage's real Home (PreviewStage, the
         // Bottom screen tiles' renderer) at the player's own look; before the game's first document the drawn mini room stands in
         ThemeMakerPage.homeRender = { spec, b -> PreviewStage.render(this, PreviewStage.playerLook(), false, null, b, spec) != null }
+        ends.own(ThemeMakerPage.Companion::homeRender, null)
         settingsRoom = settings
         // the DS WoW toolbar's switch lives in Home's Settings section since 2026-10-06 (renamed from "D-pad room bar")
         // issue #136 (2026-11-11): the row shows the player's pending choice at once (it showed the add-on's old word, "On", while the
@@ -816,9 +829,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         worldMapRoom.travelScene = { mapView.travelScene() }                              // the travel layer in the room (b-travel-layer)
         // off-thread loads (test56's ANRs): the views drawn again once a zone file or a picture has arrived
         TravelPaint.onArt = { mapView.postInvalidate(); worldMapRoom.postInvalidate() }
-        Terrain.files.onLoaded { mapView.postInvalidate() }
-        Terrain.buildings.onLoaded { mapView.postInvalidate() }
-        Roads.files.onLoaded { mapView.postInvalidate() }
+        ends.own(TravelPaint::onArt, null)
+        ends.add(Terrain.files.onLoaded { mapView.postInvalidate() })
+        ends.add(Terrain.buildings.onLoaded { mapView.postInvalidate() })
+        ends.add(Roads.files.onLoaded { mapView.postInvalidate() })
         mapView.onProbeOptions = { bits -> worldMapRoom.sendProbeOptions(bits) }   // Map: Sparkles to the add-on (Map.lua mp3)
         worldMapRoom.onLeave = { show(Room.HOME) }
         worldMapRoom.onFocusQuest = { id -> mapView.psRelease(); homeView.focusQuest(id) { } }
@@ -905,23 +919,25 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         partyWire()
         MemWatch.testBuild = runCatching { packageManager.getPackageInfo(packageName, 0).versionName?.contains("-test") == true }.getOrDefault(false)
         MemWatch.fightNow = { homeView.inFight() || lastBook?.combat == true }   // #56: the timed relief waits out a fight (UI thread)
+        ends.own(MemWatch::fightNow, { false })
         // 1529 PERFORMANCE MODE (FramePace, the user's pick 2026-11-24): Home's animations at ~30 Hz while the player moves or fights on
         // Home (no room open); full rate at rest, in the rooms and for a moment after a touch (the root's dispatchTouchEvent)
         FramePace.probe = { room == Room.HOME && homeView.isShown && (homeView.inFight() || lastBook?.combat == true || mapView.movingNow()) }
+        ends.own(FramePace::probe, null)
         // #24 (11-23): the game's exact memory walk only while the add-ons are silent (their silence check reads it); else counters
         MemWatch.gameWalkWanted = { silence.silent }
         MemWatch.start(this)                                              // WCMEM: where the memory goes (the 1.0.17 low-memory kills); 1.0.28: Android's trims
         // the spell radials' own names / icons (RadialMeta): the bars and the Controller room show a change at once
         RadialMeta.init(this)
-        RadialMeta.onChange(weakly(this) { h -> h.lastPadMap?.let { m -> h.homeView.onPadMap(m); h.controllerView.onPadMap(m); h.spellbookView.onPadMap(m) } })
+        ends.add(RadialMeta.onChange(weakly(this) { h -> h.lastPadMap?.let { m -> h.homeView.onPadMap(m); h.controllerView.onPadMap(m); h.spellbookView.onPadMap(m) } }))
         // the user's pick 2026-11-13: Start over game windows - a change is told to the add-on at once (the next padmap confirms it)
         var pauseOverSeen = HomeSettings.pauseOverGame
-        HomeSettings.onChange(weakly(this) { h -> h.ui.post {
+        ends.add(HomeSettings.onChange(weakly(this) { h -> h.ui.post {
             if (!h.shell.hostGone() && HomeSettings.pauseOverGame != pauseOverSeen) {
                 pauseOverSeen = HomeSettings.pauseOverGame; h.pauseOverSentAt = 0L; h.pauseOverTell(h.lastPadMap, "the setting")
             }
             if (!h.shell.hostGone()) h.petBTell("the setting")                     // B: pet follow, this character's choice
-        } })
+        } }))
         homeView.onPartyLeaveRest = { partyLeaveHome("a Home module full screen") }
         // Home's controller reader passes each held mask to Interact's pop-up while it shows: its Make Space ring follows the real A
         // press (display only; one getevent). In a room no reader of Home's runs: the ring falls back to Interact's document
@@ -1019,7 +1035,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // P4: the room bar's order is the layout record's (per character, D5); edit mode drives it from its draft (HomeView.roomBar)
         homeView.roomBar = strip
         strip.showOrder(RoomBar.shown(HomeSettings.layout), 0L)
-        HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.roomBarSync() } })
+        ends.add(HomeSettings.onChange(weakly(this) { h -> h.ui.post { if (!h.shell.hostGone()) h.roomBarSync() } }))
         // THE ROOM'S COMBAT CUE (Home; the user: "I want the room that I am in to flash red"): over every room, under the bar and every
         // overlay; it takes no touch
         roomCue = RoomCombatCue(this)
@@ -1052,35 +1068,46 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // INSIDE THE ONE APP (the native login.txt sign-in; the user: "injecting the keys is not the way to go"): the row never types -
         // its button saves / updates the login, which the game uses by itself at its next start (NativeLogin)
         StartMenu.onReport = { openReport() }
+        ends.own(StartMenu::onReport, null)
         // 1.0.17: did the last session end badly? (LastRun; the start screen asks, Send = the ordinary report, no typing)
         LastRun.init(this)
         SetupBridge.sendCrash = { why -> ui.post { sendReport("Automatic crash report: $why") } }
+        ends.own(SetupBridge::sendCrash, null)
         StartMenu.autoLogin = { HomeLoginStore.autoLogin(this) }
+        ends.own(StartMenu::autoLogin, { true })
         // the sign-in triage's verify pass (2026-11-16, #399: a login saved at 18:02, gone by the next start, nothing in the log said
         // how): the Menu's Auto login, Forget login and the form's save go in the sign-in log (states only)
         StartMenu.onAutoLogin = { on -> HomeLoginStore.setAutoLogin(this, on); NativeLogin.logEvent("sign-in: Auto login ${if (on) "on" else "off"} (the Menu)"); if (!on) NativeLogin.clear() }
+        ends.own(StartMenu::onAutoLogin, null)
         StartMenu.onChangeLogin = { restartOnSave = LauncherHooks.gameUp() && HomeLoginStore.autoLogin(this); loginPrompt.open() }
+        ends.own(StartMenu::onChangeLogin, null)
         StartMenu.canExit = { SetupBridge.exitStream != null || LauncherHooks.gameUp() }
         // feat/exit-now (the user, 2026-11-24: "I want our built in close game button to completly close the app immidiatly"): Exit game
         // closes DS Forever at once, Local or Streaming (ExitNow); without the launcher (the companion app alone) the old routes
         StartMenu.onExit = { LauncherHooks.exitNow?.invoke(ExitNow.MENU) ?: (SetupBridge.endStream ?: SetupBridge.exitStream ?: SetupBridge.exitGame)?.invoke() }
         StartMenu.canForget = { HomeLoginStore.has(this) }
+        ends.own(StartMenu::canForget, { false })
         StartMenu.onForgetLogin = { HomeLoginStore.clear(this); Settings.forgetGameAccountPick(); NativeLogin.logEvent("sign-in: the saved login forgotten (the Menu)"); NativeLogin.clear() }
+        ends.own(StartMenu::onForgetLogin, null)
         StartMenu.canRestart = { LauncherHooks.gameUp() }
         StartMenu.onRestart = { settingsRest.onRestart() }
+        ends.own(StartMenu::onRestart, null)
         StartMenu.canSwitch = { SetupBridge.exitStream != null || ModeBridge.canGoBack() }
         StartMenu.onSwitch = { if (SetupBridge.exitStream != null) SetupBridge.exitStream?.invoke() else ModeBridge.back("the Menu") }
         // the Menu's Region: read once (Config.wtf on disk), then the choice; GameConfigWtf.ensure writes it as the portal at the next start
         var regionNow: String? = null
         StartMenu.region = { GameRegion.chosen(this) ?: regionNow ?: runCatching { GameRegion.current(this, GameFiles.gameRoot(this)) }.getOrDefault("us").also { regionNow = it } }
+        ends.own(StartMenu::region, { "us" })
         // (the choice is read first by StartMenu.region: regionNow stays the folder's own, for a Stop that forgets the choice again)
         StartMenu.onRegion = { code -> GameRegion.choose(this, code, GameRegion.BY_MENU) }
+        ends.own(StartMenu::onRegion, null)
         // the Menu's Battle.net sign-in (the user, 2026-11-24): Settings.browserLogin itself, saved by the Menu; the sign-in log says so
         // (states only) and the start screen's lines follow at once (the advice goes, or the Restart game line comes)
         StartMenu.onSignIn = { on ->
             NativeLogin.logEvent("sign-in: Battle.net sign-in set to ${BrowserLogin.words(on)} (the Menu), from the next game start")
             if (::loginWatch.isInitialized) loginShow()
         }
+        ends.own(StartMenu::onSignIn, null)
         // the region card's second line (the user, 2026-11-17): the launcher compares that region's build with the install's
         StartMenu.regionPreview = { code, answer ->
             val check = SetupBridge.regionCheck
@@ -1090,6 +1117,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 ui.post { answer(when (r) { true -> RegionPicker.Preview.DOWNLOAD; false -> RegionPicker.Preview.INSTALL; null -> RegionPicker.Preview.UNKNOWN }) }
             }, "region-card").apply { isDaemon = true }.start()
         }
+        ends.own(StartMenu::regionPreview, null)
         startView.onLoginButton = { gear -> if (gear || LauncherHooks.pkg != null) loginPrompt.open() else signIn() }
         // the BLZ51914400 offer (the user, 2026-11-18): Browser login on, then the launcher's restart (the game's own Exit Game first)
         startView.onBrowserLogin = {
@@ -1131,17 +1159,23 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         setupPanel = SetupPanel(this)
         chooserPanel = ChooserPanel(this)
         SetupBridge.openReport = { ui.post { if (!shell.hostGone()) openReport() } }
+        ends.own(SetupBridge::openReport, null)
         // the stream's settings on THIS screen (the user, 2026-11-18: they showed on the top screen and the pad went "all wacky"): every
         // route opens Settings > Performance with the Stream settings band; over the waiting screen the stream's top hands the presses
         SetupBridge.openStreamSettings = { ui.post { if (!shell.hostGone()) openStreamSettings() } }
+        ends.own(SetupBridge::openStreamSettings, null)
         SetupBridge.streamPadHolds = { streamLift && room == Room.SETTINGS && settings.perf.openTile == PerformanceTileModel.STREAM }
+        ends.own(SetupBridge::streamPadHolds, { false })
         SetupBridge.streamPad = { k -> ui.post { if (streamLift && !shell.hostGone()) settings.pad.directKey(k) } }
+        ends.own(SetupBridge::streamPad, null)
         settings.perf.onStreamBand = { open -> if (!open) ui.post { streamLiftEnd() } }
         SetupBridge.openSavedReport = { ui.post { if (!shell.hostGone()) openSavedReport() } }
+        ends.own(SetupBridge::openSavedReport, null)
         SetupBridge.reportKey = { code, down ->
             (::reportPage.isInitialized && reportPage.key(code, down)) ||
                 (::reportNotice.isInitialized && reportNotice.asking && (!down || ReportPage.Model.keyName(code)?.let { reportNotice.padKey(it) } == true))
         }
+        ends.own(SetupBridge::reportKey, null)
         // the 5 minutes ran out: the report is saved by itself (no browser mid-game) and its note waits in Settings / the setup screen
         ReportFlow.init(this)
         DiagLog.onEndedByItself = {
@@ -1149,12 +1183,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             Thread({ runCatching { ReportFlow.autoSave(app) }.onFailure { Log.w("WCREPORT", "auto-save failed", it) }; SetupBridge.loginSaved() },
                 "report-autosave").start()
         }
-        DiagLog.onChange(weakly(this) { h -> h.ui.post { h.ui.removeCallbacks(h.recTick); h.recTick.run() } })
+        ends.own(DiagLog::onEndedByItself, null)
+        ends.add(DiagLog.onChange(weakly(this) { h -> h.ui.post { h.ui.removeCallbacks(h.recTick); h.recTick.run() } }))
         SetupBridge.openLoginForm = { loginPrompt.open() }
+        ends.own(SetupBridge::openLoginForm, null)
         // a refused saved login (M3): "Update login" = the same form, then the game restarts by itself with it (test4 ruling)
         SetupBridge.updateLogin = { restartOnSave = true; loginPrompt.open() }
+        ends.own(SetupBridge::updateLogin, null)
         // "Enter it on the game screen": the headline says so, the buttons stay; the keyboard opens on the TOP screen for the user
         SetupBridge.enterOnGame = { signInCheck.type(); SetupBridge.keyboard(true); signInStep() }
+        ends.own(SetupBridge::enterOnGame, null)
         // one WCLOGIN line per sign-in button (bug 2 of test3: one log read must time it); never anything of the login itself
         SetupBridge.log = { NativeLogin.logEvent(it) }
         combatKeep = CombatKeepHost(ui,
@@ -1163,9 +1201,11 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             bookReady = { lastBook != null },
             fighting = { homeView.inFight() })
         LauncherHooks.cleanExit = { why, done -> ui.post { cleanExit(why, done) } }
+        ends.own(LauncherHooks::cleanExit, null)
         QuestWatchKeep.init(this)
         TaxiNet.init(this)                                // which known flight points connect, per character (b-route-unknown-taxi)                         // the watch list kept per character (the user's "Restore silently")
         AllIcons.busy = { homeView.inFight() }                            // the background icons wait while the player fights
+        ends.own(AllIcons::busy, { false })
         if (LauncherHooks.pkg != null) {
             NativeLogin.onTrafficSample = { rx, tx -> signInCheck.traffic(NativeLogin.firstReadAt, rx, tx) }
             ui.post(signInTick)
@@ -1216,7 +1256,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             startView.firstLabel = "Save your Battle.net login"; startView.firstW = 680f      // the longer words
             sweepTrigger()
             NativeLogin.onChange = { if (!shell.hostGone()) { loginShow(); downloadLine() } }
+            ends.own(NativeLogin::onChange, null)
             NativeLogin.bottomState = { bottomState() }
+            ends.own(NativeLogin::bottomState, null)
         }
         loginWatch = HomeLoginWatch(
             // the games whose login screen can be up: GameNative's and WoW Forever's logs, each with the package that writes it
@@ -1258,6 +1300,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         pinPicker = BagsPinPicker(this)
         radialView.picker = pinPicker
         PreviewStage.wheelItems = { spell -> radialView.previewItems(spell) }        // f-settings-previews: the wheels' pictures
+        ends.own(PreviewStage::wheelItems, { emptyList() })
         // f-radial-middle: on Home the item / spell wheel takes Home's middle slot (the columns part), mapped into the wheel's view
         radialView.homeSlot = { open ->
             if (!open) { homeView.wheelSlot(false); null }
@@ -1356,6 +1399,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the 1515 merge: edit mode never opens while the key question is up (shown, or waiting for the controller)
         homeView.editBlocked = { !KeyPick.editMayOpen(keyAskOpen) }
         BottomTiles.editHome = { editHome("Settings' Edit Home tile") }
+        ends.own(BottomTiles::editHome, null)
         pauseView = HomePauseView(this, strip, { questsPad }) { cells -> guestTap(cells) }
         pauseView.onSlide = { t -> slideBarsUp = true; pauseSlideAll(t) }          // feat/pause-power: Home's controller goes up
         // the open's REVERSE after the wheel has gone (the user 2026-10-09: "it needs to have a reverse animation for when the B button
@@ -1456,11 +1500,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // VOICE TO TEXT (the user's picks 2026-11-16): the microphone question never in a fight; Android's question on THIS screen (the
         // game's never covered: this window hides until it closes); the on-device recognizer's name hints (never logged)
         Voice.inFight = { homeView.inFight() }
+        ends.own(Voice::inFight, { false })
         Voice.askMic = { openOnBottom(VoiceAskActivity::class.java, "Voice") { VoiceMic.onClosed = it } }
+        ends.own(Voice::askMic, null)
         Voice.hints = {
             (chatView.voiceNames() + bagsView.bagItems().map { it.third.optString("name") })
                 .map { it.trim() }.filter { it.length in 2..40 && !it.startsWith("Loading") }.distinct().take(Voice.MAX_HINTS)
         }
+        ends.own(Voice::hints, { emptyList() })
         pauseView.barsBottom = {
             if (room != Room.HOME || !homeView.isShown || homeView.barsBottom() <= 0f) 0f else {
                 val a = IntArray(2); val b = IntArray(2)
@@ -2641,6 +2688,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // the top panel runs up to 120 Hz: Home's frames (the docked map's trail above all) paced while moving / fighting with Home's rest
         // being the game, not only while Home's page shows (the two-screen probe above stays as it was)
         FramePace.probe = playProbe
+        ends.own(FramePace::probe, null)
         // the host's first look (onCreate's show(Room.HOME), before this wiring: no docks yet) given to the docks now - else they would
         // wait for the look's next change (a fresh host after the switch starts on PLAY and stays there)
         singleLookNow?.let { singlePlayLook(it) }
@@ -3331,7 +3379,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // HOLD TO TALK (HoldTalk): FIRST, while a hold lasts (Left's release, A / B on its line); the chat guest the Hub held in the
         // router's click keeps the game from every press meanwhile, and the Chat room's own registration (same keys) never gets them
         // push to talk (hub58): the held button may be any of them, the sticks too; its release ends the hold, as Left's does
-        DirectPad.register(DirectPad.Reg("talk", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK", "PADFORWARD",
+        ends.add(DirectPad.register(DirectPad.Reg("talk", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK", "PADFORWARD",
             "PADLSTICK", "PADRSTICK"), wantsRelease = true, active = { holdTalk.takesPad }) { k, down, _ ->
             when {
                 k == holdTalk.src && !down -> talkUp()
@@ -3340,28 +3388,29 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 holdTalk.st == HoldTalk.St.PENDING -> padUnclaimed(k, true)
                 else -> talkAct(holdTalk.key(SystemClock.uptimeMillis(), k), "press $k")
             }
-        })
+        }))
         // pg1: + LB / RB (the Polestar tab's switch, from anywhere in the room; the direct route only)
-        DirectPad.register(DirectPad.Reg("quests", DirectPadKeys.EIGHT + lr, repeat = setOf("PADDUP", "PADDDOWN"), active = live("quests")) { k, down, rp ->
-            if (down) questsView.onDirect(k, rp) })
-        DirectPad.register(DirectPad.Reg("settings", DirectPadKeys.EIGHT + lr, active = live("settings"), onKey = synth("settings") { settings.pad.onPad(it) }))
-        DirectPad.register(DirectPad.Reg("chat", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"), active = live("chat"), onKey = synth("chat") { chatView.onPad(it) }))
+        ends.add(DirectPad.register(DirectPad.Reg("quests", DirectPadKeys.EIGHT + lr, repeat = setOf("PADDUP", "PADDDOWN"), active = live("quests")) { k, down, rp ->
+            if (down) questsView.onDirect(k, rp) }))
+        ends.add(DirectPad.register(DirectPad.Reg("settings", DirectPadKeys.EIGHT + lr, active = live("settings"), onKey = synth("settings") { settings.pad.onPad(it) })))
+        ends.add(DirectPad.register(DirectPad.Reg("chat", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"), active = live("chat"), onKey = synth("chat") { chatView.onPad(it) })))
         // the Map room: + L3 (the game's map pin) and Start (Show:), the user's context controls (Map.lua mr3 holds them too)
-        DirectPad.register(DirectPad.Reg("map", DirectPadKeys.EIGHT + lr + setOf("PADLSTICK", "PADBACK"),
-            active = { live("map")() || (guestShown("map") && capHolder == "map") }, onKey = synth("map") { worldMapRoom.onPad(it) }))
+        ends.add(DirectPad.register(DirectPad.Reg("map", DirectPadKeys.EIGHT + lr + setOf("PADLSTICK", "PADBACK"),
+            active = { live("map")() || (guestShown("map") && capHolder == "map") }, onKey = synth("map") { worldMapRoom.onPad(it) })))
         // b98: the bar opened early on the app's own D-pad Down (the game's hub took its hold in that click) is live at once
-        DirectPad.register(DirectPad.Reg("bar", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"),
-            active = { live("bar")() || (barSelect.open && barSelect.early) }, onKey = synth("bar") { barSelect.onPad(it) }))
+        ends.add(DirectPad.register(DirectPad.Reg("bar", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT, "PADBACK"),
+            active = { live("bar")() || (barSelect.open && barSelect.early) }, onKey = synth("bar") { barSelect.onPad(it) })))
         // b98: D-pad Down that no room takes, on Home with nobody holding: the bar comes up at once (the game's command confirms it)
         DirectPad.unclaimed = { k, down -> padUnclaimed(k, down) }
+        ends.own(DirectPad::unclaimed, null)
         // 1518: edit mode's B on this feed is read press AND release (held = Discard, HomeView.editB); every other key as before
         val homeKey = synth("home") { if (setupPad) setupView.padKey(it.optString("k")) else homeView.auraPad(it) }
-        DirectPad.register(DirectPad.Reg("home", DirectPadKeys.EIGHT + lr + setOf("PADBACK"), wantsRelease = true, active = live("home")) { k, down, rep ->
+        ends.add(DirectPad.register(DirectPad.Reg("home", DirectPadKeys.EIGHT + lr + setOf("PADBACK"), wantsRelease = true, active = live("home")) { k, down, rep ->
             if (k == "PAD2" && !setupPad && room == Room.HOME && homeView.editing) homeView.editB(down) else homeKey(k, down, rep)
-        })
+        }))
         // the Track Pad & Keyboard: LB / RB the tabs, ZL / ZR the clicks (the user, 2026-10-16)
-        DirectPad.register(DirectPad.Reg("tool", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT), active = live("tool"),
-            onKey = synth("tool") { homeView.toolPad(it) }))
+        ends.add(DirectPad.register(DirectPad.Reg("tool", DirectPadKeys.EIGHT + lr + setOf(DirectPadKeys.LT, DirectPadKeys.RT), active = live("tool"),
+            onKey = synth("tool") { homeView.toolPad(it) })))
         // THE ROOMS' TABS ON TOP (the user, 2026-11-25: "On all of the rooms that have the tabs on the right side we need to move the test
         // to the top and make them so that L and R shift the tabs left and right"): in Character, Group Finder, Professions and Social
         // L / R come from the app's own reader and step the room's tab row (RoomTabRow); the same in the rooms whose tabs were on top
@@ -3370,10 +3419,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // target / bar paging, so a bumper meant for the room never also targets or pages in the game. Each press is decided ONCE, there
         // (RoomTabsPad.decide): the reader acts on it only when it was held for the room (RoomTabsPad.take); a press the game got reaches
         // the room only as its relayed copy (Group Finder's / Social's / Professions' capture extras: gfpad / socialpad / profpad), as before
-        DirectPad.register(DirectPad.Reg(RoomTabsPad.ID, lr,
+        ends.add(DirectPad.register(DirectPad.Reg(RoomTabsPad.ID, lr,
             active = { roomTabsLive() || RoomTabsPad.heldWaiting(SystemClock.uptimeMillis()) }) { k, down, _ ->
             if (down && RoomTabsPad.take(k, roomTabsLive(), SystemClock.uptimeMillis())) roomTabsShoulder(k == DirectPadKeys.RB)
-        })
+        }))
         // the launcher's key callback asks (main thread); the host only weakly (a static never keeps it: Weakly.kt)
         val me = java.lang.ref.WeakReference(this)
         SetupBridge.roomShoulders = { me.get()?.let { h -> !h.shell.hostGone() && DirectPad.healthy && h.roomTabsLive() } == true }
@@ -5020,6 +5069,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         getSharedPreferences(GameFiles.PREFS, MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(gameRootChanged)
         GameRegion.listeners.remove(regionChanged)
         if (::loginWatch.isInitialized) loginWatch.stop()
+        // HostEnds (HostsReleasedTest): the bottom-screen hitch watch's frame callback re-posted itself for ever while recording, and
+        // everything this host and its views registered process-wide goes now (a replaced host was kept whole by them before)
+        android.view.Choreographer.getInstance().removeFrameCallback(hitch); hitchOn = false
+        ends.end()
     }
 
     /**
@@ -5636,11 +5689,12 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      * THE KEY SWEEP'S TRIGGER (Quests' pad10c probe; the user: "the sweep only on your word"): ONE broadcast from the PC, sent only when
      * tracking relays the user's "sweep" - `adb shell am broadcast -a app.dsforever.companion.KEYSWEEP -p app.dsforever.companion`.
      * The sweep presses only Quests' test keys (CTRL-SHIFT row keys alone, the keytest row's columns), which do nothing in the game;
-     * live keys stay off (TapBridge.KEYS_ON). Registered once per app life, inside the launcher only.
+     * live keys stay off (TapBridge.KEYS_ON). Inside the launcher only. HostEnds (feat/bottom-sync): once per HOST, taken off at its end -
+     * it was once per app life, so the first host's receiver held that host for good and, the host gone, answered nobody's sweep
      */
     private fun sweepTrigger() {
-        if (sweepRegistered) return
-        sweepRegistered = true
+        if (sweepMine) return
+        sweepMine = true
         val r = object : android.content.BroadcastReceiver() {
             override fun onReceive(c: Context, i: android.content.Intent) {
                 if (i.action != SWEEP_ACTION || shell.hostGone()) return
@@ -5651,7 +5705,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         val f = android.content.IntentFilter(SWEEP_ACTION)
         if (android.os.Build.VERSION.SDK_INT >= 33) applicationContext.registerReceiver(r, f, Context.RECEIVER_EXPORTED)
         else applicationContext.registerReceiver(r, f)
+        // HostEnds: the application's receiver list held this host (and through it every room) for good
+        ends.add { runCatching { applicationContext.unregisterReceiver(r) } }
     }
+    private var sweepMine = false
 
     /**
      * THE ROW INSIDE THE ONE APP, ONLY WHEN NEEDED (the user 2026-10-08: "It still shows battle.net login on the bottom screen. How can
@@ -6908,7 +6965,6 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         const val PS_STEP_TICK_MS = 500L
         const val PS_STEP_TICKS = 20
         const val SWEEP_ACTION = "app.dsforever.companion.KEYSWEEP"
-        @Volatile private var sweepRegistered = false
         /** a holder seen with its room hidden this long is freed (the one rule for every room; see freeHidden) */
         private const val HIDDEN_GRACE = 3_000L
         /** combat_nav Step 3: PadOwnerSync's look while a fight lasts (a surface opening or closing needs no hook of its own) */

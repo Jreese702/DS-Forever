@@ -53,7 +53,7 @@ class CastStripView(context: Context, private val onTap: (Int) -> Unit) : View(c
     private var flingV = 0f
     private var flingAt = -1L
 
-    init { ItemCd.onChange(weakly(this) { v -> v.postInvalidate() }) }   // cb9: an item slot's cooldown (weakly: [weakly])
+    init { context.atHostEnd(ItemCd.onChange(weakly(this) { v -> v.postInvalidate() })) }   // cb9: an item slot's cooldown (weakly: [weakly])
 
     /** the place Home laid the bar in (its slots in view and spread) */
     var side: CastStripModel.Side = CastStripModel.Side.LEFT

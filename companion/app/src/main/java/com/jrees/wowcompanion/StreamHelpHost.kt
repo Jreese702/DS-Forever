@@ -44,7 +44,7 @@ class StreamHelpHost(context: Context) : View(context) {
 
     init {
         visibility = GONE
-        Theme.onChange { postInvalidate() }
+        context.atHostEnd(Theme.onChange { postInvalidate() })
     }
 
     fun open() { visibility = VISIBLE; invalidate() }

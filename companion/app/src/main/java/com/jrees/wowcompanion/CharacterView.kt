@@ -106,7 +106,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private val pending = ArrayDeque<String>()
     private val drags = ArrayList<Pair<RectF, String>>()
 
-    init { CharacterBars.listen { if (model.tab == CharTab.CHARACTER) invalidate() } }
+    init { context.atHostEnd(CharacterBars.listen { if (model.tab == CharTab.CHARACTER) invalidate() }) }
 
     /** the room holds the controller, as the last CURRENT document said (a document replayed from the log's backlog at app start
      *  tells who held it THEN, and must not leave a stale "held" behind: a later room change would tap `close` for nothing) */

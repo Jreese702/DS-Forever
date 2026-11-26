@@ -247,8 +247,8 @@ class ControllerTiles(context: Context, val group: SettingsTabs.Group, private v
     private val changed: () -> Unit = { post { refresh() } }
 
     init {
-        HomeSettings.onChange(changed); CastSettings.onChange(changed); GameUi.onChange(changed); HomeAttackSwitch.onChange(changed)
-        Theme.onChange { postInvalidate() }
+        context.atHostEnd(HomeSettings.onChange(changed)); context.atHostEnd(CastSettings.onChange(changed)); context.atHostEnd(GameUi.onChange(changed)); context.atHostEnd(HomeAttackSwitch.onChange(changed))
+        context.atHostEnd(Theme.onChange { postInvalidate() })
     }
 
     /** the tiles' shape as last measured: a change asks for a new layout */

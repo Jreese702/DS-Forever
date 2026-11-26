@@ -29,7 +29,7 @@ object FrameGen {
 
     private var prefs: SharedPreferences? = null
     private var dir: File? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     /** the picker activity closed (the bottom screen's window, hidden while it was up, comes back): set by the host, run once */
     @Volatile var onPickerClosed: (() -> Unit)? = null
@@ -155,7 +155,7 @@ object FrameGen {
     /** a restart would change the running game's frame limit */
     fun limitNeedsRestart(launched: Int?, now: Int): Boolean = launched != null && launched != now
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     private fun changed() { for (l in listeners.toList()) l() }
     /** Reset settings (ResetRun) removed saved values: the rows read them again */
     fun resetDone() = changed()

@@ -260,8 +260,8 @@ class BottomParkLifecycleTest {
 
         // Android closes the window by itself: the new one comes, and NONE of the old host's repeating ticks stays on the main looper
         // (the once-a-second loop reposted itself for ever: the whole old host alive and ticking - GameUi, Home, the pet's B - beside
-        // the new one). (Its views are still reachable from settings listener lists the app registers in many views and never removes:
-        // older than this branch, a task of its own; this checks the looper, the reviewer's path)
+        // the new one). (Its views reached from the settings' listener lists and the hooks are HostsReleasedTest's: every one taken off at
+        // the host's end now - HostEnds; this checks the looper, the reviewer's path)
         val (oldWin, oldHost) = cancelShown()
         settle(3_000) { shown() != null && shown() !== oldWin.get() && tail(host()) != null }
         assertEquals("never two hosts", base + 1, CompanionHost.live)

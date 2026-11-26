@@ -70,6 +70,9 @@ class HomeViewsReleasedTest {
         HomeSettings.swingTimer = !HomeSettings.swingTimer
         settle()
         for (i in 0 until 20) {
+            // (test 1533's full suite: one red in a 20-class batch - the "cast-art" decoder's answer, posted to the main looper after this
+            // loop had ended, held the CastView and through it every page; GC order, not a holder: the workers are let finish first)
+            HostHolders.quietWorkers(rounds = 2) { settle(2) }
             System.gc(); System.runFinalization()
             settle(2)
             if (refs.all { it.get() == null }) break

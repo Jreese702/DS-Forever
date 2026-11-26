@@ -639,7 +639,7 @@ object ImportedAddons {
     @Volatile var onPickerClosed: (() -> Unit)? = null
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     private fun changed() { for (l in listeners) runCatching { l() } }
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "addons-import").apply { isDaemon = true } }
 

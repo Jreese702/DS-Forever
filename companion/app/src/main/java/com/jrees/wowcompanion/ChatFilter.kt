@@ -82,7 +82,7 @@ object ChatFilter {
     private var store: Store? = null
     private var all = JSONObject()
     private val hidden = HashSet<String>()
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     /** the character now ("name-realm"); null = not known yet: everything shows and nothing is saved */
     @Volatile var who: String? = null
@@ -119,7 +119,7 @@ object ChatFilter {
         runCatching { store?.write(all.toString()) }
     }
 
-    fun onChange(l: () -> Unit) { listeners += l }
+    fun onChange(l: () -> Unit): () -> Unit { listeners += l; return { listeners.remove(l) } }   // its removal: HostEnds
     private fun changed() { for (l in listeners.toList()) runCatching { l() } }
 
     /** the box [key] is ticked */

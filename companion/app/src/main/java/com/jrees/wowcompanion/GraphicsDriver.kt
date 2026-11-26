@@ -107,7 +107,7 @@ object GraphicsDriver {
         private set
 
     private val listeners = ArrayList<() -> Unit>()
-    fun onChange(l: () -> Unit) { synchronized(listeners) { listeners.add(l) } }
+    fun onChange(l: () -> Unit): () -> Unit { synchronized(listeners) { listeners.add(l) }; return { synchronized(listeners) { listeners.remove(l) } } }   // its removal: HostEnds
     private fun changed() { for (l in synchronized(listeners) { listeners.toList() }) runCatching { l() } }
 
     /** the launcher, at each game start: what was chosen and what the container asks for; logged */

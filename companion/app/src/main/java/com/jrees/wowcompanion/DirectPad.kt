@@ -39,7 +39,8 @@ object DirectPad {
     private val stopped = HashSet<String>()
     private var repeating: Pair<Reg, String>? = null
 
-    fun register(r: Reg) { regs[r.id] = r; ensure() }
+    /** returns its removal (HostEnds: a host takes its own off at its end, only while it is still the one registered under its id) */
+    fun register(r: Reg): () -> Unit { regs[r.id] = r; ensure(); return { if (regs[r.id] === r) regs.remove(r.id) } }
     fun unregister(id: String) { regs.remove(id) }
 
     /** is [id] getting direct presses now (MainActivity drops its relayed presses while true) */

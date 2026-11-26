@@ -607,7 +607,7 @@ object CastStripModel {
         @Volatile var bar: Bar? = null
             private set
         private val listeners = ArrayList<() -> Unit>()
-        fun onChange(l: () -> Unit) { synchronized(listeners) { listeners.add(l) } }
+        fun onChange(l: () -> Unit): () -> Unit { synchronized(listeners) { listeners.add(l) }; return { synchronized(listeners) { listeners.remove(l) } } }   // its removal: HostEnds
         fun set(b: Bar) {
             if (b == bar) return
             bar = b

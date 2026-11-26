@@ -205,9 +205,9 @@ class AddonTiles(context: Context, private val host: SettingsView) : View(contex
 
     init {
         val again = { post { refresh() } }
-        ThirdPartyAddons.onChange { again() }
-        Settings.onChange { again() }
-        Theme.onChange { postInvalidate() }
+        context.atHostEnd(ThirdPartyAddons.onChange { again() })
+        context.atHostEnd(Settings.onChange { again() })
+        context.atHostEnd(Theme.onChange { postInvalidate() })
     }
 
     // ---------------------------------------------------------------- the model as the band shows it now

@@ -40,7 +40,7 @@ object CastSettings {
     }
 
     private var prefs: SharedPreferences? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     fun init(c: Context) {
         if (prefs == null) prefs = c.applicationContext.getSharedPreferences("cast", Context.MODE_PRIVATE)
@@ -105,7 +105,7 @@ object CastSettings {
         get() = enumOr(prefs?.getString("holdTime", null), HoldTime.NORMAL)
         set(v) { prefs?.edit()?.putString("holdTime", v.name)?.apply(); changed() }
 
-    fun onChange(l: () -> Unit) { if (l !in listeners) listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { if (l !in listeners) listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     fun removeOnChange(l: () -> Unit) { listeners.remove(l) }
 
     private fun changed() { for (l in listeners.toTypedArray()) l() }

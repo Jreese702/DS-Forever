@@ -19,7 +19,7 @@ import org.json.JSONObject
  */
 object HomeSettings {
     private var prefs: SharedPreferences? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     fun init(c: Context) {
         if (prefs == null) prefs = c.applicationContext.getSharedPreferences("home", Context.MODE_PRIVATE)
@@ -396,7 +396,7 @@ object HomeSettings {
         get() = prefs?.getBoolean(KEY_CLOCK_PET, true) ?: true
         set(v) { if (v != clockPet) { prefs?.edit()?.putBoolean(KEY_CLOCK_PET, v)?.apply(); for (l in listeners) l() } }
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     /** a reset (ResetRun) removed saved values: every listener reads them again */
     fun resetDone(layouts: Boolean = false) { HomeLayoutStore.resetDone(layouts); for (l in listeners) l() }
 
@@ -433,8 +433,8 @@ object GameBars {
     var stanceTitle: String? = null; private set
     var pet: String? = null; private set
     var petTitle: String? = null; private set
-    private val listeners = ArrayList<() -> Unit>()
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     fun note(st: JSONObject?, ps: JSONObject?) {
         fun word(o: JSONObject?) = o?.optString("n", "")?.takeIf { it.isNotEmpty() } ?: o?.optInt("v", 0)?.takeIf { it > 0 }?.let { "Setting $it" }
         fun title(o: JSONObject?) = o?.optString("t", "")?.takeIf { it.isNotEmpty() }
@@ -456,10 +456,10 @@ object HomeAttackSwitch {
         private set
     /** the pad of the latest quests document (HomeView), where the `spells` row's cells are */
     var pad: JSONObject? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
 
     /** every padmap (HomeView.onPadMap): the switch follows the add-on's word */
     fun note(map: PadMapModel.Map) {
@@ -498,10 +498,10 @@ object HomeLootSwitch {
         private set
     /** the pad of the latest interact document that carried one (else Home's quests pad: the same shared grid) */
     private var pad: JSONObject? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
 
     /** every interact document (CompanionHost): the row follows the add-on's word */
     fun note(msg: JSONObject) {
@@ -542,10 +542,10 @@ object CompassSwitch {
     var state: State? = null
         private set
     private var pad: JSONObject? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
 
     /** every interact document (CompanionHost): the row follows the add-on's word */
     fun note(msg: JSONObject) {
@@ -593,10 +593,10 @@ object RingsSwitch {
     var state: State? = null
         private set
     private var pad: JSONObject? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
 
     fun note(msg: JSONObject) {
         msg.optJSONObject("pad")?.let { pad = it }
@@ -632,10 +632,10 @@ object TipsSwitch {
     var state: State? = null
         private set
     private var pad: JSONObject? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
 
     fun note(msg: JSONObject) {
         msg.optJSONObject("pad")?.let { pad = it }
@@ -695,10 +695,10 @@ class HomeSettingsSection(context: Context,
 
     init {
         // hold to talk's "On release" row comes and goes with its switch: the section's height may change
-        HomeSettings.onChange { post { requestLayout(); invalidate() } }
+        context.atHostEnd(HomeSettings.onChange { post { requestLayout(); invalidate() } })
         // the attack switch appears / its words change: the section's height may change too
-        HomeAttackSwitch.onChange { post { requestLayout(); invalidate() } }
-        GameBars.onChange { post { requestLayout(); invalidate() } }               // f-class-radial: the rows appear / change
+        context.atHostEnd(HomeAttackSwitch.onChange { post { requestLayout(); invalidate() } })
+        context.atHostEnd(GameBars.onChange { post { requestLayout(); invalidate() } })               // f-class-radial: the rows appear / change
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {

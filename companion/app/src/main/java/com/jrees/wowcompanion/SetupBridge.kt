@@ -64,7 +64,7 @@ object SetupBridge {
         set(v) { field = v; streamSettingsChanged() }
     private val streamWatchers = CopyOnWriteArrayList<() -> Unit>()
     /** [f] runs when the stream's settings or its test's rows change (any thread) */
-    fun onStreamSettings(f: () -> Unit) { streamWatchers += f }
+    fun onStreamSettings(f: () -> Unit): () -> Unit { streamWatchers += f; return { streamWatchers.remove(f) } }   // its removal: HostEnds
     fun streamSettingsChanged() { for (f in streamWatchers) f() }
     /** EVERY ROUTE to the stream's settings (the Performance tile, the waiting screen's Menu, the stream's own screens' Y): the Settings
      *  room on the Performance tab with the Stream settings band open (set by the companion's host) */
@@ -142,7 +142,7 @@ object SetupBridge {
     }
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     fun offChange(l: () -> Unit) { listeners.remove(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
 

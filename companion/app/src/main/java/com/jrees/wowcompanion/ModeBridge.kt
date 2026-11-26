@@ -22,7 +22,7 @@ object ModeBridge {
         private set
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     fun offChange(l: () -> Unit) { listeners.remove(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
 

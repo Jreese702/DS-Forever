@@ -235,16 +235,16 @@ class GameUiSection(context: Context, val part: Part = Part.ALL) : View(context)
     private var downY = 0f
 
     init {
-        GameUi.onChange { post { refresh() } }
-        HomeLootSwitch.onChange { post { refresh() } }
-        CompassSwitch.onChange { post { refresh() } }
-        TipsSwitch.onChange { post { refresh() } }
-        RingsSwitch.onChange { post { refresh() } }
+        context.atHostEnd(GameUi.onChange { post { refresh() } })
+        context.atHostEnd(HomeLootSwitch.onChange { post { refresh() } })
+        context.atHostEnd(CompassSwitch.onChange { post { refresh() } })
+        context.atHostEnd(TipsSwitch.onChange { post { refresh() } })
+        context.atHostEnd(RingsSwitch.onChange { post { refresh() } })
         // Navigation's Polestar tile comes and goes with Polestar (the guide's setting, its install)
-        if (part == Part.NAVIGATION) { Settings.onChange { post { refresh() } }; ThirdPartyAddons.onChange { post { refresh() } } }
+        if (part == Part.NAVIGATION) { context.atHostEnd(Settings.onChange { post { refresh() } }); context.atHostEnd(ThirdPartyAddons.onChange { post { refresh() } }) }
         // hub61: the Edit layout tile comes with the editor's first document (its picture follows the pieces)
-        if (part == Part.LAYOUT) LayoutModel.Live.onChange { post { refresh() } }
-        if (hasStatus) StatusLine.onChange = { post { invalidate() } }
+        if (part == Part.LAYOUT) context.atHostEnd(LayoutModel.Live.onChange { post { refresh() } })
+        if (hasStatus) { StatusLine.onChange = { post { invalidate() } }; context.hostOwn(StatusLine::onChange, null) }
     }
 
     /** the tiles' shape as last measured (the slots and the open band's rows): a change asks for a new layout */

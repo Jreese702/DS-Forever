@@ -111,8 +111,8 @@ class ControllerView(
         RadialMeta.init(context)
         // p55: on the main looper, not the view's queue: a room view not attached (Home or Settings on show) still tells the add-on at
         // once (Show in combat arms the bar's in-combat layer, the bar Off its pages)
-        HomeSettings.onChange { MAIN.post { cbSetting(false); invalidate() } }   // the radial's way (Hold / Tap); p53: the bar's setting
-        CastStripModel.Live.onChange { MAIN.post { cbSetting(false); invalidate() } }    // p53: the Cast bar tab's slots
+        context.atHostEnd(HomeSettings.onChange { MAIN.post { cbSetting(false); invalidate() } })   // the radial's way (Hold / Tap); p53: the bar's setting
+        context.atHostEnd(CastStripModel.Live.onChange { MAIN.post { cbSetting(false); invalidate() } })    // p53: the Cast bar tab's slots
     }
 
     private val page = PadTabPage(this, { cells -> onPadCells(cells) }, { e -> onBind(e) }, otherReader, cursorOnTabs = { false },

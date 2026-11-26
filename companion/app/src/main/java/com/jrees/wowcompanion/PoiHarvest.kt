@@ -137,6 +137,9 @@ object PoiHarvest {
     val size: Int get() = recs.size
 
     /** Load the store. [onSeedReady] runs on the UI thread when a seed index finishes building. */
+    /** HostEnds: a host that went lets go of its seed hook (only while it is still its own) */
+    fun seedReadyOff(f: () -> Unit) { if (onSeedReady === f) onSeedReady = null }
+
     fun init(c: Context, onSeedReady: () -> Unit) {
         ctx = c.applicationContext
         this.onSeedReady = onSeedReady
