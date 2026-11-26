@@ -37,6 +37,9 @@ import com.jrees.wowcompanion.SingleSub
  * Its content: the dim over the game (black, [SingleLook.Look.dim]; a touch on it the host's [CompanionHost.singleDimTap]), the host's
  * content over it - the rooms in the centred 1240 x 1080 box (the host lays them, CompanionHost.boxed). What shows is the host's
  * [SingleLook] ([look]): HIDDEN = the decor GONE (no surface, no layer, every touch the game's), FULL = shown, its dim, touchable or not.
+ * THE BOTTOM SCREEN COMES STRAIGHT BACK (BottomSync, 2026-11-25): a minimize or a sleep PARKS it as the bottom Presentation ([park]: the
+ * decor and its small windows GONE whatever the look says, never touchable, nothing kept awake, the host away) and the return shows it
+ * again with the look it had ([unpark]); an onStop without our [close] is Android's ([DsForeverScreen.lost]).
  */
 internal class TopWindow(private val activity: Activity, private val screen: DsForeverScreen) :
     android.app.Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen), HostShell, BottomWindow, SingleShell {
@@ -51,6 +54,9 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     private val subs = LinkedHashMap<String, SubWindow>()
     private var lookNow: SingleLook.Look? = null
     private var touchNow = true
+    /** our own close ([close]); kept while away ([park]) */
+    private var closing = false
+    private var parkedNow = false
 
     /** the activity's window size now (the host lays its views by the size made with: [stale] when it is no more this) */
     private fun liveSize(): IntArray =
@@ -69,7 +75,38 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     /** the activity moved to another display or another size since this window was made: DsForeverScreen makes it again (its host's
      *  box, docks and strips are laid for the size it was made at) */
     fun stale(): Boolean = displayId != madeOn || !liveSize().contentEquals(size)
-    override fun close() = dismiss()
+    override fun close() { closing = true; runCatching { dismiss() } }
+    override val alive: Boolean get() = up && !closing
+    override val parked: Boolean get() = parkedNow
+    /** up and attached (its decor may be GONE by the look: PLAY shows nothing of this window) */
+    override val drawn: Boolean get() = up && window?.decorView?.isAttachedToWindow == true
+    override fun snapshot(why: String) = host?.snapshot(why)
+
+    override fun park(why: String): Boolean {
+        if (!up || closing) return false
+        if (parkedNow) return true
+        if (typing) typer.focusable(false)
+        parkedNow = true
+        showDecor(false)
+        window?.setFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        touchNow = false
+        window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        for (s in subs.values) s.park(true)
+        host?.park(why)
+        return true
+    }
+
+    override fun unpark(why: String) {
+        if (!parkedNow || !up) return
+        parkedNow = false
+        for (s in subs.values) s.park(false)
+        // the look it had (or the plain window, before any look): its decor, its dim, its touch
+        val l = lookNow
+        if (l != null) { lookNow = null; look(l) }
+        else { showDecor(true); window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE); touchNow = true }
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        host?.unpark(why)
+    }
 
     /** Streaming's Battle.net keyboard over the whole screen (as the Presentation's) */
     override fun board(on: Boolean) {
@@ -167,6 +204,12 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         com.jrees.wowcompanion.StartKeys.motion(ev) || super.dispatchGenericMotionEvent(ev)
 
     override fun onStop() {
+        // Android closed it by itself (never our close): a snapshot for the window made again, and the way back
+        if (!closing) {
+            if (com.jrees.wowcompanion.LauncherHooks.gameUp()) host?.let { com.jrees.wowcompanion.BottomSync.keep(it.snapshot("closed by Android")) }
+            com.jrees.wowcompanion.DiagLog.event("app", "one screen window closed by Android")
+            screen.lost(this, "closed by Android")
+        }
         if (typing) typer.focusable(false)
         pageSlot.drop()
         host?.let { it.onStop(); it.onDestroy() }
@@ -178,6 +221,17 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         super.onStop()
     }
 
+    /** a [show] that failed after onCreate: its host goes with it (never a second one beside the next) */
+    fun abandon() {
+        closing = true; up = false
+        pageSlot.drop()
+        host?.let { it.onStop(); it.onDestroy() }
+        host = null
+        main.removeCallbacksAndMessages(null)
+        for (s in subs.values) s.close()
+        subs.clear()
+    }
+
     // ---- HostShell
     override fun setHostContent(v: View) { hostSlot.removeAllViews(); hostSlot.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
     override fun hostGone(): Boolean = !up
@@ -186,13 +240,15 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     override fun hostIntent(): Intent? = null
     override fun startHostActivity(i: Intent) = context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     override fun hostSingle(): SingleShell = this
+    override fun hostRestore() = com.jrees.wowcompanion.BottomSync.take(android.os.SystemClock.uptimeMillis(), com.jrees.wowcompanion.LauncherHooks.gameStartSec)
 
     // ---- SingleShell
 
     /** the decor's visibility IS the frame (HIDDEN = GONE: no surface); set before the window is added too (the first look comes from
      *  the host's onCreate, inside Dialog.show) */
-    private fun showDecor(on: Boolean) {
+    private fun showDecor(want: Boolean) {
         val d = window?.decorView ?: return
+        val on = want && !parkedNow                                   // parked: GONE whatever asks (the look, the page, a field)
         val v = if (on) View.VISIBLE else View.GONE
         if (d.visibility != v) d.visibility = v
     }
@@ -200,6 +256,7 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     override fun look(l: SingleLook.Look) {
         if (lookNow == l) return
         lookNow = l
+        if (parkedNow) return                                     // kept while away: the look is applied at the return ([unpark])
         val full = l.frame == SingleLook.Frame.FULL
         // the browser page and a typing field keep the window up whatever the look says
         showDecor(full || pageSlot.up || typer.typing)

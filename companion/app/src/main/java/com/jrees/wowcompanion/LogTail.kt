@@ -31,9 +31,12 @@ class LogTail(
     /** the logs to follow (LogFollow), the first read first; null = DEFAULT_PATH's pair (GameNative + WoW Forever's usual folder).
      *  The private share passes the ONE log GameLocator found on the device (Home, 2026-10-02: no hard-coded paths there). */
     follow: List<String>? = null,
+    /** the bottom screen comes straight back (BottomSync): a rebuilt host's reader goes on from the old one's place when it is still
+     *  the same log ([resumeOffset], checked at the first plain read); null = from byte 0 as always */
+    resume: Place? = null,
 ) : LogSource {
     /** the log being read: DEFAULT_PATH follows whichever game wrote last (LogFollow); any other path is read as given */
-    private var path = initialPath
+    @Volatile private var path = initialPath
     private val candidates = follow?.takeIf { it.isNotEmpty() }
         ?: if (initialPath == DEFAULT_PATH) listOf(DEFAULT_PATH, WOWFOREVER_PATH) else listOf(initialPath)
     private var followAt = 0L
@@ -48,7 +51,11 @@ class LogTail(
     /** issue #231 (diagnostics only): bytes fed since start, and when the last read brought any */
     @Volatile private var bytesFed = 0L
     @Volatile private var lastFedAt = 0L
-    private var running = false
+    @Volatile private var running = false
+    /** the old reader's place, looked at once by the first plain read ([poll]) */
+    private var resumeFrom: Place? = resume
+    /** where a new reader would go on from: kept after every [feed] (this thread), read by the host at its end */
+    @Volatile private var placeNow: Place? = null
 
     /** the WCB1 parser (Wcb1Assembler: shared with Streaming's bridge copy of the PC's log) */
     private val docs = Wcb1Assembler(onMessage, onStatus)
@@ -67,6 +74,22 @@ class LogTail(
         handler.removeCallbacksAndMessages(null)
         thread.quitSafely()
     }
+
+    /**
+     * THE BOTTOM SCREEN KEPT WHILE AWAY (BottomSync, 2026-11-25: a minimize or a sleep parks the host): no more polls, everything kept
+     * - the offset, the partial line, the cut letter, the half-joined documents, the thread. Run on this reader's own thread, after a
+     * poll under way (never two pumps).
+     */
+    override fun pause() {
+        handler.post { running = false; handler.removeCallbacks(pump) }
+    }
+
+    /** back: the polls go on from the same place - only what the add-on wrote while away is read (never from byte 0) */
+    override fun resume() {
+        handler.post { if (!running) { running = true; handler.removeCallbacks(pump); handler.post(pump) } }
+    }
+
+    override fun place(): Place? = placeNow
 
     private val pump = object : Runnable {
         override fun run() {
@@ -247,11 +270,21 @@ class LogTail(
         filled = false                            // (set again only by a plain read that fills MAX_READ)
         // a path plain IO cannot open (another app's /data/data) is root's only; a shared-storage one falls back after ROOT_GIVE_UP
         // failed root reads in a row (su denied or gone), once said in the status line
-        if (needsRoot && (rootFails < ROOT_GIVE_UP || path.startsWith("/data/"))) { pollRoot(); return }
+        if (needsRoot && (rootFails < ROOT_GIVE_UP || path.startsWith("/data/"))) { resumeFrom = null; pollRoot(); return }
         if (needsRoot && !plainSaid) { plainSaid = true; onStatus("root reads failing: reading the log directly") }
         val f = File(path)
         if (!f.exists()) { onStatus("waiting for game"); return }
         val len = f.length()
+        // BottomSync: a rebuilt host's reader goes on from the old reader's place - the same log, as long, the same bytes before it
+        resumeFrom?.let { p ->
+            resumeFrom = null
+            val there = if (p.path == path && p.tail.isNotEmpty() && len >= p.offset) runCatching {
+                RandomAccessFile(f, "r").use { raf -> raf.seek(p.offset - p.tail.size); ByteArray(p.tail.size).also { raf.readFully(it) } }
+            }.getOrNull() else null
+            val at = resumeOffset(p, path, len, there)
+            if (at > 0L) { offset = at; carry = p.carry; byteCarry = p.byteCarry }
+            android.util.Log.i("WCLOG", if (at > 0L) "the reader goes on at byte $at (${len - at} bytes to read)" else "the log is not the old reader's: read from the start")
+        }
         if (len < offset) {                       // client relaunched: file truncated
             offset = 0; carry = ""; byteCarry = Utf8Cut.EMPTY; docs.reset()
             onStatus("client restarted, resyncing")
@@ -357,6 +390,8 @@ class LogTail(
         for (i in 0 until lines.size - if (carry.isEmpty()) 0 else 1) {
             handleLine(lines[i])
         }
+        // BottomSync: the place a new reader would go on from (every document up to it is handed on; its last bytes say it is the same log)
+        placeNow = Place(path, offset, carry, byteCarry, buf.copyOfRange((n - TAIL_BYTES).coerceAtLeast(0), n))
     }
 
     private fun handleLine(raw: String) = docs.line(raw)
@@ -372,8 +407,24 @@ class LogTail(
             if (lastFedAt > 0) now - lastFedAt else -1L, docs.linesSeen, docs.magicLines, docs.docsOut)
     }
 
+    /**
+     * THE READER'S PLACE (BottomSync): [offset] read up to there in [path], with the partial line [carry] and the cut letter [byteCarry]
+     * still to finish, and the [tail] bytes before [offset] (a client restart that wrote past it has other bytes there). Pure
+     */
+    data class Place(val path: String, val offset: Long, val carry: String, val byteCarry: ByteArray, val tail: ByteArray)
+
     companion object {
         const val MAGIC = Wcb1Assembler.MAGIC
+        /** the bytes before a [Place] kept to know the log again */
+        const val TAIL_BYTES = 64
+
+        /**
+         * BottomSync, pure: where a new reader of [path] (now [len] bytes, [there] = its bytes just before the old place) starts: the old
+         * [saved] place when it is the same log, at least as long, and the same bytes are there; else 0 (from the start, as always)
+         */
+        fun resumeOffset(saved: Place?, path: String, len: Long, there: ByteArray?): Long =
+            if (saved != null && saved.offset > 0L && saved.path == path && len >= saved.offset && there != null && there.contentEquals(saved.tail)) saved.offset
+            else 0L
         /** 100 ms: the addon flushes every 0.15 s, so a slower poll would be the ceiling
          *  rather than the flush. Affordable only because the root shell is persistent. */
         // 50 ms. It was 100 while each read cost 400 ms reading through a sparse hole, so a

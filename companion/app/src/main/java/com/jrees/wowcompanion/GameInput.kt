@@ -65,7 +65,14 @@ object GameInput {
         return current
     }
 
-    fun live(now: Long = System.currentTimeMillis()) = gate.live(now)
+    /**
+     * THE BOTTOM SCREEN KEPT WHILE AWAY (BottomSync, 2026-11-25): a parked host's window is hidden, so nothing of ours taps or types
+     * into the game meanwhile - every route (GameInput, TapBridge, GameUi) asks [live] first. Set by CompanionHost.park / unpark (and
+     * cleared by every host's onCreate / onDestroy, so it can never stay on)
+     */
+    @Volatile var away = false
+
+    fun live(now: Long = System.currentTimeMillis()) = !away && gate.live(now)
 
     /** One key, by binding name. False when the name is unknown or the game is not live. */
     fun key(name: String): Boolean {
@@ -132,8 +139,8 @@ object GameInput {
 
     private fun ready(): Boolean {
         val now = System.currentTimeMillis()
-        if (gate.live(now)) return true
-        onStatus("${gate.why(now)}: nothing was sent")
+        if (live(now)) return true
+        onStatus("${gate.why(now) ?: "DS Forever is away"}: nothing was sent")
         return false
     }
 

@@ -105,6 +105,8 @@ object GameUi {
      */
     fun holdTaps(untilMs: Long) { tapHoldUntil = untilMs }
     fun tapsHeld(now: Long): Boolean = now < tapHoldUntil
+    /** the hold now (wall ms): a parked bottom screen holds every tap and gives this back at its return (CompanionHost.park) */
+    fun tapHold(): Long = tapHoldUntil
     @Volatile private var tapHoldUntil = 0L
     const val SWITCHING = "Switching screens"
 

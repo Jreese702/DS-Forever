@@ -63,7 +63,7 @@ class KeysBackTest {
         assertTrue(main.contains("com.jrees.wowcompanion.fork.DsForeverScreen.topResumedFor(this, isTopResumedActivity)"))
         assertTrue(src.contains("fun topResumedFor(activity: Activity, top: Boolean) { current?.takeIf { it.context === activity }?.keysTop(top) }"))
         // a hide / stop / switch cancels what waits
-        for (f in listOf("fun hide() {", "fun stop() {")) assertTrue(f, src.substringAfter(f).substringBefore("\n    }").contains("keysCancel()"))
+        for (f in listOf("fun hide(park: Boolean = true) {", "fun stop() {")) assertTrue(f, src.substringAfter(f).substringBefore("\n    }").contains("keysCancel()"))
         // no new permission: REORDER_TASKS was declared already (its comment names its second user)
         val manifest = listOf("src/main/AndroidManifest.xml", "dsforever/src/main/AndroidManifest.xml").map { java.io.File(it) }.first { it.canRead() }.readText()
         assertTrue(manifest.contains("in single screen mode when the bottom"))
