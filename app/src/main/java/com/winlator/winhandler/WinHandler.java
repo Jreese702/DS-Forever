@@ -109,7 +109,9 @@ public class WinHandler {
     private void holdFeed(GamepadState s, boolean virtual) {
         if (s == null) return;
         try {
-            com.jrees.wowcompanion.HoldCast.trigIn(s.triggerL, s.triggerR);   // fix/hold-tweaks: the fire's mark needs a free trigger
+            // fix/hold-tweaks: the fire's mark needs a free trigger; int/1536: as the game gets them (a menu room's hold-back: both free)
+            boolean held = com.jrees.wowcompanion.SetupBridge.INSTANCE.getRoomTriggers();
+            com.jrees.wowcompanion.HoldCast.trigIn(held ? 0f : s.triggerL, held ? 0f : s.triggerR);
             com.jrees.wowcompanion.HoldCast.padIn(s.buttons, s.dpad[0], s.dpad[1], s.dpad[2], s.dpad[3], SystemClock.uptimeMillis());
         } catch (Throwable t) {
             // never in the way of the pad
@@ -126,31 +128,9 @@ public class WinHandler {
     // trigger (its analog value under HoldCast.TRIG_FREE, far below the game's trigger button): 3 while an A / X / Y / D-pad press is
     // held, 6 + the control in the write that lets a kept press go at its ring's full point; a free trigger's own small value is 0 when no
     // code is written (only the launcher's codes ever sit in that band)
+    // int/1536: the body lives in PadOut (no native library: its tests load it alone)
     private static GamepadState holdOut(GamepadState s) {
-        int m, k, mk;
-        float free;
-        try {
-            m = com.jrees.wowcompanion.HoldCast.forcedMask();
-            k = com.jrees.wowcompanion.HoldCast.keptMask();
-            mk = com.jrees.wowcompanion.HoldCast.markCode();
-            free = com.jrees.wowcompanion.HoldCast.TRIG_FREE;
-        } catch (Throwable t) {
-            return s;
-        }
-        if (s == null) return s;
-        boolean band = (s.triggerL > 0f && s.triggerL < free) || (s.triggerR > 0f && s.triggerR < free);
-        if (m == 0 && k == 0 && mk == 0 && !band) return s;
-        GamepadState o = new GamepadState();
-        o.copy(s);
-        float mv = com.jrees.wowcompanion.HoldCast.markValue(mk);
-        if (s.triggerL < free) o.triggerL = mv;
-        if (s.triggerR < free) o.triggerR = mv;
-        o.buttons = (short) ((s.buttons | (k & 0x0D)) & ~(m & 0x0D));
-        for (int i = 0; i < 4; i++) {
-            if ((k & (1 << (4 + i))) != 0) o.dpad[i] = true;
-            if ((m & (1 << (4 + i))) != 0) o.dpad[i] = false;
-        }
-        return o;
+        return PadOut.holdOut(s);
     }
 
     // DS Forever, hold to cast round 1533: the fire point came (HoldCast's main-looper timer) - player 1's state sent again by the road

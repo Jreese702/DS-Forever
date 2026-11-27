@@ -535,6 +535,14 @@ object HoldCast {
     @JvmStatic fun markCode(): Int = if (PlayModes.current == PlayMode.STREAM) 0 else release.markCode(clock())
     /** the analog value WinHandler writes for code [code] on a free trigger (0 = none): (code + 0.5) / 255, so the byte is the code */
     @JvmStatic fun markValue(code: Int): Float = if (code <= 0) 0f else (code + 0.5f) / 255f
+    /**
+     * int/1536 (the DS menu's ZL / ZR hold-back meets the fire's mark): the analog value WinHandler.holdOut gives the game for a trigger
+     * whose pull is [v] - [held]: a room on single screen mode's menu stage owns ZL / ZR (SetupBridge.roomTriggers), so the player's pull
+     * is not the game's and the trigger is FREE; a free trigger carries the code [code] ([markValue], under [TRIG_FREE], far below the
+     * game's trigger button: never a ZL / ZR press), a pulled one out of a room its pull. So the hold-back never zeroes a mark away mid
+     * hold (a kept press's fire at its fill still tells the router), and no pull ever goes while the room holds them
+     */
+    @JvmStatic fun trigOut(v: Float, held: Boolean, code: Int): Float = if (held || v < TRIG_FREE) markValue(code) else v
 
     /** XServerScreen: the event handed to the launcher's handlers now is Android's cancel ([on]), until it says false */
     @JvmStatic fun canceling(on: Boolean) { cancelIn = on }

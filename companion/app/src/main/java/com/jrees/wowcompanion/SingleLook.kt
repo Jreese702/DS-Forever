@@ -21,6 +21,9 @@ package com.jrees.wowcompanion
  *  4 the top-screen layout editor (over Settings)            FULL 0.25, touch, ROOM: the pieces it moves show at the sides (NPC)
  *  4 a room (not Home)                                        FULL 0.55, touch, ROOM
  *  5 Home with its page as a glance, or a Home sub-state      FULL 0.55, touch, HOME
+ *  5b THE DS MENU'S ROW (the 1536 DS menu, SingleMenu: Down /
+ *    the swirl button lifts the room row)                     FULL 0.55, touch, nothing of the rooms column ([Look.menu]: the row)
+ *  5c the row dropping after its last B                       FULL, NO dim, no touch, [Look.menu] (the drop's frames; then PLAY)
  *  6 a quick wheel (consumables / target / spell radials)     FULL 0.25, touch, nothing under it          (NPC)
  *  7 the class wheel                                          FULL 0.25, touch, Home's layers only        (NPC)
  *  8 the Track Pad / Keyboard tool                            HIDDEN, the strip "tool"                     (NPC)
@@ -31,6 +34,10 @@ package com.jrees.wowcompanion
  * 11 else = PLAY: the game, nothing of ours but the docks     HIDDEN
  *
  * Rows marked NPC are the NPC builder's to refine (CORE's defaults here).
+ *
+ * THE DS MENU (the 1536 pass 1, SingleMenu; the user: "I want it to be its own experience that feels like it was made for the top
+ * screen"): [Look.menu] = the menu's frame shows - its row along the bottom and, with a room (rows 2-4 over a room) or Home's stage (the
+ * glance opened from the row's swirl, [In.menuHome]), that page on the wide stage above it instead of the centred panel.
  */
 object SingleLook {
     enum class Frame { HIDDEN, FULL }
@@ -49,10 +56,18 @@ object SingleLook {
         val waiting: Boolean = false,
         /** the NPC window open is the LOOT window (InteractView.looting) */
         val loot: Boolean = false,
+        /** the DS menu's row is up (the bar cursor in single screen mode: Down, the swirl button, a fold) */
+        val menuRow: Boolean = false,
+        /** Home's glance was opened from the row's swirl: Home's page on the stage */
+        val menuHome: Boolean = false,
+        /** the row is dropping after its last B (its frames, then PLAY) */
+        val menuDrop: Boolean = false,
     )
 
     /** what the top window does: [strip] = null, "tool", "rolls", "lb" (NPC: SingleNpc's strip window) or "start" (the waiting page) */
-    data class Look(val frame: Frame, val dim: Float, val touchable: Boolean, val root: Root, val docks: Boolean, val strip: String? = null) {
+    data class Look(val frame: Frame, val dim: Float, val touchable: Boolean, val root: Root, val docks: Boolean, val strip: String? = null,
+                    /** the DS menu's frame shows (SingleMenu): its row, and the room / Home's stage over it */
+                    val menu: Boolean = false) {
         /** the PLAY state: nothing of ours over the game */
         val play: Boolean get() = frame == Frame.HIDDEN && strip == null && root == Root.GONE && docks
     }
@@ -74,18 +89,23 @@ object SingleLook {
         val inRoom = i.room != HOME
         // pause / NPC over Home: Home's page shows only while it is up as a glance
         val under = if (inRoom) Root.ROOM else if (i.glanceHub || i.homeSub) Root.HOME else Root.GONE
+        // the DS menu's frame: a room is always on the stage; Home's page only when the row's swirl opened it (or the row is up over it)
+        val menuUnder = under == Root.ROOM || (under == Root.HOME && (i.menuHome && i.glanceHub || i.menuRow))
         // the loot window with nothing else of ours open over the game (no room, no glance, no page, no pop-up): the game undimmed
         val lootOnly = i.npc && i.loot && !inRoom && under == Root.GONE && !i.startPages && !i.report && !(i.dialog && !i.fightRolls) &&
             !i.spells && !i.pause
         return when {
             i.launchCover -> COVERED                                                                          // 1
             i.startPages || i.report || i.npc || (i.dialog && !i.fightRolls) || i.spells ->
-                Look(Frame.FULL, if (lootOnly) DIM_LOOT else DIM_PANEL, true, under, docks = false)          // 2
+                Look(Frame.FULL, if (lootOnly) DIM_LOOT else DIM_PANEL, true, under, docks = false,
+                    menu = menuUnder && !i.startPages && !i.report)                                           // 2
             i.waiting -> Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = false, strip = SingleNpc.START)     // 2b
-            i.pause -> Look(Frame.FULL, DIM_PANEL, true, under, docks = false)                                // 3
+            i.pause -> Look(Frame.FULL, DIM_PANEL, true, under, docks = false, menu = menuUnder)              // 3
             inRoom && i.layoutEdit -> Look(Frame.FULL, DIM_QUICK, true, Root.ROOM, docks = false)             // 4 NPC (the layout editor)
-            inRoom -> Look(Frame.FULL, DIM_PANEL, true, Root.ROOM, docks = false)                             // 4
-            i.glanceHub || i.homeSub -> Look(Frame.FULL, DIM_PANEL, true, Root.HOME, docks = false)           // 5
+            inRoom -> Look(Frame.FULL, DIM_PANEL, true, Root.ROOM, docks = false, menu = true)                // 4
+            i.glanceHub || i.homeSub -> Look(Frame.FULL, DIM_PANEL, true, Root.HOME, docks = false, menu = menuUnder)  // 5
+            i.menuRow -> Look(Frame.FULL, DIM_PANEL, true, Root.GONE, docks = false, menu = true)             // 5b the DS menu's row
+            i.menuDrop -> Look(Frame.FULL, 0f, false, Root.GONE, docks = false, menu = true)                  // 5c its drop
             i.quick -> Look(Frame.FULL, DIM_QUICK, true, Root.GONE, docks = false)                            // 6 NPC
             i.classWheel -> Look(Frame.FULL, DIM_QUICK, true, Root.HOME_LAYERS, docks = false)                // 7 NPC
             i.tool >= 0 -> Look(Frame.HIDDEN, 0f, false, Root.GONE, docks = false, strip = "tool")            // 8 NPC

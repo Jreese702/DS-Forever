@@ -1408,7 +1408,7 @@ class StreamTop(private val activity: Activity, private val shell: Shell) : Surf
             // one of our pop-ups asks (the sign-in's, the report notice): A, B and the D-pad do nothing for the game
             // a tabbed room owns L / R (its tab row, the user 2026-11-25): the bumper press never reaches the PC's game either
             if (PopupHold.holdsKey(SetupBridge.holdsGamePad(), e.keyCode, down, SetupBridge.wheelHolds(),
-                    SetupBridge.roomShoulderPress(e.keyCode, down, e.repeatCount))) return true
+                    SetupBridge.roomShoulderPress(e.keyCode, down, e.repeatCount), trigger = SetupBridge.roomTriggers)) return true
             if (e.repeatCount > 0) return true
             if (pad.key(e.keyCode, down)) sendPad()
             return true

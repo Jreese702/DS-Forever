@@ -225,7 +225,7 @@ class HoldReleaseTest {
         assertTrue(f.due(1678)); assertEquals(listOf(5 to 1), fired)
         // the launcher's own copy (WinHandler.holdOut): no 0x3FF truncation, only A / X / Y of the buttons
         val w = java.io.File(listOf(java.io.File("../app"), java.io.File("app")).first { it.isDirectory },
-            "src/main/java/com/winlator/winhandler/WinHandler.java").readText()
+            "src/main/java/com/winlator/winhandler/PadOut.java").readText()     // int/1536: WinHandler.holdOut's body
         assertTrue(w.contains("o.buttons = (short) ((s.buttons | (k & 0x0D)) & ~(m & 0x0D));") && !w.contains("& 0x3FF"))
     }
 
@@ -491,7 +491,7 @@ class HoldReleaseTest {
         assertTrue("round 2: that released reading is the hat's real up for hold to cast", ec.contains("com.jrees.wowcompanion.HoldCast.hatUp(event.getDeviceId(), i)"))
         assertTrue("round 2: the sticks and the analog triggers let go at the cancel", ec.contains("axisL2 = 0f; axisR2 = 0f; applyTriggers();") &&
             ec.contains("state.thumbLX = 0f; state.thumbLY = 0f; state.thumbRX = 0f; state.thumbRY = 0f;"))
-        val w = src("app", "src/main/java/com/winlator/winhandler/WinHandler.java")
+        val w = src("app", "src/main/java/com/winlator/winhandler/PadOut.java")      // int/1536: WinHandler.holdOut's body
         assertTrue("the kept downs on, the forced ups off", w.contains("o.buttons = (short) ((s.buttons | (k & 0x0D)) & ~(m & 0x0D));"))
     }
 

@@ -50,6 +50,6 @@ class SingleFadePinsTest {
         assertTrue("FULL to HIDDEN: the picture", sync.contains("if (singleLookNow?.frame == SingleLook.Frame.FULL && look.frame == SingleLook.Frame.HIDDEN) s.ghost(singleGhost())"))
         assertTrue("before the docks take Home's views and the look is laid", ghost in 0 until sync.indexOf("singlePlayLook(look)") &&
             ghost < sync.indexOf("s.look(look)"))
-        assertTrue("what shows is noted while it shows (the poll too)", sync.indexOf("singleGhostNote()") in 0 until sync.indexOf("if (look == singleLookNow) return"))
+        assertTrue("what shows is noted while it shows (the poll too)", sync.indexOf("singleGhostNote()") in 0 until sync.indexOf("if (look == singleLookNow)"))
     }
 }

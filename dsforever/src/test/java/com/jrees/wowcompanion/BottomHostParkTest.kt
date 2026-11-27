@@ -80,7 +80,7 @@ class BottomHostParkTest {
         val interact = host.substringAfter("            \"interact\" -> {").substringBefore("\n            \"cappad\"")
         assertTrue(interact.contains("BottomSync.roomAfter(want, holderNow, HomeBack::roomsOf)"))
         assertTrue(interact.contains("show(Room.valueOf(it), adopt = true)"))
-        val show = host.substringAfter("private fun show(r: Room, byB: Boolean = false, motion: Boolean = true, adopt: Boolean = false) {")
+        val show = host.substringAfter("private fun show(r: Room, byB: Boolean = false, motion0: Boolean = true, adopt: Boolean = false) {")
             .substringBefore("\n    }\n")
         assertTrue("no entry tap on an adopt", show.contains("if (!adopt) touchRoomsEnter(was, r)"))
         assertTrue(show.contains("if (enterProfessions && !adopt)"))

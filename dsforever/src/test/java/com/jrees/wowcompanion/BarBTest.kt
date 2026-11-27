@@ -77,8 +77,10 @@ class BarBTest {
     }
 
     @Test fun theHostOpensThePauseWheelOnlyForAPausePick() {
-        val line = host.lines().single { it.contains("barSelect = HomeBarSelect(") }
-        assertTrue(line, line.contains("go == BarB.Go.PAUSE) openPause(\"the bar's swirl\", byStart = false)"))
+        // the 1536 DS menu: the pick's route is a block now (single screen mode's row: A on the swirl = Home's stage, else the wheel)
+        val line = host.substringAfter("barSelect = HomeBarSelect(").substringBefore("\n        }\n")
+        assertTrue(line, line.contains("if (go == BarB.Go.PAUSE) {") && line.contains("else openPause(\"the bar's swirl\", byStart = false)"))
+        assertTrue(line, line.contains("if (menu != null) menuHomeStage("))
         assertTrue(line, line.contains("else pickRoom(r)"))
         assertFalse("1476: every HOME pick was the pause wheel", line.contains("r == Room.HOME) openPause"))
     }

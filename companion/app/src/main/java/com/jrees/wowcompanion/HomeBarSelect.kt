@@ -36,7 +36,56 @@ class HomeBarSelect(
 ) : View(context) {
 
     var open = false
-        private set(v) { if (field != v) { field = v; syncQuiet(); fade(v) } }
+        private set(v) { if (field != v) { field = v; syncQuiet(); fade(v); onShown?.invoke(v) } }
+
+    // ---------------------------------------------------------------- THE DS MENU (single screen mode, the 1536 pass 1: SingleMenu)
+    // The user, 2026-11-26: "I want it to be its own experience that feels like it was made for the top screen". In single screen mode
+    // this cursor IS the DS menu's row (the fan round Home's swirl): the same controls (D-pad / L / R move it, A opens, B closes), the same
+    // guest "bar" holding the controller - only drawn by the menu (SingleMenuView), never over the bar here
+
+    /** the row's order when the menu draws it (rooms left of Home, Home, rooms right: SingleMenu.order); null = the bar as drawn */
+    var menuOrder: (() -> List<Room>)? = null
+    /** the cursor stays up until B / a pick (the menu's row is a place, not a passing cursor): no idle close */
+    var sticky: () -> Boolean = { false }
+    /** this view draws the cursor (false: the menu draws its own row) */
+    var drawn: () -> Boolean = { true }
+    /** the cursor came up or went ([open]): the host looks again at once (the menu rises / drops in that frame) */
+    var onShown: ((Boolean) -> Unit)? = null
+    /** the cursor moved, came or went: the menu draws again */
+    var onMoved: (() -> Unit)? = null
+    /** where the cursor is now (the room under it; Home = the swirl) */
+    val cursor: Room get() = at
+
+    /**
+     * THE MENU'S ROW AGAIN AFTER A ROOM FOLDS (SingleMenu.back): the cursor up on [r] (the room just left) with Home's swirl in its
+     * order, as a command cursor; its hold asked [holdAfterMs] later - once the room's own B has let the capture go (the game's B closes
+     * the room's window and frees it: our hold then never races it). Already up: the cursor goes to [r]
+     */
+    fun openMenuAt(r: Room, holdAfterMs: Long) {
+        if (open) { at = r; syncHome(); invalidate(); return }
+        byCommand = true
+        fromRoom = true                          // Home's swirl is a stop
+        inRoom = false                           // Home is on screen now: B on the swirl only closes the row
+        at = r
+        held = false; heldReal = false; lastPadN = -1; endHandOver("the menu's row again")
+        early = false
+        holdAsked = false
+        open = true
+        Log.i(TAG, "bar: the menu's row up on $r (a fold; the hold in $holdAfterMs ms)")
+        removeCallbacks(askLater); postDelayed(askLater, holdAfterMs)
+        syncHome()
+        invalidate()
+    }
+    private val askLater = Runnable {
+        if (!open || holdAsked) return@Runnable
+        holdAsked = tap(padSource(), GuestPad.cells(padSource(), ID, hold = true))
+        retryHold()
+        Log.i(TAG, "bar: the menu's row asks the hold${if (holdAsked) "" else ": not sent"}")
+    }
+    /** [r] is on the row now (the menu's order, else the bar as drawn) */
+    private fun placed(r: Room): Boolean = menuOrder?.invoke()?.contains(r) ?: (strip.place(r) != null)
+    /** [r]'s place along the row, left to right (the menu's index, else the bar's x) */
+    private fun xOf(r: Room): Float = menuOrder?.invoke()?.indexOf(r)?.toFloat() ?: (strip.place(r)?.centerX() ?: 0f)
 
     /** the harmony pass's motion: the cursor fades in (Motion.BAR_IN) and out (BAR_OUT); while it fades out it keeps its last look */
     private var fadingOut = false
@@ -213,7 +262,7 @@ class HomeBarSelect(
         if (n == lastSelN) return
         lastSelN = n
         if (open) { close(); return }
-        if (blocked || strip.place(Room.HOME) == null) return
+        if (blocked || !placed(Room.HOME)) return
         // the user: "Going left or right should skip past the middle home key": the cursor is never on Home; it starts on the room on
         // screen, or from Home on the first room right of it
         fromRoom = roomNow() != Room.HOME
@@ -275,7 +324,7 @@ class HomeBarSelect(
      * ([openOnHome] sends the hold tap as before). No command within [EARLY_MS] (the game's router was not bare) = closed quietly.
      */
     fun openEarly(shown: Room) {
-        if (open || shown != Room.HOME || strip.place(Room.HOME) == null) return
+        if (open || shown != Room.HOME || !placed(Room.HOME)) return
         byCommand = true
         fromRoom = true                          // the disc is a stop (the cursor starts on it) ...
         inRoom = false                           // ... on Home: B there only closes the cursor (BarB, the user 2026-11-16)
@@ -311,7 +360,7 @@ class HomeBarSelect(
             return
         }
         if (!open) {
-            if (blocked || strip.place(Room.HOME) == null) return
+            if (blocked || !placed(Room.HOME)) return
             byCommand = true
             fromRoom = true                      // the disc stays in the order (the cursor starts on it)
             inRoom = shown != Room.HOME          // B on the disc: Home from a room, a close on Home (BarB, the user 2026-11-16)
@@ -339,8 +388,8 @@ class HomeBarSelect(
             "left", "right" -> {
                 if (!open) {
                     if (blocked) return
-                    val start = if (strip.place(shown) != null) shown else Room.HOME
-                    if (strip.place(start) == null) return
+                    val start = if (placed(shown)) shown else Room.HOME
+                    if (!placed(start)) return
                     byCommand = true
                     fromRoom = shown != Room.HOME
                     inRoom = shown != Room.HOME
@@ -372,7 +421,7 @@ class HomeBarSelect(
     /** P2: Y on the Home disc (the host: Home's edit mode, Home first from a room); null = Y does nothing there */
     var onEditHome: (() -> Unit)? = null
 
-    private val idleClose = Runnable { if (open && byCommand) { Log.i(TAG, "bar: command cursor idle, closed"); close() } }
+    private val idleClose = Runnable { if (open && byCommand && !sticky()) { Log.i(TAG, "bar: command cursor idle, closed"); close() } }
 
     /** the room under the cursor opens (A, or the Open command; [byB]: B on the disc from a room); Home's own button flashes as pressed */
     private fun pick(byB: Boolean = false) {
@@ -463,6 +512,7 @@ class HomeBarSelect(
         removeCallbacks(holdCheck)
         removeCallbacks(idleClose)
         removeCallbacks(holdRetry)
+        removeCallbacks(askLater)
         // only a cursor that asked for the controller has anything to free
         if (holdAsked && freeNow && tap(padSource(), GuestPad.cells(padSource(), ID, hold = false))) {
             // the free often goes right after the user's A (a pick): a tap then can be lost to the park point (padstray, 08:57:05 -
@@ -479,15 +529,18 @@ class HomeBarSelect(
 
     /** the bar's rooms as drawn, left to right: WITHOUT Home's disc when the cursor came up on Home (the user: "skip past the middle
      *  home key"), WITH it when it came up in a room (the user: the home button "should be an option to select to go back home") */
-    private fun order(): List<Room> =
-        Room.values().filter { it != Room.HOME || fromRoom }
+    private fun order(): List<Room> {
+        menuOrder?.invoke()?.let { m -> return m.filter { it != Room.HOME || fromRoom } }
+        return Room.values().filter { it != Room.HOME || fromRoom }
             .mapNotNull { r -> strip.place(r)?.let { r to it.centerX() } }.sortedBy { it.second }.map { it.first }
+    }
 
     /** where a cursor starts on [r]: that room, or for Home (or a room not on the bar) the first room right of Home */
     private fun startOn(r: Room): Room {
-        if (r != Room.HOME && strip.place(r) != null) return r
-        val homeX = strip.place(Room.HOME)?.centerX() ?: return order().firstOrNull() ?: Room.HOME
-        return order().firstOrNull { (strip.place(it)?.centerX() ?: 0f) > homeX } ?: order().lastOrNull() ?: Room.HOME
+        if (r != Room.HOME && placed(r)) return r
+        if (!placed(Room.HOME)) return order().firstOrNull() ?: Room.HOME
+        val homeX = xOf(Room.HOME)
+        return order().firstOrNull { xOf(it) > homeX } ?: order().lastOrNull() ?: Room.HOME
     }
 
     /** the direction last pushed (-1 / +1) and when: its point presses out for [PUSH_MS] (f-bar-cursor-polish) */
@@ -510,8 +563,8 @@ class HomeBarSelect(
         val i = all.indexOf(at)
         if (i < 0) {
             // from Home (a command cursor that came up on Home): the nearest room on that side of it
-            val homeX = strip.place(Room.HOME)?.centerX() ?: 0f
-            val xs = all.map { strip.place(it)?.centerX() ?: 0f }
+            val homeX = xOf(Room.HOME)
+            val xs = all.map { xOf(it) }
             at = if (d < 0) all.indices.lastOrNull { xs[it] < homeX }?.let { all[it] } ?: all.first()
                  else all.indices.firstOrNull { xs[it] > homeX }?.let { all[it] } ?: all.last()
             return
@@ -529,6 +582,7 @@ class HomeBarSelect(
 
     override fun onDraw(c: Canvas) {
         if (!open && !fadingOut) { shownBox = null; return }
+        if (!drawn()) { shownBox = null; return }                // the DS menu draws its own row (single screen mode)
         // the bar's pictures are in the strip's own coordinates
         getLocationInWindow(here); strip.getLocationInWindow(there)
         val dx = (there[0] - here[0]).toFloat(); val dy = (there[1] - here[1]).toFloat()
@@ -585,6 +639,7 @@ class HomeBarSelect(
         // else, while held, Home shows red with B (B closes)
         strip.homeFocus = onHome
         strip.barB = open && held && !onHome
+        onMoved?.invoke()
     }
 
     /** the game's A glyph in the layout the Settings chose (as UiKit.backGlyph does for B) */
