@@ -34,6 +34,10 @@ class LogTail(
     /** the bottom screen comes straight back (BottomSync): a rebuilt host's reader goes on from the old one's place when it is still
      *  the same log ([resumeOffset], checked at the first plain read); null = from byte 0 as always */
     resume: Place? = null,
+    /** issue 612: a fresh reader (no place to go on from) starts at the log's last [MAX_READ] while this says so - the host's "the game
+     *  is closed": the start screen's log is the LAST session's, never read whole again. Asked on this reader's thread; by default
+     *  never (from byte 0, as before) */
+    private val capBacklog: () -> Boolean = { false },
 ) : LogSource {
     /** the log being read: DEFAULT_PATH follows whichever game wrote last (LogFollow); any other path is read as given */
     @Volatile private var path = initialPath
@@ -52,6 +56,8 @@ class LogTail(
     @Volatile private var bytesFed = 0L
     @Volatile private var lastFedAt = 0L
     @Volatile private var running = false
+    /** no byte read from this log yet: the first plain read decides where it starts ([freshStart]); a follow switch sets it again */
+    private var fresh = true
     /** the old reader's place, looked at once by the first plain read ([poll]) */
     private var resumeFrom: Place? = resume
     /** where a new reader would go on from: kept after every [feed] (this thread), read by the host at its end */
@@ -135,7 +141,7 @@ class LogTail(
         val next = LogFollow.pick(path, mt)
         if (next == path) return
         path = next
-        offset = 0; carry = ""; byteCarry = Utf8Cut.EMPTY; docs.reset()
+        offset = 0; carry = ""; byteCarry = Utf8Cut.EMPTY; docs.reset(); fresh = true
         reclaimedTo = -1; reclaimAt = 0
         onStatus("following the game's log: ${if (next == DEFAULT_PATH) "GameNative" else "WoW Forever"}")
         android.util.Log.i("WCLOG", "following $next (mtimes $mt)")
@@ -287,6 +293,15 @@ class LogTail(
             if (at > 0L) { offset = at; carry = p.carry; byteCarry = p.byteCarry; docs.adopt(p.parts, p.seq); placeNow = p }
             android.util.Log.i("WCLOG", if (at > 0L) "the reader goes on at byte $at (${len - at} bytes to read)" else "the log is not the old reader's: read from the start")
         }
+        // issue 612: a fresh reader with no place to go on from, the game closed, starts at the old log's last part (the root reader's
+        // own cap): the start screen replayed the whole last session from byte 0 and filled the Java heap. A resumed reader keeps its place
+        if (fresh) {
+            fresh = false
+            if (offset == 0L) {
+                val at = freshStart(len, capBacklog())
+                if (at > 0L) { offset = at; carry = ""; byteCarry = Utf8Cut.EMPTY; android.util.Log.i("WCLOG", "the game is closed: the old log's last ${len - at} bytes only") }
+            }
+        }
         if (len < offset) {                       // client relaunched: file truncated
             offset = 0; carry = ""; byteCarry = Utf8Cut.EMPTY; docs.reset()
             onStatus(RESTARTED)
@@ -428,6 +443,9 @@ class LogTail(
          * BottomSync, pure: where a new reader of [path] (now [len] bytes, [there] = its bytes just before the old place) starts: the old
          * [saved] place when it is the same log, at least as long, and the same bytes are there; else 0 (from the start, as always)
          */
+        /** issue 612, pure: where a fresh reader of a [len]-byte log starts - its last [MAX_READ] when [capBacklog], else byte 0 */
+        fun freshStart(len: Long, capBacklog: Boolean): Long = if (capBacklog) (len - MAX_READ).coerceAtLeast(0L) else 0L
+
         fun resumeOffset(saved: Place?, path: String, len: Long, there: ByteArray?): Long =
             if (saved != null && saved.offset > 0L && saved.path == path && len >= saved.offset && there != null && there.contentEquals(saved.tail)) saved.offset
             else 0L

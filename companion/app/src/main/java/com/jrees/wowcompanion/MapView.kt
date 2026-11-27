@@ -2077,7 +2077,8 @@ class MapView(context: Context) : View(context) {
     private val kindKeys = ArrayList<String>()
     private val kindNames = ArrayList<String>()        // "mm_" + key, built once per key
     private val kindIdx = HashMap<String, Int>()
-    private val kindMemo = java.util.IdentityHashMap<PoiStore.Poi, Int>()  // regex once per NPC
+    // regex once per KIND of NPC (issue 612: kept under the Poi object it grew with every position update; PoiKindMemo)
+    private val kindMemo = PoiKindMemo { flags, title -> kindOf(NpcIcons.icon(NpcKind.key(flags, title), flags)) }
     private fun kindOf(key: String): Int {
         kindIdx[key]?.let { return it }
         if (kindKeys.size >= KIND_MAX) return kindOf("generic").coerceAtMost(KIND_MAX - 1)
@@ -2086,12 +2087,7 @@ class MapView(context: Context) : View(context) {
         kindIdx[key] = i
         return i
     }
-    private fun kindOfPoi(p: PoiStore.Poi): Int {
-        kindMemo[p]?.let { return it }
-        val k = kindOf(NpcIcons.icon(NpcKind.key(p.flags, p.title), p.flags))
-        kindMemo[p] = k
-        return k
-    }
+    private fun kindOfPoi(p: PoiStore.Poi): Int = kindMemo.of(p)
 
     /** the old strip's cell for a key (NpcIcons'): what a pin looks like until the NPC icons are harvested */
     private fun pinFallback(key: String): Int = when {

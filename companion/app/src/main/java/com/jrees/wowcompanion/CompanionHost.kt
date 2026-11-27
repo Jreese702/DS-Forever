@@ -5473,7 +5473,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             if (s.startsWith("following the game's log") && LauncherHooks.pkg == null) ui.postDelayed({ setupCheck() }, 3_000L)
         } }
         tail = PlayModes.pick(PlayModes.current, PlayModes.bridgeLog, onMessage, onStatus) {
-            LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow, resume = resumeAt.also { resumeAt = null })
+            // issue 612: with the game closed a fresh reader reads only the old log's last part (the start screen replayed it all)
+            LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow, resume = resumeAt.also { resumeAt = null },
+                capBacklog = { !(LauncherHooks.gameUp() || BottomSync.relaunchPending(android.os.SystemClock.elapsedRealtime())) })
         }.also { it.start() }
         // m129: the combat log is no longer read (no health on the bottom); the files our older add-ons made still go
         if (!streaming) java.io.File(log).parentFile?.let { dir ->
