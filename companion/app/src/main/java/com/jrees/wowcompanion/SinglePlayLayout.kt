@@ -65,6 +65,8 @@ object SinglePlayLayout {
     /** the chat keeps at least this (3 one-line messages) and this wide; the map's in-combat size */
     const val CHAT_MIN_H = 132
     const val CHAT_MIN_W = 300
+    /** test 1536: the left chat keeps at least one line (a HUD grown far over Party mode's list); two to seven as laid by default */
+    const val CHAT_LEFT_MIN_H = 64
     const val MAP_OUT = 320
     const val MAP_IN = 240
     /** one chat line: Home's chat pane's 27 px text x 1.12 and its 6 px between messages; the pane's padding */
@@ -107,11 +109,8 @@ object SinglePlayLayout {
     const val CAST_H_DEF = 120
 
     // ---- the 1535 polish
-    /** the focused-quest card: its width out of a fight / in one (right-anchored, under the map) and the most it may take */
-    const val QUEST_W_OUT = 440
-    const val QUEST_W_IN = 360
+    /** the focused-quest card: the map dock's own box under the map (test 1536); a tall card's height asked in the tests */
     const val QUEST_MAX_H = 260
-    const val QUEST_MIN_W = 300
     /** the room row: the host's Strip (Strip.HEIGHT 145, laid 1240 wide as in the rooms column) at [ROW_K], centred, [ROW_FOOT] over
      *  the bottom edge */
     const val ROW_SRC_W = 1240
@@ -128,7 +127,7 @@ object SinglePlayLayout {
     /** ActionBar nbar28's Wings at rest (the add-on's NB.TOP.REST_*: test_wings_rest.py keeps them equal to the file's) */
     const val WINGS_REST_K = 0.8f
     const val WINGS_REST_IN = 60
-    const val WINGS_REST_UP = 84
+    const val WINGS_REST_UP = 42
 
     data class KeepOut(val name: String, val box: Box)
 
@@ -161,12 +160,14 @@ object SinglePlayLayout {
     private val PARTY_IN = Box(16, 88, 456, 408)
     /** the 1535 polish: the chat on the RIGHT, its foot over the Wings at rest (K3) out of a fight / over their widest reach (K4) in
      *  one; its top under the quest card (else this tall) */
-    private val CHAT_OUT = Box(1364, 472, 1904, 752)
-    private val CHAT_IN = Box(1464, 352, 1904, 542)
+    private val CHAT_OUT = Box(16, 220, 456, 752)
+    private val CHAT_IN = Box(16, 88, 456, 542)
+    /** test 1536: the chat's place when the left column has no room under the party frames (top left, left of the compass K1) */
+    private val CHAT_TOP = Box(16, 16, 456, 242)
 
     val K1 = Box(530, 0, 1390, 210)
     /** the 1535 polish: our Wings AT REST out of fights (no Nintendo bar in single screen mode any more) */
-    val K3 = Box(290, 760, 1630, 966)
+    val K3 = Box(290, 776, 1630, 966)
     val K4 = Box(152, 550, 1768, 1080)
     val K5 = Box(24, 250, 324, 506)
 
@@ -224,44 +225,29 @@ object SinglePlayLayout {
         val keeps = virtualKeeps(sc, arr, partyMode, hud).map { it.box }
         var map = sc.place(if (arr == Arr.OUT) MAP_OUT_BOX else MAP_IN_BOX, Anchor.RIGHT)
         if (keeps.any { map.hits(it, GAP) }) map = Box(map.r - MAP_IN, map.t, map.r, map.t + MAP_IN)
-        val party = if (!partyMode) null else sc.place(if (arr == Arr.OUT) PARTY_OUT else PARTY_IN, Anchor.LEFT).let { b ->
+        var party = if (!partyMode) null else sc.place(if (arr == Arr.OUT) PARTY_OUT else PARTY_IN, Anchor.LEFT).let { b ->
             // the window hugs the list as drawn (its rows: you, the tank, the healer, the paired damage), so no empty part of it takes a
             // finger meant for the game
             fitParty(partyH?.let { ph -> b.copy(b = b.t + ph.coerceIn(PARTY_MIN_H, b.h)) } ?: b, keeps)
         }
-        val chat0 = sc.place(if (arr == Arr.OUT) CHAT_OUT else CHAT_IN, Anchor.RIGHT)
-        // the focused quest's card under the map, right-anchored; never into the chat's least room
-        val quest = questH?.let { qh ->
-            val qw = if (arr == Arr.OUT) QUEST_W_OUT else QUEST_W_IN
-            val top = map.b + GAP
-            val most = (chat0.b - CHAT_MIN_H - GAP) - top
-            val hh = minOf(qh, QUEST_MAX_H, most).coerceAtLeast(1)
-            fitRight(Box(map.r - qw, top, map.r, top + hh), keeps, QUEST_MIN_W, hh)
-        }
-        var chat = if (quest != null && quest.b + GAP > chat0.t) chat0.copy(t = quest.b + GAP) else chat0
-        chat = fitRight(chat, keeps, CHAT_MIN_W, CHAT_MIN_H)
-        var talk: Box
-        if (party != null) {
-            talk = Box(party.l, party.t, party.l + TALK_W, party.t + TALK_H)
-            // the pop-up keeps clear too: narrower first, then up (it is over our own pieces while it lasts)
-            for (k in keeps) if (talk.hits(k, GAP)) {
-                val nr = k.l - GAP
-                if (nr - talk.l >= TALK_MIN_W && k.l > talk.l) talk = talk.copy(r = minOf(talk.r, nr))
-                if (talk.hits(k, GAP) && k.t > talk.t) talk = talk.shift(0, (k.t - GAP) - talk.b)
-            }
-        } else {
-            // over the chat on the right: up first (its foot on the chat's), then narrower from the left
-            talk = Box(chat.r - TALK_W, chat.t, chat.r, chat.t + TALK_H)
-            for (i in 0 until 4) {
-                val k = keeps.firstOrNull { talk.hits(it, GAP) } ?: break
-                val was = talk
-                talk = when {
-                    k.t > talk.t -> talk.shift(0, (k.t - GAP) - talk.b)
-                    k.r < talk.r && talk.r - (k.r + GAP) >= TALK_MIN_W -> talk.copy(l = maxOf(talk.l, k.r + GAP))
-                    else -> talk
-                }
-                if (talk == was) break
-            }
+        // test 1536 (the user: "I meant the left side not the right for chat its way too congested"): the chat on the LEFT, under the
+        // party list (Party mode) or our party frames (K5), its foot over the Wings (K3 / K4) and the corner's tap-to-cast bar; no room
+        // there (a fight without Party mode: K5 reaches K4) = over the party frames, top left
+        val quest = questH?.let { fitRight(Box(map.l, map.b + GAP, map.r, map.b + GAP + map.h), keeps, map.w, CHAT_MIN_H) }
+        val chatStart = sc.place(if (arr == Arr.OUT) CHAT_OUT else CHAT_IN, Anchor.LEFT)
+        var chat = fitLeft(chatStart, party, keeps, sc.place(CHAT_TOP, Anchor.LEFT))
+        // a HUD grown far up over Party mode's list: the list gives up its foot (down to two rows) so the chat keeps a line
+        party?.let { pt -> if (chat.h < CHAT_LEFT_MIN_H) {
+            party = pt.copy(b = maxOf(pt.t + PARTY_MIN_H, chat.b - CHAT_LEFT_MIN_H - GAP))
+            chat = fitLeft(chatStart, party, keeps, sc.place(CHAT_TOP, Anchor.LEFT))
+        } }
+        // hold to talk's pop-up over the party list (or over the chat: both on the left now): narrower first, then up
+        val under = party ?: chat
+        var talk = Box(under.l, under.t, under.l + TALK_W, under.t + TALK_H)
+        for (k in keeps) if (talk.hits(k, GAP)) {
+            val nr = k.l - GAP
+            if (nr - talk.l >= TALK_MIN_W && k.l > talk.l) talk = talk.copy(r = minOf(talk.r, nr))
+            if (talk.hits(k, GAP) && k.t > talk.t) talk = talk.shift(0, (k.t - GAP) - talk.b)
         }
         if (talk.t < 0) talk = talk.shift(0, -talk.t)
         // the room row: out of a fight, centred at the bottom (the HUD's place - the bars hide out of combat - under the Wings at rest);
@@ -309,6 +295,18 @@ object SinglePlayLayout {
             }
         }
         return c
+    }
+
+    /** test 1536: the left chat under [party] (Party mode's list) and clear of [keeps]: its top under any keep-out above, its foot over
+     *  any below; too short = [fallback] */
+    private fun fitLeft(start: Box, party: Box?, keeps: List<Box>, fallback: Box): Box {
+        var c = if (party != null) start.copy(t = maxOf(start.t, party.b + GAP)) else start
+        for (k in keeps.sortedBy { it.t }) if (c.hits(k, GAP)) {
+            // one over the chat's first lines pushes its top down; one further down lifts its foot
+            c = if (k.t - GAP - c.t < CHAT_LEFT_MIN_H && k.b + GAP + CHAT_LEFT_MIN_H <= c.b) c.copy(t = maxOf(c.t, k.b + GAP)) else c.copy(b = minOf(c.b, k.t - GAP))
+        }
+        if (c.h >= CHAT_LEFT_MIN_H && keeps.none { c.hits(it, GAP) }) return c
+        return if (party == null || !fallback.hits(party, GAP)) fallback else c
     }
 
     /** Party mode's list kept clear of [keeps]: narrower first (its rows stay whole), then shorter (down to two rows) */

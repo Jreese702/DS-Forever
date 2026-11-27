@@ -39,25 +39,26 @@ class SinglePlayLayoutTest {
         val out = SinglePlayLayout.plan(Arr.OUT, partyMode = true)
         assertEquals(Box(1584, 16, 1904, 336), out.map)
         assertEquals(Box(16, 220, 456, 540), out.party)
-        // the 1535 polish (the user: "The chat can fit in the bottom right I think"): on the right, its foot over the Wings at rest
-        assertEquals("on the right, 540 wide, over the Wings at rest", Box(1364, 472, 1904, 752), out.chat)
-        assertTrue("about seven chat lines out of combat: ${out.chatLines}", out.chatLines in 6..8)
+        // test 1536 (the user: "I meant the left side not the right for chat its way too congested"): on the left under the party list
+        assertEquals("on the left under the party list, over the Wings at rest", Box(16, 548, 456, 752), out.chat)
+        assertTrue("about five chat lines out of combat: ${out.chatLines}", out.chatLines in 4..6)
         val inn = SinglePlayLayout.plan(Arr.IN, partyMode = true)
         assertEquals(Box(1664, 16, 1904, 256), inn.map)
         assertEquals(Box(16, 88, 456, 408), inn.party)
-        assertEquals("on the right over the Wings' widest reach", Box(1464, 352, 1904, 542), inn.chat)
-        assertEquals("the 4 newest lines in a fight", 4, inn.chatLines)
+        assertEquals("on the left under the list, over the Wings' widest reach", Box(16, 416, 456, 542), inn.chat)
+        assertEquals("the 2 newest lines in a fight under the tallest list", 2, inn.chatLines)
         assertEquals("the map 320 out of combat, 240 in", 320 to 240, out.map.w to inn.map.w)
     }
 
     @Test fun partyModeOffNoPartyPieceTheChatStaysRight() {
         val out = SinglePlayLayout.plan(Arr.OUT, partyMode = false)
         assertNull(out.party)
-        assertEquals("the chat where it stands with Party mode", SinglePlayLayout.plan(Arr.OUT, true).chat, out.chat)
+        assertEquals("the chat under our party frames (K5)", Box(16, 514, 456, 752), out.chat)
         assertFalse(out.chat.hits(SinglePlayLayout.K5))
         val inn = SinglePlayLayout.plan(Arr.IN, partyMode = false)
         assertNull(inn.party)
         assertTrue("in a fight above the Wings' envelope", inn.chat.b < 550)
+        assertEquals("in a fight over our party frames (K5)", Box(16, 88, 456, 242), inn.chat)
     }
 
     @Test fun theDefaultHudKeepOutsAreTheAddOnsNumbers() {
@@ -76,7 +77,7 @@ class SinglePlayLayoutTest {
             val hud = Hud(y, w, s)
             val p = SinglePlayLayout.plan(a, party, hud)
             bad += clear(p, party, hud)
-            assertTrue("the chat keeps at least 3 lines and 300 px ($hud ${p.chat})", p.chat.h >= SinglePlayLayout.CHAT_MIN_H && p.chat.w >= SinglePlayLayout.CHAT_MIN_W)
+            assertTrue("the chat keeps at least a line and 300 px ($hud ${p.chat})", p.chat.h >= SinglePlayLayout.CHAT_LEFT_MIN_H && p.chat.w >= SinglePlayLayout.CHAT_MIN_W)
             n++
         }
         assertTrue(bad.take(5).joinToString("\n"), bad.isEmpty())
@@ -87,8 +88,8 @@ class SinglePlayLayoutTest {
         val high = Hud(-170, 400, 160)
         val p = SinglePlayLayout.plan(Arr.OUT, true, high)
         val k2 = SinglePlayLayout.k2(high, partyMode = true)
-        assertTrue("the chat gives way from its left to the HUD block's right ($k2 ${p.chat})", p.chat.l >= k2.r + SinglePlayLayout.GAP && p.chat.w < 540)
-        assertEquals("its right edge kept", 1904, p.chat.r)
+        assertTrue("the chat clear of the HUD block ($k2 ${p.chat})", !p.chat.hits(k2, SinglePlayLayout.GAP))
+        assertEquals("its left edge kept", 16, p.chat.l)
     }
 
     @Test fun theDockPiecesNeverMeetEachOther() {
@@ -133,15 +134,15 @@ class SinglePlayLayoutTest {
     @Test fun theFocusedQuestCardUnderTheMap() {
         // the 1535 polish (the user: "The normal quest list should stay hidden and instead it should show our focused quest box")
         val out = SinglePlayLayout.plan(Arr.OUT, true, questH = 196)
-        assertEquals("under the map, right-anchored, 440 wide", Box(1464, 344, 1904, 540), out.quest)
-        assertEquals("the chat under the card", 548, out.chat.t)
-        assertTrue("the chat keeps its least room", out.chat.h >= SinglePlayLayout.CHAT_MIN_H)
+        // test 1536 (the user: "so that the quest tab is the same size as the map"): the map's own size, lined up under it
+        assertEquals("under the map, the map's size", Box(1584, 344, 1904, 664), out.quest)
+        assertTrue("the chat on the left", out.chat.r < 960)
         val inn = SinglePlayLayout.plan(Arr.IN, true, questH = 80)
-        assertEquals("a fight: the folded card under the 240 map, 360 wide", Box(1544, 264, 1904, 344), inn.quest)
-        assertTrue("above the Wings' widest reach", inn.chat.b <= 550 && inn.quest!!.b < inn.chat.t)
+        assertEquals("a fight: the card under the 240 map, its size", Box(1664, 264, 1904, 504), inn.quest)
+        assertTrue("above the Wings' widest reach", inn.chat.b <= 550 && inn.quest!!.b <= 550 - SinglePlayLayout.GAP)
         assertNull("no focused quest: no card", SinglePlayLayout.plan(Arr.OUT, true).quest)
         val tall = SinglePlayLayout.plan(Arr.OUT, true, questH = 900)
-        assertEquals("a tall card is cut to the most it may take", SinglePlayLayout.QUEST_MAX_H, tall.quest!!.h)
+        assertEquals("a tall card still the map's size", tall.map.h, tall.quest!!.h)
         assertTrue(tall.chat.h >= SinglePlayLayout.CHAT_MIN_H)
     }
 
@@ -185,8 +186,8 @@ class SinglePlayLayoutTest {
         assertEquals("over the party list's top-left", out.party!!.l to out.party!!.t, out.talk.l to out.talk.t)
         assertTrue(out.talk.h >= 360)
         val solo = SinglePlayLayout.plan(Arr.OUT, false)
-        assertEquals("without Party mode: over the chat, right-aligned with it", solo.chat.r, solo.talk.r)
-        assertTrue("its foot no lower than the chat's", solo.talk.b <= solo.chat.b)
+        assertEquals("without Party mode: over the chat, left-aligned with it", solo.chat.l, solo.talk.l)
+        assertTrue("its foot over the Wings at rest", solo.talk.b <= SinglePlayLayout.K3.t - SinglePlayLayout.GAP)
         for (a in Arr.values()) for (party in listOf(true, false)) {
             val p = SinglePlayLayout.plan(a, party)
             for (k in keeps(a, party)) if (!k.name.startsWith("K5")) assertFalse("$a talk ${p.talk} meets ${k.name}", p.talk.hits(k.box))
@@ -204,7 +205,7 @@ class SinglePlayLayoutTest {
         }
         val wide = SinglePlayLayout.plan(Arr.OUT, true, Hud(), 2400, 1080)
         assertEquals("a wide phone: the map from the right edge", 2400 - 16, wide.map.r)
-        assertEquals("the right pieces from the right edge", 2400 - 16, wide.chat.r)
+        assertEquals("the chat from the left edge", 16, wide.chat.l)
         assertEquals("the left pieces from the left edge", 16, wide.party!!.l)
         assertEquals("the keep-outs from the centre", 1200, keeps(Arr.OUT, false, Hud(), 2400, 1080)[1].box.let { (it.l + it.r) / 2 })
     }
@@ -265,6 +266,6 @@ class SinglePlayLayoutTest {
         assertEquals("the list's own height", Box(16, 220, 456, 452), p.party)
         assertEquals("never taller than its box", 320, SinglePlayLayout.plan(Arr.OUT, true, partyH = 900).party!!.h)
         assertEquals("never shorter than two rows", SinglePlayLayout.PARTY_MIN_H, SinglePlayLayout.plan(Arr.IN, true, partyH = 10).party!!.h)
-        assertEquals("the chat stays where it was (fewer moves)", SinglePlayLayout.plan(Arr.OUT, true).chat, p.chat)
+        assertEquals("the left chat right under the list as drawn", p.party!!.b + SinglePlayLayout.GAP, p.chat.t)
     }
 }

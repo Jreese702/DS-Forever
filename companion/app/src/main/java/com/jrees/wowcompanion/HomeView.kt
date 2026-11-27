@@ -5200,6 +5200,9 @@ class HomeView(
             set(v) { if (field != v) { field = v; invalidate() } }
         var dockFold = false
             set(v) { if (field != v) { field = v; invalidate() } }
+        /** test 1536 (the user: "Make the font on the active quest smaller so that the quest tab is the same size as the map"): the
+         *  card's type in the quest dock at UiKit.CARD_DOCK_SCALE, the dock the map's own size (SinglePlayLayout), never folded there */
+        private val cardScale: Float get() = if (docked) UiKit.CARD_DOCK_SCALE else UiKit.CARD_HOME_SCALE
 
         private fun state(q: HomeQuest) = if (q.ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS
 
@@ -5230,11 +5233,11 @@ class HomeView(
             // b125: minimized = the title row only once the shrink has landed; while the box eases the kit fades the objective lines
             // with the room they have (UI Art), so no half line peeks
             val q = homeCard()
-            val folded = (HomeSettings.questMin || (docked && dockFold)) &&
+            val folded = HomeSettings.questMin && !docked &&
                 h <= UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = true) + 0.5f
             // q64 (the user, 2026-11-17: "I didnt want the rewards on the quests in the home page ... showing the Icon for if there is a
             // usable quest Item"): no reward line; the quest's item at the card's right edge, redrawn while its cooldown runs
-            if (!cardHidden) UiKit.questCard(c, RectF(0f, 0f, w, h), q, scale = UiKit.CARD_HOME_SCALE,
+            if (!cardHidden) UiKit.questCard(c, RectF(0f, 0f, w, h), q, scale = cardScale,
                 bgAlpha = if (docked) SinglePlayLayout.CARD_ALPHA
                     else if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
                 collapsed = folded, itemButton = true)
@@ -5293,7 +5296,7 @@ class HomeView(
         private fun tap(x: Float, y: Float) {
             // q65 (the user, 2026-11-17: "make the quest item usable by tap out of combat"): a touch on the quest's item uses it
             val qi = if (cardHidden) null else homeCard()?.item
-            if (qi != null && UiKit.questItemBox(RectF(0f, 0f, width.toFloat(), height.toFloat()), UiKit.CARD_HOME_SCALE)
+            if (qi != null && UiKit.questItemBox(RectF(0f, 0f, width.toFloat(), height.toFloat()), cardScale)
                     .apply { inset(-14f, -14f) }.contains(x, y)) {
                 val ok = QuestItemTap.use(context, qi, pad, inFight() || questsFight) { note(it) }
                 Log.i(TAG, "quest item ${qi.id} (quest ${qi.quest}): ${if (ok) "tapped" else "refused"}")
@@ -6233,7 +6236,7 @@ class HomeView(
     fun dockQuestH(fold: Boolean): Int? {
         val q = homeCard() ?: return null
         questPane.dockFold = fold
-        return kotlin.math.ceil(UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = fold || HomeSettings.questMin)).toInt()
+        return kotlin.math.ceil(UiKit.questCardHeight(q, UiKit.CARD_DOCK_SCALE)).toInt()
     }
 
     /** Party mode's list as drawn: its height (the well and the Select tab) at the list's own row size; null in a Party-mode Top fight

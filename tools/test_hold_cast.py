@@ -200,7 +200,7 @@ def tapped(u, btn):
 pm, ptc, bk = SRC['padmap'], SRC['padtabctl'], SRC['book']
 ab = open(os.path.join(os.path.dirname(HERE), 'companion', 'app', 'src', 'main', 'assets', 'companion', 'addons', 'WowCompanion',
                        'ActionBar.lua'), encoding='utf-8').read()
-check('local PV = "m205"' in pm and 'm204 THE RING AND THE CAST AGREE' in pm and 'm203 THE int/1533 REVIEW, ROUND 2' in pm and 'm199 HOLD TO CAST ROUND 1533, THE FIRE AT THE THRESHOLD' in pm and 'm198 EDIT HOME' in pm
+check('local PV = "m206"' in pm and 'm204 THE RING AND THE CAST AGREE' in pm and 'm203 THE int/1533 REVIEW, ROUND 2' in pm and 'm199 HOLD TO CAST ROUND 1533, THE FIRE AT THE THRESHOLD' in pm and 'm198 EDIT HOME' in pm
       and 'm197 THE 1531 MERGE OF feat/hold-cast' in pm and 'm196 THE 1530 MERGE OF TEST 1529' in pm
       and 'm195 THE HOLD SPELL TAKES THE BUTTON' in pm and 'm194 HOLD TO CAST IN THE GAME' in pm and 'm193 THE 1528b MERGE OF feat/hold-cast' in pm
       and 'm190 HOLD TO CAST' in pm and 'm189 THE 1523 TEST BUILD MERGE' in pm, '0. PadMap m199 (m198, m197, m196, m195 / m194, m193, m190, m189 kept)')
@@ -213,7 +213,7 @@ check('local BV = "b90"' in bk and 'b84 THE 1531 MERGE OF feat/hold-cast' in bk 
       and 'for k = 0, 1 do P3[26 + k]' in bk
       and 'for k = 0, 2 do P3[29 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdTicks) == "function" then pcall(pm.holdTicks, 2 + k) end end end' in bk,
       '0. Book b84 (b83, b82, b81 kept): the swing 26 / 27, the hold chooser 28, the hold time 29 / 30 / 31')
-check('local NB = { V = "nbar29"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
+check('local NB = { V = "nbar30"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab and 'nbar22 THE 1531 MERGE OF feat/hold-cast' in ab and 'nbar21 THE HOLD SPELL ON THE TOP SCREEN' in ab
       and 'nbar20 THE 1528b MERGE OF feat/hold-cast' in ab and 'nbar18 HOLD TO CAST' in ab,
       '0. ActionBar nbar25 (nbar22, nbar21, nbar20, nbar18 kept): tools/test_hold_wings.py tests it')
 
@@ -620,8 +620,16 @@ for key, lt, pos, hid, nm in (('PAD4', True, 6, 331, 'LT + Y'), ('PADDUP', True,
 n0 = nsent(K)
 edge(K, 'PAD4', True, lt=True); K.execute('LOOK(1)'); u = edge(K, 'PAD4', False, lt=True)
 fc = docs(K, n0, 'facecast')
-check([x.get('hk') for x in fc] == ['keep', 'rel'] and fc[-1].get('kind') == 'native' and fc[-1].get('hn') == 1 and fc[-1].get('sl') is None,
-      '12. a tap: its keep word, then its release (the tap: hn 1, no slack) - the app closes the press on it', fc)
+check([x.get('hk') for x in fc] == ['keep', 'look', 'rel'] and fc[-1].get('kind') == 'native' and fc[-1].get('hn') == 1 and fc[-1].get('sl') is None,
+      '12. a tap: its keep word, the first look word (m206), then its release (the tap: hn 1, no slack) - the app closes the press on it', fc)
+check(fc[1].get('key') == 'PAD4' and isinstance(fc[1].get('dt'), (int, float)) and not any(x.get('hk') == 'ready' for x in fc),
+      '12. m206: the first look says its time after the keep (dt), no ready word before the need-th look', fc)
+n0 = nsent(K)
+edge(K, 'PAD4', True, lt=True); K.execute('LOOK(3)')
+fc = docs(K, n0, 'facecast')
+check([x.get('hk') for x in fc][-1:] == ['ready'] and fc[-1].get('key') == 'PAD4',
+      '12. m206: the need-th look says ready at once (the app fires the press there)', fc)
+edge(K, 'PAD4', False, lt=True)
 # a press the router does not keep: a down word, never a keep
 n0 = nsent(K)
 edge(K, 'PAD4', True); edge(K, 'PAD4', False)

@@ -79,7 +79,7 @@ class SinglePlayShotsTest {
         assertTrue("the map, the party list and the chat drawn", painted(bo, o.map) && painted(bo, o.party) && painted(bo, o.chat))
         // the 1535 polish: the focused quest's card under the map, the room row at the bottom centre, the chat on the right
         assertTrue("the quest card drawn; Party mode on: no room row (Hub's rows keep the HUD's place)", painted(bo, o.quest) && o.row == null)
-        assertTrue("the chat on the right", o.chat.l > 960)
+        assertTrue("the chat on the left", o.chat.r < 960)
         assertTrue("nothing of ours outside them", clearOutside(bo, listOf(o.map, o.party, o.chat, o.quest, o.row, o.btnL, o.btnR)))
         // the docks see-through (the user: "way more see through"): a pixel inside the chat's well, away from its words, lets the game through
         assertTrue("the chat's ground is see-through: alpha ${bo.getPixel(o.chat.l + 20, o.chat.t + 20) ushr 24}",

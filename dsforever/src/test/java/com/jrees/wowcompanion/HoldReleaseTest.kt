@@ -181,7 +181,7 @@ class HoldReleaseTest {
             // the add-on's answer: its release path cast the hold (and the fire's wait for it ends here, nothing left for the next test)
             HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 5).put("hk", "rel").put("kind", "slothold").put("down", true)
                 .put("hn", 3).put("need", 3).put("sl", 0.04))
-            assertTrue(lines.toString(), lines.any { it == "fire ok n=3 ft=17 slack=40ms" })
+            assertTrue(lines.toString(), lines.any { it == "fire ok n=3 ft=17 mk=0 slack=40ms" })
         } finally {
             for ((h, v) in was) h.invoke(SetupBridge, v)
             HoldCast.log = log0
@@ -300,7 +300,7 @@ class HoldReleaseTest {
         now += 150
         HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 5).put("hk", "keep").put("kind", "holdkeep").put("lay", "bare")
             .put("key", "PAD3").put("need", 3))
-        assertEquals("the keep word schedules the fire", 10_678L, scheduled)
+        assertEquals("the keep word schedules the ring's fill first (m206: the casting look), then the fire", 10_373L, scheduled)
         now = 10_678L; HoldCast.fireNow(now)
         assertEquals("fired: the state sent again", 1, resent)
         assertEquals("the takeover starts at the fire", 5, HoldCast.takeover.pos)
@@ -323,7 +323,7 @@ class HoldReleaseTest {
         now += 100
         HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 5).put("hk", "rel").put("kind", "slothold").put("down", true)
             .put("hn", 3).put("need", 3).put("sl", 0.04))
-        assertTrue(lines.any { it == "fire ok n=3 ft=17 slack=40ms" })
+        assertTrue(lines.any { it == "fire ok n=3 ft=17 mk=0 slack=40ms" })
         assertEquals(5, HoldCast.takeover.pos)
         // the physical release afterwards: no second takeover, nothing new for the game
         val start = HoldCast.takeover.startedAt
@@ -432,7 +432,7 @@ class HoldReleaseTest {
             HoldCast.padIn(0, true, false, false, false, now)                           // D-pad Up down (the hat)
             now += 100
             HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 2).put("hk", "keep").put("key", "PADDUP").put("need", 3))
-            assertEquals(20_678L, scheduled)
+            assertEquals("the fill first (m206)", 20_373L, scheduled)
             // the palm at +400: the hat's ACTION_CANCEL, centred (ExternalController), handed over as a cancel (XServerScreen)
             now = 20_400L
             HoldCast.canceling(true)

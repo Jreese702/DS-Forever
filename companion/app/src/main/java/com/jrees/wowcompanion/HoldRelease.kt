@@ -130,6 +130,8 @@ class HoldRelease {
     /** fix/hold-tweaks: each press's F (+ the bump), and whether its fire goes at R with the code (the keep word's mk) */
     private val fullAt = LongArray(CTLS) { NEVER }
     private val markOk = BooleanArray(CTLS)
+    /** m206: the ring's fill told for this press ([onFill]: the casting look at once) */
+    private val fillSaid = BooleanArray(CTLS)
     private var markCtl = -1
     private var markUntil = Long.MIN_VALUE
     /** the last fire carried the code (HoldCast: a tap answering it ends R fires, [markOff]) */
@@ -148,6 +150,9 @@ class HoldRelease {
             // is still let go at its fire point: it came already)
             for (c in 0 until CTLS) if ((st[c] == HELD || st[c] == CONFIRMED) && cnAt[c] != (field ?: -1)) giveUp(c)
         }
+    /** m206: the add-on says its clock's looks ([look] / [ready]): the ring and the fire are the game's - no early full point R, no
+     *  marked fire; a press fires at its need-th look's word (F the backstop) */
+    @Volatile var looksSaid = false
     /** the game's longest recent frame (ms) as the add-on says it (`ft`); null = unknown */
     @Volatile var ft: Int? = null
     /** the session's correction after a SHORT fire (ms) */
@@ -166,6 +171,8 @@ class HoldRelease {
     @Volatile var markOff = false
     /** a hold fired at (game position, its layer): the picture's takeover */
     var onFire: ((Int, Int) -> Unit)? = null
+    /** m206: a kept press's ring filled while held (game position, its layer): the casting look at once, before the fire */
+    var onFill: ((Int, Int) -> Unit)? = null
     private var paused = false
 
     /** the controls forced up now (read on every write: volatile, read once per write) */
@@ -189,11 +196,11 @@ class HoldRelease {
         }
         if (down) {
             if (st[ctl] == FORCED) unforce(ctl)                          // an up we never saw: this is a new press, it passes at once
-            st[ctl] = HELD; t0[ctl] = now; kpos[ctl] = 0; klay[ctl] = 0; markOk[ctl] = false
+            st[ctl] = HELD; t0[ctl] = now; kpos[ctl] = 0; klay[ctl] = 0; markOk[ctl] = false; fillSaid[ctl] = false
             val n = cn
             cnAt[ctl] = n ?: -1
             fireAt[ctl] = if (n == null || paused) NEVER else now + fireMs(n, ft) + bump
-            ringAt[ctl] = if (n == null || paused) NEVER else now + ringMs(n, ft)
+            ringAt[ctl] = if (n == null || paused) NEVER else if (looksSaid) fireAt[ctl] else now + ringMs(n, ft)
             fullAt[ctl] = fireAt[ctl]
         } else {
             if (st[ctl] == FORCED) unforce(ctl)                          // the physical up after the fire: nothing new for the game
@@ -220,7 +227,7 @@ class HoldRelease {
         if (fireAt[ctl] == NEVER || now > fireAt[ctl] + KEEP_LATE_MS) { if (late) letGo(ctl) else giveUp(ctl); return late }
         st[ctl] = if (late) WITHHELD else CONFIRMED; kpos[ctl] = pos; klay[ctl] = lay.coerceIn(0, 3)
         // fix/hold-tweaks: the router saw the armed code - this press fires at its ring's full point, with its own code
-        if (mk && !markOff && ringAt[ctl] != NEVER) { markOk[ctl] = true; fireAt[ctl] = ringAt[ctl] }
+        if (mk && !markOff && !looksSaid && ringAt[ctl] != NEVER) { markOk[ctl] = true; fireAt[ctl] = ringAt[ctl] }
         return true
     }
 
@@ -267,7 +274,10 @@ class HoldRelease {
         var changed = false
         for (c in 0 until CTLS) {
             when (st[c]) {
-                CONFIRMED -> if (now >= fireAt[c]) {
+                CONFIRMED -> if (now < fireAt[c]) {
+                    // m206: the ring full while held - the casting look now (the fire follows at the need-th look's word, or F)
+                    if (!fillSaid[c] && now >= ringAt[c] && !paused && gatesOpen()) { fillSaid[c] = true; onFill?.invoke(kpos[c], klay[c]) }
+                } else {
                     if (paused || !gatesOpen()) { giveUp(c); continue }
                     if (markOk[c] && !markReady(c)) continue                    // no free trigger: F, the looks decide there
                     st[c] = FORCED
@@ -325,6 +335,50 @@ class HoldRelease {
         return n
     }
 
+    /**
+     * THE FIRE AT THE LOOK (PadMap m206; the user on test 1536: "The immediate cast after the hold is delayed and feels like shit. It should
+     * just happen"). Before it, a fire without the mark waited for F = n x (200 + f) + f + 10 ms - the need-th look's LATEST time - while
+     * the ring was full at R = (n - 1) x 200 - f - 10, its earliest: F - R = 220 + (n + 2) x f, 756 ms (5.6 frames) at the Thor's 134 ms
+     * frames - the ring ran 0.4 - 0.75 s ahead of the cast. The add-on now says its hold clock's looks as they happen: [look] at the
+     * first one ([dtMs] after the keep: an add-on that says its looks) hands the ring to the game - no early full point any more (a
+     * release before the need-th look is let go at once: the router's looks say tap), the ring's pace the need-th look's expected time
+     * (the return, ms after the press); [ready] at the need-th look fills the ring and fires at once - the up goes in the next write,
+     * the game reads it in its next frame and its looks already count the hold. The fill, the casting look and the cast: one moment.
+     */
+    @Synchronized fun look(key: String?, pos: Int, dtMs: Long, now: Long): Long? {
+        val c = ctlFor(key, pos)
+        if (c < 0 || st[c] !in setOf(HELD, CONFIRMED, WITHHELD, LATE) || ringAt[c] == NEVER) return null
+        val n = cnAt[c].takeIf { it > 0 } ?: return null
+        val f = (ft?.takeIf { it > 0 } ?: FT_UNKNOWN).toLong()
+        // the need-th look expected: the first one's frame (a frame after the press) + (n - 1) looks of 0.2 s and half a frame
+        val expect = (dtMs.coerceAtLeast(0L) + f + (n - 1) * (TICK_MS + f / 2)).coerceAtMost(fullAt[c] - t0[c])
+        ringAt[c] = fullAt[c]
+        if (st[c] == CONFIRMED) { markOk[c] = false; fireAt[c] = fullAt[c] }
+        return expect
+    }
+    /** the add-on's need-th look came for the press on [key] / [pos]: its fire now. True = a fire is due now */
+    @Synchronized fun ready(key: String?, pos: Int, now: Long): Boolean {
+        val c = ctlFor(key, pos)
+        if (c < 0) return false
+        if (st[c] != CONFIRMED && st[c] != WITHHELD && st[c] != KEPT) return false
+        ringAt[c] = minOf(ringAt[c], now); fillSaid[c] = true
+        if (fireAt[c] > now) fireAt[c] = now
+        return true
+    }
+    private fun ctlFor(key: String?, pos: Int): Int {
+        if (key == "PAD2" || pos == 7) return -1
+        return ctlOfKey(key).takeIf { it >= 0 } ?: (if (key.isNullOrEmpty()) ctlOfPos(pos) else -1)
+    }
+
+    /** m206: the next ring fill of a confirmed press not yet told ([onFill], run by [due]) */
+    @Synchronized fun nextFillAt(): Long {
+        var n = NEVER
+        for (c in 0 until CTLS) if (st[c] == CONFIRMED && !fillSaid[c] && ringAt[c] < fireAt[c] && ringAt[c] < n) n = ringAt[c]
+        return n
+    }
+    /** the next moment [due] has work, the fills too */
+    @Synchronized fun nextWorkAt(): Long = minOf(nextAt(), nextFillAt())
+
     /** the button at game position [pos] is forced up now (Home draws it as the game has it) */
     @Synchronized fun forcedPos(pos: Int): Boolean { for (c in 0 until CTLS) if (st[c] == FORCED && kpos[c] == pos) return true; return false }
     /** fix/hold-tweaks: the press at game position [pos] was let go after its ring filled and waits for its fire point (the ring
@@ -357,7 +411,7 @@ class HoldRelease {
     }
     /** everything clean (a new session, the tests) */
     @Synchronized fun reset() {
-        st.fill(IDLE); fireAt.fill(NEVER); ringAt.fill(NEVER); fullAt.fill(NEVER); markOk.fill(false); markCtl = -1; markUntil = Long.MIN_VALUE
+        st.fill(IDLE); fireAt.fill(NEVER); ringAt.fill(NEVER); fullAt.fill(NEVER); markOk.fill(false); fillSaid.fill(false); markCtl = -1; markUntil = Long.MIN_VALUE
         lastMarked = false; markOff = false
         kpos.fill(0); klay.fill(0); forcedMask = 0; keptMask = 0; paused = false; bump = 0L
     }

@@ -2796,6 +2796,8 @@ object UiKit {
     const val CARD_LINE = 31f
     const val CARD_DISC = 46f
     const val CARD_HOME_SCALE = 1.25f
+    /** test 1536: the card in single screen mode's quest dock (the map dock's size): title 34 px, objectives 26 px */
+    const val CARD_DOCK_SCALE = 0.85f
 
     /** [questCard]'s height for [q] at [scale] (one title line + one line per objective; the empty card has two lines) */
     fun questCardHeight(q: QuestCard?, scale: Float = 1f, collapsed: Boolean = false): Float {
