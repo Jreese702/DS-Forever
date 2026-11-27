@@ -61,7 +61,7 @@ def part_a():
     print("\n-- A the channel (Book b86 / PadMap m199)")
     pm_src = src("WowCompanionSpells", "PadMap.lua")
     bk_src = src("WowCompanionSpells", "Book.lua")
-    chk("A0. PadMap m201 (the 1533 merge; m200 the lease said at its lapse, m199 the mode), Book b86 and their notes", 'local PV = "m206"' in pm_src
+    chk("A0. PadMap m201 (the 1533 merge; m200 the lease said at its lapse, m199 the mode), Book b86 and their notes", 'local PV = "m207"' in pm_src
         and "m199 SINGLE SCREEN MODE" in pm_src and "m200 THE SINGLE SCREEN LEASE SAID" in pm_src
         and 'local BV = "b90"' in bk_src and "b86 SINGLE SCREEN MODE" in bk_src and "b86 THE FOURTH PAGE" in bk_src)
     W = tep.tct.boot()
@@ -336,7 +336,7 @@ def part_e():
     print("\n-- E the hold's bump (Book b88 / PadMap m203)")
     pm_src = src("WowCompanionSpells", "PadMap.lua")
     bk_src = src("WowCompanionSpells", "Book.lua")
-    chk("E0. PadMap m203, Book b88 (round 2: the codes 11-14) and their notes", 'local PV = "m206"' in pm_src and "m202 THE int/1533 REVIEW" in pm_src
+    chk("E0. PadMap m203, Book b88 (round 2: the codes 11-14) and their notes", 'local PV = "m207"' in pm_src and "m202 THE int/1533 REVIEW" in pm_src
         and 'local BV = "b90"' in bk_src and "b87 THE int/1533 REVIEW" in bk_src and "b88 THE int/1533 REVIEW, ROUND 2" in bk_src
         and 'for k = 0, 3 do P2.P4[11 + k] = function() local pm = WC.padMap; if type(pm) == "table" and type(pm.holdBump) == "function" '
             'then pcall(pm.holdBump, k) end end end' in bk_src
