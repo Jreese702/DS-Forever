@@ -847,7 +847,9 @@ data class HomeChatLine(
  * about seeing"); [keep] of those are kept, so lines of a type the player has hidden never push shown ones out of the pane.
  */
 class HomeChatTail(private val keep: Int = 40, private val counts: (HomeChatLine) -> Boolean = { true }) {
-    private val lines = ArrayList<HomeChatLine>()
+    /** issue 622: each character's own lines (ChatByCharacter); [lines] are the shown character's */
+    private val book = ChatByCharacter<HomeChatLine>()
+    private val lines get() = book.lines
     private var lastS = 0L
     private var lastI = 0
     private var legacyN = -1
@@ -866,8 +868,8 @@ class HomeChatTail(private val keep: Int = 40, private val counts: (HomeChatLine
             val n = chat.optInt("n", -1)
             if (n == legacyN) return false
             legacyN = n
-            lines.clear()
-            for (k in 0 until a.length()) a.optJSONObject(k)?.let { lines.add(line(it)); added = true }
+            book.clear()
+            for (k in 0 until a.length()) a.optJSONObject(k)?.let { book.add(0L, line(it)); added = true }
             lastS = 0L; lastI = 0
         } else {
             for (k in 0 until a.length()) {
@@ -875,15 +877,21 @@ class HomeChatTail(private val keep: Int = 40, private val counts: (HomeChatLine
                 val i = o.optInt("i", 0)
                 if (s == lastS && i <= lastI) continue      // the ring again: already have it
                 lastS = s; lastI = i
-                lines.add(line(o)); added = true
+                book.add(s, line(o)); added = true
             }
         }
         // the oldest go while more than [keep] shown lines are kept; past [keep] x 4 lines in all, the oldest HIDDEN one goes
         var shown = lines.count(counts)
-        while (shown > keep) { if (counts(lines.removeAt(0))) shown-- }
-        while (lines.size > keep * 4) { val k = lines.indexOfFirst { !counts(it) }; lines.removeAt(if (k < 0) 0 else k) }
+        while (shown > keep) { if (counts(book.removeAt(0))) shown-- }
+        while (lines.size > keep * 4) { val k = lines.indexOfFirst { !counts(it) }; book.removeAt(if (k < 0) 0 else k) }
         return added
     }
+
+    /** issue 622: the character now (CharKey's whole key; null = named, its key not known yet): its own lines show. True = changed */
+    fun character(key: String?): Boolean = book.character(key)
+
+    /** the game's logout ("bye"): the next session's lines are the next character's */
+    fun loggedOut() = book.loggedOut()
 
     private fun line(o: JSONObject) = HomeChatLine(
         ch = o.optString("ch", "other"),
