@@ -86,7 +86,7 @@ def kt_const(name):
 # ------------------------------------------------------------------------------------------------------------------------ A the tags
 def part_a(G):
     src = open(AB, encoding="utf-8").read()
-    chk("A. ActionBar nbar28 and its note", 'local NB = { V = "nbar30"' in src and "nbar28 THE SINGLE SCREEN POLISH" in src)
+    chk("A. ActionBar nbar28 and its note", 'local NB = { V = "nbar31"' in src and "nbar28 THE SINGLE SCREEN POLISH" in src)
     TT = G.WowCompanion.nbar.TOP
     for lua, kt in (("REST_K", "WINGS_REST_K"), ("REST_IN", "WINGS_REST_IN"), ("REST_UP", "WINGS_REST_UP")):
         chk("A. NB.TOP.%s = SinglePlayLayout.%s" % (lua, kt), abs(float(TT[lua]) - (kt_const(kt) or -1)) < 1e-6, (TT[lua], kt_const(kt)))
