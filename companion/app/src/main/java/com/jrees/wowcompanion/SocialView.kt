@@ -177,11 +177,13 @@ class SocialView(context: Context) : View(context), BLeadsHome, RoomKeep {
         if (act == Act.WHISPER) { r.actName?.let { if (canWhisper(it)) onWhisper(it) }; return }
         if (act.confirm && confirm == null) {
             confirm = act; confirmLabel = r.label; menuOpen = false
-            if (!model.pickMatches(r, act, now)) { lastPickKey = null; send(model.selectTap(r)) }
+            if (!act.onRoom && !model.pickMatches(r, act, now)) { lastPickKey = null; send(model.selectTap(r)) }
             focus = Fk.Yes
             invalidate(); return
         }
         confirm = null
+        // a confirmed ROOM action (Leave Group): the one tap, no pick
+        if (act.onRoom) { send(model.actionTap(null, act, now)); menuOpen = false; invalidate(); return }
         if (model.pickMatches(r, act, now)) send(model.actionTap(r, act, now))
         else if (send(model.selectTap(r))) pending = Pending(act, r.label, r.tab, now)
         menuOpen = false
@@ -280,6 +282,7 @@ class SocialView(context: Context) : View(context), BLeadsHome, RoomKeep {
         Act.GUILD_REMOVE -> "Remove $name from the guild?"
         Act.LEADER -> "Make $name the group leader?"
         Act.UNINVITE -> "Remove $name from the group?"
+        Act.LEAVE -> "Leave the group?"
         else -> "${act.word} $name?"
     }
 
@@ -601,6 +604,12 @@ class SocialView(context: Context) : View(context), BLeadsHome, RoomKeep {
         val p2 = UiKit.bodyPaint(23f, Theme.dim)
         c.drawText(Tr.t(listOfNotNull(levelClassNoRace(r), r.group?.let { "Group $it" }).joinToString("   ")), 124f,
             foot + 86f - (p2.ascent() + p2.descent()) / 2f, p2)
+        // the player's own line: More holds Leave Group (no Whisper to yourself)
+        if (r.me && model.menu(r).isNotEmpty()) {
+            val more = RectF(right - 324f, foot + 10f, right - 24f, foot + 121f)
+            UiKit.button(c, more, "More", "rev_y", btnState(Fk.More))
+            target(Fk.More, more) { openMenu() }
+        }
         if (!r.me) {
             val more = RectF(right - 588f, foot + 10f, right - 338f, foot + 121f)
             if (model.menu(r).isNotEmpty()) {
@@ -662,7 +671,7 @@ class SocialView(context: Context) : View(context), BLeadsHome, RoomKeep {
         val now = System.currentTimeMillis()
         val r = model.rows(listTab()).firstOrNull { it.label == confirmLabel }
         // the name the addon itself resolved; until it answers, the row's own name, and Yes waits
-        val sure = r != null && model.pickMatches(r, act, now)
+        val sure = r != null && (act.onRoom || model.pickMatches(r, act, now))      // a room action (Leave Group) needs no pick
         val name = if (sure) (model.pickedTag ?: model.pickedName ?: r!!.label) else (confirmLabel ?: "")
         UiKit.cover(c, RectF(0f, -RoomTabRow.DY, w, h))          // the whole view: the page is drawn RoomTabRow.DY lower
         val text = confirmText(act, name)

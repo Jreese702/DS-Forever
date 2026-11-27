@@ -40,7 +40,10 @@ class SocialModel {
         GUILD_PROMOTE("gpromote", word = "Promote"), GUILD_DEMOTE("gdemote", word = "Demote"),
         GROUP1("group1"), GROUP2("group2"), GROUP3("group3"), GROUP4("group4"),
         GROUP5("group5"), GROUP6("group6"), GROUP7("group7"), GROUP8("group8"),
-        TO_RAID("toraid", onRoom = true), TO_PARTY("toparty", onRoom = true), ALL_ASSIST("allassist", onRoom = true);
+        TO_RAID("toraid", onRoom = true), TO_PARTY("toparty", onRoom = true), ALL_ASSIST("allassist", onRoom = true),
+        // the add-on's so15 (a player's report on 1.0.39: "I cannot leave the party through the Social menu"): the game's own
+        // leave-party call, on the player's own line's More menu, confirmed first; the room's action (no pick needed)
+        LEAVE("leave", confirm = true, onRoom = true, word = "Leave Group");
 
         companion object {
             fun moveTo(group: Int) = values().first { it.code == "group$group" }
@@ -252,7 +255,7 @@ class SocialModel {
         val order = when (r.tab) {
             Tab.FRIENDS -> listOf(Act.WHISPER, Act.INVITE, Act.UNFRIEND, Act.IGNORE)
             Tab.GUILD -> listOf(Act.WHISPER, Act.INVITE, Act.ADD_FRIEND, Act.GUILD_PROMOTE, Act.GUILD_DEMOTE, Act.GUILD_REMOVE)
-            Tab.RAID -> listOf(Act.WHISPER, Act.ADD_FRIEND, Act.LEADER, Act.ASSIST, Act.DEMOTE, Act.UNINVITE)
+            Tab.RAID -> listOf(Act.WHISPER, Act.ADD_FRIEND, Act.LEADER, Act.ASSIST, Act.DEMOTE, Act.UNINVITE, Act.LEAVE)
             Tab.IGNORE -> listOf(Act.UNIGNORE)
         }
         return order.filter { it in can }.take(6)
@@ -265,7 +268,8 @@ class SocialModel {
 
     /** Every action the selected row allows now, in the game's menu order. Whisper first when possible. */
     fun actions(r: Row): List<Act> {
-        if (r.me) return emptyList()
+        // the player's own line: nothing but Leave Group, in a party or raid, on an add-on that has the code (so15)
+        if (r.me) return if (r.tab == Tab.RAID && groupKind != "none" && codeCol(Act.LEAVE.code) != null) listOf(Act.LEAVE) else emptyList()
         val out = ArrayList<Act>()
         val playing = r.actName != null
         if (playing && r.online && r.tab != Tab.IGNORE) out += Act.WHISPER

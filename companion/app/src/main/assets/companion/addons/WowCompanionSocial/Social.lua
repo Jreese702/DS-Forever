@@ -88,7 +88,7 @@ local WC = _G.WowCompanion
 if type(WC) ~= "table" or type(WC.S) ~= "function" or type(WC.send) ~= "function" then return end
 local S, SN, CALL = WC.S, WC.SN, WC.CALL
 
-local SOV = "so14"   -- so14: the guild MOTD is not read during a fight or a chat messaging lockdown (this client BLOCKS GetMOTD then: ADDON_ACTION_BLOCKED, the user on 1.0.18-test6: "a ton of lua errors"); the last one read is kept; so13: a Battle.net friend is invited by their game account (C_BattleNet.InviteFriend); bump on every change; the app shows it, so a stale build is visible
+local SOV = "so15"   -- so15: Leave Group - the room code "leave" (appended: column 39) runs the game's own leave-party call while in a group (a player's report on 1.0.39); so14: the guild MOTD is not read during a fight or a chat messaging lockdown (this client BLOCKS GetMOTD then: ADDON_ACTION_BLOCKED, the user on 1.0.18-test6: "a ton of lua errors"); the last one read is kept; so13: a Battle.net friend is invited by their game account (C_BattleNet.InviteFriend); bump on every change; the app shows it, so a stale build is visible
 
 local MAX_GROUP = 40        -- a raid
 local MAX_FRIENDS = 100     -- the game's cap on character friends
@@ -164,6 +164,8 @@ local CODES = {
     "hold", "free", "vwhof", "whosearch",
     -- so7: open the game's own Friends window (a secure click, armed only while holding), where the room's next B leads
     "wopen", "bh", "bb",
+    -- so15: one game action on the room: leave the party / raid (the game's own leave-party call; the app confirms first)
+    "leave",
 }
 -- so6: Who is the Group Finder room's (the user's answer 2026-09-30). These codes keep their columns and are refused.
 local RETIRED = { whozone = true, wholevel = true, whoboth = true, vwho = true, vwhof = true, whosearch = true }
@@ -761,6 +763,16 @@ end
 local ROOM = {}
 ROOM.toraid = function() CALL(function() C_PartyInfo.ConvertToRaid() end) return true end
 ROOM.toparty = function() CALL(function() C_PartyInfo.ConvertToParty() end) return true end
+-- so15 LEAVE GROUP (a player's report on 1.0.39: "I cannot leave the party through the Social menu"): the game's own leave-party
+-- call, as the player menu's Leave Group (Quests' q-row: C_PartyInfo.LeaveParty, else the older LeaveParty) - not a protected call, so
+-- the row's press may run it in a fight too; only while in a group (else said, nothing called). The app asks "Leave the group?" first
+ROOM.leave = function()
+    if not TB(function() return IsInGroup() end) then return false, "not in a group" end
+    CALL(function()
+        if type(C_PartyInfo) == "table" and type(C_PartyInfo.LeaveParty) == "function" then C_PartyInfo.LeaveParty() else LeaveParty() end
+    end)
+    return true
+end
 ROOM.allassist = function()
     local now = TB(function() return IsEveryoneAssistant() end)
     CALL(function() C_PartyInfo.SetEveryoneIsAssistant(not now) end)
