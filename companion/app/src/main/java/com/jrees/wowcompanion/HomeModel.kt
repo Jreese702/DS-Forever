@@ -847,8 +847,8 @@ data class HomeChatLine(
  * about seeing"); [keep] of those are kept, so lines of a type the player has hidden never push shown ones out of the pane.
  */
 class HomeChatTail(private val keep: Int = 40, private val counts: (HomeChatLine) -> Boolean = { true }) {
-    /** issue 622: each character's own lines (ChatByCharacter); [lines] are the shown character's */
-    private val book = ChatByCharacter<HomeChatLine>()
+    /** issue 622: this login's lines only (ChatSinceLogin: a logout, a switch or a client restart clears them) */
+    private val book = ChatSinceLogin<HomeChatLine>()
     private val lines get() = book.lines
     private var lastS = 0L
     private var lastI = 0
@@ -877,7 +877,7 @@ class HomeChatTail(private val keep: Int = 40, private val counts: (HomeChatLine
                 val i = o.optInt("i", 0)
                 if (s == lastS && i <= lastI) continue      // the ring again: already have it
                 lastS = s; lastI = i
-                book.add(s, line(o)); added = true
+                if (book.add(s, line(o))) added = true
             }
         }
         // the oldest go while more than [keep] shown lines are kept; past [keep] x 4 lines in all, the oldest HIDDEN one goes
@@ -887,11 +887,11 @@ class HomeChatTail(private val keep: Int = 40, private val counts: (HomeChatLine
         return added
     }
 
-    /** issue 622: the character now (CharKey's whole key; null = named, its key not known yet): its own lines show. True = changed */
+    /** issue 622: the character now (CharKey's whole key; null = named, its key not known yet). True = the old one's lines went */
     fun character(key: String?): Boolean = book.character(key)
 
-    /** the game's logout ("bye"): the next session's lines are the next character's */
-    fun loggedOut() = book.loggedOut()
+    /** the game's logout ("bye") or a client restart: the lines clear. True = lines went */
+    fun loggedOut(): Boolean = book.loggedOut()
 
     private fun line(o: JSONObject) = HomeChatLine(
         ch = o.optString("ch", "other"),

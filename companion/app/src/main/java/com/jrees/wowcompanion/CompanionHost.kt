@@ -4605,7 +4605,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 if (cur != 0) { TaxiNet.onTaxiNet(cur, reach); Log.i("WCMAP", "taxinet: at $cur, ${reach.size} reachable") }
             }
             "bye" -> {
-                chatView.loggedOut(); homeView.chatLoggedOut()   // issue 622: the next session's chat is the next character's
+                // issue 622: a logout clears the chat (the next login starts empty); the app's own reload keeps it
+                if (reloadAt == 0L) { chatView.loggedOut(); homeView.chatLoggedOut() }
                 if (current) {
                     QuestWatchKeep.cleanEnd(); byeShow(); PartyModel.live.newSession()      // a logout: the game writes its state (the watch list)
                     GameLife.worldLeft()                        // the world closed: no calm until the next hello (the world map beside the game)
@@ -5117,7 +5118,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current && named) QuestWatchKeep.character(ck)
                     if (ck != null || (current && named)) TaxiNet.character(ck)
                     if (current && named) GameUi.character = ck     // hub13: HUD mode per character
-                    // issue 622: the Chat room's and Home's chat lines are the character's own (another character's never show)
+                    // issue 622: a switch to another character clears the chat (a missed bye); the new login's first lines stay
                     // (every padmap in its order, a replayed one too: the chat documents around it are that character's)
                     if (named) { chatView.character(ck); homeView.chatCharacter(ck) }
                     // the chat's message-type checklist, per character (the user, 2026-11-16: "mix and match my preferences"); hold to talk's last used chat too (TalkKeep)
@@ -5477,7 +5478,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // (DocMemory: a truncated log - the client restarted - keeps nothing of the old client's documents; the reader thread, first)
         val onStatus: (String) -> Unit = { s -> if (!streaming) DocMemory.readerSaid(s); ui.post {
             status.text = s.take(110)
-            if (s == LogTail.RESTARTED) { chatView.loggedOut(); homeView.chatLoggedOut() }   // issue 622: a new client, its own character's chat
+            if (s == LogTail.RESTARTED) { chatView.loggedOut(); homeView.chatLoggedOut() }   // issue 622: a new client, an empty chat
             // the other game started: is IT set up for the companion?
             // (not inside the launcher: there the second candidate is the same game's private log, never another game)
             if (s.startsWith("following the game's log") && LauncherHooks.pkg == null) ui.postDelayed({ setupCheck() }, 3_000L)

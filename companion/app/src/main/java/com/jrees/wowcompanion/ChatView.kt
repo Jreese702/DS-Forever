@@ -213,8 +213,8 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     var cursorOnShow = true
         set(v) { field = v; if (!v) { pad.focus = null; adapter.notifyDataSetChanged(); invalidate() } }
 
-    /** issue 622: each character's own log ([ChatByCharacter]); [history] is the shown character's */
-    private val book = ChatByCharacter<Line>()
+    /** issue 622: this login's log only ([ChatSinceLogin]: a logout, a switch or a client restart clears it) */
+    private val book = ChatSinceLogin<Line>()
     private val history get() = book.lines
     private val shown = ArrayList<Line>()
     private var selected: Line? = null
@@ -540,8 +540,7 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
                 if (s == lastS && i <= lastI) continue      // the ring again: already have it
                 lastS = s; lastI = i
                 val l = Line(o)
-                book.add(s, l)
-                fresh.add(l)
+                if (book.add(s, l)) fresh.add(l)           // a session over (before a logout) adds nothing
             }
             if (fresh.isEmpty()) return
         }
@@ -568,25 +567,25 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     }
 
     /**
-     * Issue 622: the character now (the host's CharKey, from each padmap; null = named with no key yet). Another character's chat
-     * never shows: its own log comes back (or none yet), with its own Reply person; the selection, the unread dots and a whisper to
-     * someone of the other character's go.
+     * Issue 622: the character now (the host's CharKey, from each padmap; null = named with no key yet). A switch clears the old
+     * character's lines ([ChatSinceLogin.character]); the new login's first lines stay.
      */
-    fun character(key: String?) {
-        if (!book.character(key)) return
+    fun character(key: String?) { if (book.character(key)) cleared() }
+
+    /** the game's logout ("bye") or a client restart: the chat clears ([ChatSinceLogin.loggedOut]); the app's own reload never calls it */
+    fun loggedOut() { book.loggedOut(); cleared() }
+
+    /** a clear: the selection, the unread dots, Reply's person and the whisper target go with the lines */
+    private fun cleared() {
         select(null)
         unread.clear()
-        replyTo = history.lastOrNull { it.ch == "whisper" && !it.me && !it.out && it.who.isNotEmpty() }?.who ?: ""
+        replyTo = ""
         whisperName = ""
-        if (type == "WHISPER") { type = "SAY"; stream.setType(type) }
-        if (kinds().none { it.key == type }) { type = "SAY"; stream.setType(type) }
+        if (kinds().none { it.key == type }) { type = "SAY"; stream.setType(type) }      // Reply / the whisper went with them
         head.invalidate()
         refill()
         showTyped()
     }
-
-    /** the game's logout ("bye"): what comes next is the next character's chat ([ChatByCharacter.loggedOut]) */
-    fun loggedOut() = book.loggedOut()
 
     private fun refill() {
         shown.clear()

@@ -1678,10 +1678,10 @@ class HomeView(
     }
 
     fun onChat(c: JSONObject) { if (chat.update(c)) chatPane.refresh() }
-    /** issue 622: the character now (the host's CharKey, null = named with no key yet): Home's chat lines are that character's own */
+    /** issue 622: the character now (the host's CharKey, null = named with no key yet): a switch clears Home's chat lines */
     fun chatCharacter(key: String?) { if (chat.character(key)) chatPane.refresh() }
-    /** the game's logout ("bye"): what comes next is the next character's chat */
-    fun chatLoggedOut() = chat.loggedOut()
+    /** the game's logout ("bye") or a client restart: Home's chat lines clear */
+    fun chatLoggedOut() { if (chat.loggedOut()) chatPane.refresh() }
 
     /** r20: the purse in copper (null = not said yet) and the free slots in the bags that take anything (-1 = not said yet) */
     private var goldCopper: Long? = null
