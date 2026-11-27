@@ -61,7 +61,7 @@ object SinglePlayLayout {
     const val BASE_W = 1920
     const val BASE_H = 1080
     /** between a piece and a keep-out */
-    const val GAP = 8
+    const val GAP = SingleType.GAP
     /** the chat keeps at least this (3 one-line messages) and this wide; the map's in-combat size */
     const val CHAT_MIN_H = 132
     const val CHAT_MIN_W = 300
@@ -102,7 +102,9 @@ object SinglePlayLayout {
     // Wings' widest reach K4 x 152, right of its x 1768); the tap-to-cast bar (Home's own CastStripView, lent) opens over the left one
     /** a corner button's size and its margin from the screen's edges (1080-line px) */
     const val BTN = 72
-    const val BTN_MARGIN = 24
+    /** the tidy pass (SingleType's grid): [SingleType.EDGE] from the side edges as every dock, the foot on the row's line ([ROW_FOOT]) */
+    const val BTN_MARGIN = SingleType.EDGE
+    const val BTN_FOOT = SingleType.FOOT
     /** the tap-to-cast bar's box over the left button: its width (Home's LEFT bar: four slots in view, a scroll), its foot */
     const val CAST_W = 560
     const val CAST_FOOT = 966
@@ -116,7 +118,7 @@ object SinglePlayLayout {
     const val ROW_SRC_W = 1240
     const val ROW_SRC_H = 145
     const val ROW_K = 0.7f
-    const val ROW_FOOT = 4
+    const val ROW_FOOT = SingleType.FOOT
     /** the docks' grounds over the game (the user: "The party mode box and text box bot have solid backgrounds and it needs to be way
      *  more see through so its not as intrusive"): the wells' fill, their metal edge, a party plate's ground (Home: 255 / 255 / 230) */
     const val GROUND_ALPHA = 56
@@ -259,7 +261,7 @@ object SinglePlayLayout {
             sc.place(Box(l, BASE_H - ROW_FOOT - rh, l + rw, BASE_H - ROW_FOOT), Anchor.CENTRE)
         } else null
         // the corner buttons (the left one only with a tap-to-cast bar to open: [castBtn]) and the bar over the left one while open
-        val y0 = BASE_H - BTN_MARGIN - BTN
+        val y0 = BASE_H - BTN_FOOT - BTN
         val btnL = if (castBtn) sc.place(Box(BTN_MARGIN, y0, BTN_MARGIN + BTN, y0 + BTN), Anchor.LEFT) else null
         val btnR = sc.place(Box(BASE_W - BTN_MARGIN - BTN, y0, BASE_W - BTN_MARGIN, y0 + BTN), Anchor.RIGHT)
         val cast = if (castBtn && castH != null) {

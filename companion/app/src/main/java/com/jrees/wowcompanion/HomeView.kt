@@ -2191,6 +2191,8 @@ class HomeView(
     /** the D-pad layout's RIGHT (the user, 2026-10-05: "I want right to open that home map module"): the map module opens as a tap on
      *  the small map would (refused in a fight's takeover, as the tap is); false = nothing changed */
     fun openMapModule(): Boolean = touchOpen(HomeModule.MAP)
+    /** the module Home shows full now (no takeover), else null: single screen mode's dock zoom asks which dock it grew from */
+    fun fullModuleNow(): HomeModule? = flow.screen.let { s -> if (s.takeover) null else s.full }
 
     /** combat-touch: a module the player opened in this fight; the takeover never comes back over it ([HomeTouch.takeover]) */
     private var openedInFight = false
@@ -5244,7 +5246,7 @@ class HomeView(
             if (!cardHidden && q?.item?.let { QuestItem.Cd.left(it.id) > 0.0 } == true) postInvalidateDelayed(250L)
             val n = noteText
             if (n != null && System.currentTimeMillis() < noteUntil) {
-                val p = UiKit.bodyPaint(24f, Theme.warn)
+                val p = UiKit.bodyPaint(if (docked) SingleType.SMALL else 24f, Theme.warn)
                 c.drawText(Tr.t(TextUtils.ellipsize(n, p, w - 36f, TextUtils.TruncateAt.END).toString()), 18f, h - 16f, p)
                 postInvalidateDelayed(NOTE_MS)
             } else noteText = null
@@ -5336,7 +5338,7 @@ class HomeView(
             // the game's world notice (the shard transfer's countdown) pinned at the top of the well; the log starts under it
             // chat40: the Battle.net friend notices under it ([drawNotices])
             val top = pad + drawNotices(c, RectF(pad, pad, w - pad, h - pad), bang, false, this)
-            tp.textSize = 27f
+            tp.textSize = if (dockGround) SingleType.BODY else 27f      // the tidy pass: the docks' one body size (SingleType)
             val width = (w - 2f * pad).toInt().coerceAtLeast(10)
             var y = h - pad
             c.save(); c.clipRect(pad, top, w - pad, h - pad)

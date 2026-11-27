@@ -237,7 +237,7 @@ class SingleMenuView(ctx: Context) {
         if (alpha <= 0.01f) return
         val fight = fightNow()
         rf.set(r.l, r.t, r.r, r.b)
-        val rad = 18f * s * grown.coerceAtLeast(0.3f)
+        val rad = SingleType.R * s * grown.coerceAtLeast(0.3f)           // the tidy pass: every plate's corner (was 18)
         pFill.style = Paint.Style.FILL; pFill.shader = null
         pFill.color = Color.argb((242 * alpha).toInt(), 16, 12, 9)
         c.drawRoundRect(rf, rad, rad, pFill)
@@ -248,7 +248,7 @@ class SingleMenuView(ctx: Context) {
         if (grown < 0.9f || !fight) return
         // a fight: "In a fight" on a small plate at the frame's foot, centred (the rooms' own title rows stay theirs)
         val ta = (255 * alpha * ((grown - 0.9f) / 0.1f).coerceIn(0f, 1f)).toInt()
-        val fp = UiKit.bodyPaint(28f * s, RED).apply { this.alpha = ta; textAlign = Paint.Align.LEFT }
+        val fp = UiKit.bodyPaint(SingleType.BODY * s, RED).apply { this.alpha = ta; textAlign = Paint.Align.LEFT }
         val words = Tr.t("In a fight")
         val tw = fp.measureText(words)
         val pw = tw + 64f * s; val ph = 44f * s
@@ -363,7 +363,7 @@ class SingleMenuView(ctx: Context) {
             if (!standIn(c, d.room, cx, cy, icon)) drawRoom?.invoke(c, d.room, cx, cy, icon)
             if (l >= 0) c.restoreToCount(l)
             if (on && rk > 0.6f) {
-                val tp = UiKit.titlePaint(30f * s, Theme.gold).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
+                val tp = UiKit.titlePaint(SingleType.TITLE * s, Theme.gold).apply { textAlign = Paint.Align.CENTER; this.alpha = alpha }
                 val ty = minOf(cy + SingleMenu.NAME_DY * s, h - 10f * s)
                 c.drawText(name(d.room), cx, ty, tp)
             }
@@ -390,14 +390,14 @@ class SingleMenuView(ctx: Context) {
                 else UiKit.hints(c, right, y, UiKit.backGlyph() to (if (fight) "Game" else "Back"))
                 val r = room
                 if (r != null && r != Room.HOME && triggersOn()) {
-                    val p = UiKit.bodyPaint(26f * s, Theme.text)
+                    val p = UiKit.bodyPaint(SingleType.BODY * s, Theme.text)
                     SingleMenu.step(order, r, -1)?.let { prev ->
                         UiKit.pad(c, "${padSet()}_ltrigger", SingleMenu.ZL_X * s, y, 46f * s)
                         c.drawText(name(prev), (SingleMenu.ZL_X + 32f) * s, y - (p.ascent() + p.descent()) / 2f, p)
                     }
                     SingleMenu.step(order, r, 1)?.let { next ->
                         UiKit.pad(c, "${padSet()}_rtrigger", w - SingleMenu.ZL_X * s, y, 46f * s)
-                        val pr = UiKit.bodyPaint(26f * s, Theme.text).apply { textAlign = Paint.Align.RIGHT }
+                        val pr = UiKit.bodyPaint(SingleType.BODY * s, Theme.text).apply { textAlign = Paint.Align.RIGHT }
                         c.drawText(name(next), w - (SingleMenu.ZL_X + 32f) * s, y - (pr.ascent() + pr.descent()) / 2f, pr)
                     }
                 }

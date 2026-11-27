@@ -93,6 +93,28 @@ object SingleFade {
             start()
         }
 
+    /**
+     * THE DOCK ZOOM (the tidy pass; the user on the 1537 build: "The transitions from like using the chat and minimap suck. They should
+     * zoom in just like on the bottom screen"): the bottom screen's chat glide (CompanionHost.glideInto) on the top window. The box at
+     * [g] (0 = the dock's [dock], 1 = the panel's [panel]; l, t, r, b, screen px) is lerped; the panel's content is drawn into it at ONE
+     * scale (text keeps its shape) just big enough to fill it, its bottom-left on the box's, and cut to the box. Returns the view's
+     * scale, its translation x / y (pivot 0, 0) and the cut in the view's own px (l, t, r, b). At 1: scale 1, no move, the panel whole.
+     */
+    fun zoomFit(dock: FloatArray, panel: FloatArray, g: Float): FloatArray {
+        val k = g.coerceIn(0f, 1f)
+        fun m(i: Int) = dock[i] + (panel[i] - dock[i]) * k
+        val bl = m(0); val bt = m(1); val br = m(2); val bb = m(3)
+        val pw = (panel[2] - panel[0]).coerceAtLeast(1f); val ph = (panel[3] - panel[1]).coerceAtLeast(1f)
+        val sc = maxOf((br - bl) / pw, (bb - bt) / ph).coerceAtLeast(0.05f)
+        val tx = bl - panel[0] * sc; val ty = bb - panel[3] * sc
+        return floatArrayOf(sc, tx, ty, (bl - tx) / sc, (bt - ty) / sc, (br - tx) / sc, (bb - ty) / sc)
+    }
+
+    /** the zoom's times and its fade: the bottom screen's (Motion.MODULE_OPEN / MODULE_CLOSE on Motion.curve; HomeView.FADE_MS) */
+    const val ZOOM_IN_MS = Motion.MODULE_OPEN
+    const val ZOOM_OUT_MS = Motion.MODULE_CLOSE
+    const val ZOOM_FADE_MS = 120f
+
     /** THE GHOST: a recorded picture drawn where it was, over the window's own content, while it fades; touches pass under it */
     class Ghost(ctx: Context) : View(ctx) {
         var pic: Picture? = null

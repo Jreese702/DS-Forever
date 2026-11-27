@@ -107,12 +107,12 @@ class SinglePlayLayoutTest {
     @Test fun theCornerButtonsAndWhatTheyOpen() {
         for (a in Arr.values()) for (party in listOf(true, false)) {
             val p = SinglePlayLayout.plan(a, party, castH = 120)
-            assertEquals("bottom left, 72 px, 24 from the edges", Box(24, 984, 96, 1056), p.btnL)
-            assertEquals("bottom right", Box(1824, 984, 1896, 1056), p.btnR)
+            assertEquals("bottom left, 72 px, 16 from the side, its foot on the row's (the tidy pass's grid)", Box(16, 1004, 88, 1076), p.btnL)
+            assertEquals("bottom right", Box(1832, 1004, 1904, 1076), p.btnR)
             for (k in keeps(a, party)) for (b in listOf(p.btnL!!, p.btnR!!)) assertFalse("$a ${k.name} $b", b.hits(k.box))
             assertTrue("clear of the Wings' widest reach and their rest", p.btnL!!.r < SinglePlayLayout.K4.l && p.btnR!!.l > SinglePlayLayout.K4.r &&
                 p.btnL!!.r < SinglePlayLayout.K3.l && p.btnR!!.l > SinglePlayLayout.K3.r)
-            assertEquals("the tap-to-cast bar over the left button, 560 wide", Box(24, 846, 584, 966), p.cast)
+            assertEquals("the tap-to-cast bar over the left button, 560 wide", Box(16, 846, 576, 966), p.cast)
             assertTrue("never over the chat", !p.cast!!.hits(p.chat))
         }
         assertNull("no tap-to-cast bar set up: no left button", SinglePlayLayout.plan(Arr.OUT, true, castBtn = false).btnL)

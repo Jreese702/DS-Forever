@@ -219,11 +219,13 @@ class PartyModuleView(context: Context, private val live: PartyModel.State) : Vi
         // glyph on a plate - the game's LB + button targeting hint (an A on your own plate) is gone with the chips; the pick targets
         val nx = if (mem.isPet && icon == null) p.l + 14f else PartyLayout.nameX(p, mode, sized)
         val room = PartyLayout.nameRoom(p, mode, sized) + (PartyLayout.nameX(p, mode, sized) - nx)
-        nameP.textSize = PartyLayout.nameSize(mode, p.h, sized)
+        // the tidy pass (SingleType): in single mode's party dock the names at the docks' one body size, the level at the small one
+        val dockType = dockGround && !sized
+        nameP.textSize = if (dockType) SingleType.BODY else PartyLayout.nameSize(mode, p.h, sized)
         nameP.color = if (mem.dead) Color.rgb(150, 150, 150) else col
         // the pet: its short name alone (m134: "its portrait/icon + short name"); a person: the level after the name
         val lv = if (mem.isPet) "" else mem.lv?.let { " $it" } ?: ""
-        lvP.textSize = PartyLayout.nameSize(mode, p.h, sized) * 0.72f
+        lvP.textSize = if (dockType) SingleType.SMALL else PartyLayout.nameSize(mode, p.h, sized) * 0.72f
         val lvW = if (lv.isEmpty()) 0f else lvP.measureText(lv)
         // the skull / plug's room only when it is drawn
         val name = fit(Tr.t(mem.n), nameP, (room - lvW - (if (mem.dead || mem.off) 40f else 0f)).coerceAtLeast(40f))
