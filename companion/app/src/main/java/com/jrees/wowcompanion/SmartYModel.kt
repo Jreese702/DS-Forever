@@ -185,7 +185,7 @@ object SmartYModel {
     const val FOOD = "food"
     const val DRINK = "drink"
     const val MANNERS = "manners"
-    /** m190: Sit by the fire (the campfire's Cozy Fire aura) */
+    /** m190: Sit by the fire (a campfire's aura: Campfire Nearby, PadMap m197, or Cozy Fire) */
     const val FIRE = "fire"
     const val MAX_ROWS = 16
     const val MAX_OR = 10

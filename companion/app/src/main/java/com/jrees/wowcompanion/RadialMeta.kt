@@ -20,7 +20,7 @@ object RadialMeta {
 
     private var prefs: SharedPreferences? = null
     private var all = JSONObject()
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     /** the character now ("name-realm", CombatKeep.who from a current padmap); null = not known yet (nothing is saved then) */
     @Volatile var who: String? = null
@@ -40,7 +40,7 @@ object RadialMeta {
         PadMapModel.dress = { c -> dress(c) }
     }
 
-    fun onChange(l: () -> Unit) { listeners += l }
+    fun onChange(l: () -> Unit): () -> Unit { listeners += l; return { listeners.remove(l) } }   // its removal: HostEnds
     /** a reset (ResetRun) changed the saved list: read again */
     fun reload() { all = runCatching { JSONObject(prefs?.getString("all", "{}") ?: "{}") }.getOrDefault(JSONObject()); changed() }
     private fun changed() { for (l in listeners.toList()) runCatching { l() } }

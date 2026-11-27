@@ -44,8 +44,8 @@ class LayoutView(context: Context) : View(context) {
     init {
         visibility = GONE
         isFocusable = false
-        LayoutModel.Live.onChange { post { onDoc() } }
-        Theme.onChange { postInvalidate() }
+        context.atHostEnd(LayoutModel.Live.onChange { post { onDoc() } })
+        context.atHostEnd(Theme.onChange { postInvalidate() })
     }
 
     // ---------------------------------------------------------------- open / close

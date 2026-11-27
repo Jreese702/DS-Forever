@@ -453,11 +453,11 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
 
     init {
         Theme.init(context)
-        Theme.onChange { postInvalidate() }
+        context.atHostEnd(Theme.onChange { postInvalidate() })
         FrameGen.init(context)
-        FrameGen.onChange { main.post { refresh() } }
-        Settings.onChange { main.post { refresh() } }
-        SetupBridge.onStreamSettings { main.post { refresh() } }
+        context.atHostEnd(FrameGen.onChange { main.post { refresh() } })
+        context.atHostEnd(Settings.onChange { main.post { refresh() } })
+        context.atHostEnd(SetupBridge.onStreamSettings { main.post { refresh() } })
     }
 
     /** the room hidden (another room, the tab folded away): the stream's band closes, so its change applies now and not at the next visit */

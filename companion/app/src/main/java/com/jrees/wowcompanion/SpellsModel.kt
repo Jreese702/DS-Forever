@@ -86,6 +86,7 @@ object SpellsModel {
         val bindParty: Boolean = false,     // b71: the Party mode situation, its controller (`bpm`)
         val bindCbParty: Boolean = false,   // b71: the Party mode situation, its bar (`bcp`: the bar's party layer)
         val cbOn: Int? = null,              // b70: A on a Tap to cast tab with the bar Off, counted (the app turns the bar on)
+        val bindSel: Int? = null,           // Book b89 (fix/hold-tweaks): Select in the Bind box, counted (the app: controller <-> bar)
         /** Book b59 (the user, 2026-11-13: "when doing bind to a button from bags it should open the normal spell binding menu"): the box
          *  is open for this BAG ITEM (hosted by the Bags room: `via` "bags"); null = a spell's box */
         val bindItem: BoxItem? = null,
@@ -129,6 +130,7 @@ object SpellsModel {
             bindCbFight = c.optInt("bcf", 0) == 1,
             bindParty = c.optInt("bpm", 0) == 1, bindCbParty = c.optInt("bcp", 0) == 1,
             cbOn = if (c.has("cbon")) c.optInt("cbon", 0) else null,
+            bindSel = if (c.has("bsel")) c.optInt("bsel", 0) else null,
             note = c.optString("note", "").takeIf { it.isNotEmpty() },
             mode = c.optString("mode", "book").ifEmpty { "book" },
             talentsPage = c.optString("pg", "book") == "talents",

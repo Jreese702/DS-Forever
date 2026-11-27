@@ -31,7 +31,7 @@ object DiagLog {
     @Volatile var recordUntil = 0L
         private set
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     private fun changed() { for (l in listeners) runCatching { l() } }
 
     fun init(c: Context) { if (dir == null) useDir(File(c.applicationContext.filesDir, "diag")) }

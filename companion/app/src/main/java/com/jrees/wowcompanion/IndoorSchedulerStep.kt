@@ -48,7 +48,7 @@ object IndoorSchedulerStep : ArtHarvest.Step {
         private set
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
     /** called (on the bake thread) whenever [readiness] may have changed */
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     fun offChange(l: () -> Unit) { listeners.remove(l) }
 
     /** the launcher's optional row: never a blocker, so [done] only picks the tick (D1: finished - the row turns green) */

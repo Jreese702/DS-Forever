@@ -64,7 +64,7 @@ object SetupBridge {
         set(v) { field = v; streamSettingsChanged() }
     private val streamWatchers = CopyOnWriteArrayList<() -> Unit>()
     /** [f] runs when the stream's settings or its test's rows change (any thread) */
-    fun onStreamSettings(f: () -> Unit) { streamWatchers += f }
+    fun onStreamSettings(f: () -> Unit): () -> Unit { streamWatchers += f; return { streamWatchers.remove(f) } }   // its removal: HostEnds
     fun streamSettingsChanged() { for (f in streamWatchers) f() }
     /** EVERY ROUTE to the stream's settings (the Performance tile, the waiting screen's Menu, the stream's own screens' Y): the Settings
      *  room on the Performance tab with the Stream settings band open (set by the companion's host) */
@@ -93,6 +93,33 @@ object SetupBridge {
 
     /** the context wheel's Yes / No or rename pop-up is up (PopupHold.Wheel): A, B, X, Y, the D-pad, the shoulders, Start, Select held */
     fun wheelHolds(): Boolean = PopupHold.wheel.holds(android.os.SystemClock.uptimeMillis())
+
+    /**
+     * THE ROOMS' TABS ON TOP (the user, 2026-11-25): a tabbed room (Character, Group Finder, Professions, Social) owns L / R now - they
+     * step its tab row from the app's own reader - so both bumpers are held back from the game (PopupHold.holdsKey's [room]). Set by the
+     * companion's host (DirectPad's live registration); main thread, as the launcher's key callbacks
+     */
+    @Volatile var roomShoulders: () -> Boolean = { false }
+
+    /**
+     * The launcher's key path, for every pad key ([keyCode], [down], [repeat] = the event's repeat count): true = a tabbed room owns
+     * L / R now, so a bumper's press is held from the game (PopupHold.holdsKey's room). A bumper's press is DECIDED here, once
+     * (RoomTabsPad.decide): the room's own delivery acts on it only when it was held for the room. Never throws into the key path
+     */
+    fun roomShoulderPress(keyCode: Int, down: Boolean, repeat: Int): Boolean {
+        val k = RoomTabsPad.keyName(keyCode) ?: return false
+        val live = try { roomShoulders() } catch (_: Throwable) { false }
+        if (down && repeat == 0) RoomTabsPad.decide(k, live, android.os.SystemClock.uptimeMillis())
+        return live
+    }
+
+    /**
+     * THE DS MENU'S ZL / ZR (single screen mode, the 1536 pass 2): a room on the menu's stage owns the triggers now (they step room to
+     * room from the app's own reader), so both are held back from the game - their keys (PopupHold.holdsKey's [trigger]) and their pull
+     * (WinHandler.holdOut). ONE decision: the companion's host sets it at every look (CompanionHost.menuTriggersSync) and its reader acts
+     * on a trigger only while it is set; false the moment the room closes. Read from the launcher's key and pad threads
+     */
+    @Volatile var roomTriggers: Boolean = false
 
     /** the report's notice on Home asks for a press (Open issue / OK): the game's A is held back meanwhile (board f-problem-report) */
     @Volatile var noticeAsking = false
@@ -123,7 +150,7 @@ object SetupBridge {
     }
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     fun offChange(l: () -> Unit) { listeners.remove(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
 

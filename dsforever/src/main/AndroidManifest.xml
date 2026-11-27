@@ -4,7 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Swap screens (#383 / #384): the game's task back to the front of its screen (ActivityManager.moveTaskToFront; a normal
-         permission, no prompt). Used only while Swap screens is On (DsForeverScreen.toFront) -->
+         permission, no prompt). Used only while Swap screens is On (DsForeverScreen.toFront), and in single screen mode when the bottom
+         screen took the controller's keys (DsForeverScreen.keysTop: the game's task back to the front) -->
     <uses-permission android:name="android.permission.REORDER_TASKS" />
     <!-- Stream smoothness (the user's pick 2026-11-23, "Add it": "Declare WAKE_LOCK; hold the Wi-Fi low-latency lock only while a stream
          runs"): WifiManager's WifiLock needs it (a normal install-time permission, no prompt). Held only from a stream's start to its

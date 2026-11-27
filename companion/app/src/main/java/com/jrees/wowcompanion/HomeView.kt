@@ -132,12 +132,13 @@ class HomeView(
         RadialMeta.init(context)
         flow.setRest(HomeSettings.rest)
         // every static listener here holds this Home WEAKLY ([weakly], the 1528 blocker): a Home made again never keeps the old one
-        HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }   // m190: a held press's gold arc / the hold's flash (the gate)
-        HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } })  // GitHub #43: the tap-to-cast bar's own choices
+        HoldCast.onChange = weakly(this) { v -> v.castView.postInvalidateOnAnimation() }   // m194: the hold's flash on the add-on's word (its release)
+        context.hostOwn(HoldCast::onChange, null)           // int/1534: none again at its host's end (test 1533's KEPT press fires it with no host)
+        context.atHostEnd(HomeSettings.onChange(weakly(this) { v -> v.post { v.castStripRelay(); v.castStripFight() } }))  // GitHub #43: the tap-to-cast bar's own choices
         // movable Home fix round 1: the active record's owner changed (another character, the late key): edit mode checks its own
-        HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } })
+        context.atHostEnd(HomeLayoutStore.onOwner(weakly(this) { v -> v.editUi.post { v.editOwnerCheck("the character changed") } }))
         partyView.boxShown = { !editLive() }                              // fix round 1: never a second gold box beside edit mode's
-        HomeSettings.onChange(weakly(this) { v -> v.post { v.homeSettingsChanged() } })
+        context.atHostEnd(HomeSettings.onChange(weakly(this) { v -> v.post { v.homeSettingsChanged() } }))
         homeInitRest()
     }
 
@@ -984,6 +985,8 @@ class HomeView(
 
     private fun onB() {
         if (typeWanted) return                                            // the tool's B comes through the guest (it closes the tool)
+        // the 1535 polish: the corner's tap-to-cast bar open and its hold not given (a fight): B closes it here (the game has the press too)
+        if (dockCastOpen && !dockCastHeld) { onDockCastClose?.invoke(); return }
         if (editLive()) return                                            // P2: edit mode's B comes through the guest "home" (its B ladder)
         // #540 (1.0.34: "Bar would not go back to combat mode while in combat and got stuck"): the B that closes one of the app's
         // overlays over Home (a wheel, the pause / context radial, the bar cursor) is that overlay's, never Home's shrink or close
@@ -1104,7 +1107,7 @@ class HomeView(
      *  (the 1530 audit: Party mode has no holds - PadMap's OV.hold.mapNow says "party" - so a badge there would promise nothing) */
     private fun holdApply() {
         val map = padMap ?: return
-        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { HoldCast.usable && map.holdOn != false && !partyOnHere() }
+        castView.holdRefs = PadMapModel.holdRefs(map, combat = fightNow && map.faceCc != false).takeIf { map.holdOn != false && !partyOnHere() }
     }
 
     /** every CURRENT `holdcd` (PadMap m190): the hold spells' own cooldowns onto their badges */
@@ -1235,6 +1238,7 @@ class HomeView(
     fun auraPad(msg: JSONObject) {
         if (typeWanted) return                                            // the tool holds its own guest ("tool")
         if (editLive()) { editPad(msg); return }                          // P2: edit mode holds the guest "home" while it runs
+        if (dockCastOpen && !mapWanted && !chatWanted && auraPane.open == null) { dockCastPad(msg); return }   // the 1535 polish
         if (mapWanted) { mapPad(msg); return }
         if (!chatWanted) { auraPane.onPad(msg); return }
         if (msg.has("lost")) chatHeld = false else chatHeld = true
@@ -1380,6 +1384,7 @@ class HomeView(
             if (msg.optString("op") == "hold" && !msg.optBoolean("ok")) Log.i(TAG, "type tool: hold refused (${msg.optString("why")})")
             return
         }
+        if (dockCastOpen && !mapWanted && !chatWanted && auraPane.open == null && !editLive()) { dockCastAck(msg); return }
         if (mapWanted) {
             when (msg.optString("op")) {
                 // combat_nav Step 1 (the user, 2026-11-11): "pending" (a fight's take until the ENTER tap) is NOT held: the guard reads B
@@ -1415,7 +1420,55 @@ class HomeView(
     /** Home is busy with a controller layer of its own: its guest "home" (chat / map / aura list) or the tool's "tool" */
     fun homeGuestWanted(): Boolean = typeWanted || homeOwnGuestWanted()
     /** the guest "home" itself is wanted (the chat or map module, the buff / debuff list; the tool has its own "tool") */
-    fun homeOwnGuestWanted(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false
+    fun homeOwnGuestWanted(): Boolean = homeOwnBesidesDockCast() || dockCastOpen
+    private fun homeOwnBesidesDockCast(): Boolean = chatWanted || mapWanted || auraPane.open != null || edit?.parked == false
+
+    /**
+     * THE TAP-TO-CAST BAR'S B (single screen mode's bottom-left corner button; the user's pick 2026-11-26: "Yes, B closes it"): while the
+     * corner's bar is open Home holds the controller as the generic guest "home" - the key path every Home window over the game takes (the
+     * map module, the buff list) - so B reaches the app and not the game, and B closes the bar ([onDockCastClose]: the host slides it out).
+     * Taken ONLY while the bar is open: [dockCast] false frees it at once (never a held B or D-pad with the bar shut). A hold the game
+     * refuses (a fight's lockdown) leaves B the game's; Home's own B watch ([onB]) still closes the bar then. Its other presses are dropped
+     * while it holds (the bar is touch only). [dockCastAsks]: the holds / frees asked (tests).
+     */
+    var dockCastOpen = false; private set
+    var dockCastHeld = false; private set
+    private var dockCastN = -1
+    var onDockCastClose: (() -> Unit)? = null
+    val dockCastAsks = ArrayList<String>()
+
+    fun dockCast(open: Boolean) {
+        if (open == dockCastOpen) return
+        dockCastOpen = open
+        val others = homeOwnBesidesDockCast()
+        if (!open) dockCastHeld = false
+        if (others) return                                                // another of Home's windows holds the guest "home": it keeps it
+        dockCastN = -1
+        dockCastAsks += if (open) "hold" else "free"
+        val sent = homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = open))
+        Log.i(TAG, "tap-to-cast bar (one screen): ${if (open) "hold" else "free"} ${if (sent) "asked" else "not sent"}")
+    }
+
+    /** one press of the guest "home" while the corner's bar holds it: B closes the bar, the rest are dropped */
+    private fun dockCastPad(msg: JSONObject) {
+        if (msg.has("lost")) { dockCastHeld = false; return }
+        val n = msg.optInt("n", -1)
+        if (n == dockCastN) return
+        dockCastN = n
+        dockCastHeld = true
+        if (msg.optString("k") == "PAD2") onDockCastClose?.invoke()
+    }
+
+    private fun dockCastAck(msg: JSONObject) {
+        when (msg.optString("op")) {
+            "hold" -> if (msg.optBoolean("ok") && msg.optString("why") != "pending") dockCastHeld = true
+                else if (!msg.optBoolean("ok")) {
+                    Log.i(TAG, "tap-to-cast bar: hold refused (${msg.optString("why")}): B stays the game's, Home's watch closes the bar")
+                    dockCastHeld = false; dockCastAsks += "free"; homeGuestTap(GuestPad.cells(pad, GUEST_ID, hold = false))
+                }
+            "free", "leave" -> dockCastHeld = false
+        }
+    }
     /** B: pet recall's rest-layout B (PetRecall; was Smart pet / B: pet follow): something of Home's own is open that B closes - a module full screen (chat, map, the bars), the buff /
      *  debuff list, the Keyboard & Trackpad tool - so B's press is not Home's plain B. The 1.0.33 merge review (feat/wk-mail x
      *  feat/wk-b-pet-follow): the mail card too - its B "closes it first, and does nothing else of Home's", so it never calls the pet */
@@ -2138,6 +2191,8 @@ class HomeView(
     /** the D-pad layout's RIGHT (the user, 2026-10-05: "I want right to open that home map module"): the map module opens as a tap on
      *  the small map would (refused in a fight's takeover, as the tap is); false = nothing changed */
     fun openMapModule(): Boolean = touchOpen(HomeModule.MAP)
+    /** the module Home shows full now (no takeover), else null: single screen mode's dock zoom asks which dock it grew from */
+    fun fullModuleNow(): HomeModule? = flow.screen.let { s -> if (s.takeover) null else s.full }
 
     /** combat-touch: a module the player opened in this fight; the takeover never comes back over it ([HomeTouch.takeover]) */
     private var openedInFight = false
@@ -2176,7 +2231,7 @@ class HomeView(
     private val PARTY_MODULE get() = GameUi.partyModeOn()
     /** Party mode holds the D-pad here (its box moves on it): the game's D-pad layout must not also open the bar cursor (2026-11-04,
      *  the user: "pushing down on the Dpad makes the cursor also appear on the bottom bar menu") */
-    fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && isShown && !typeWanted && !editLive()
+    fun partyHoldsDpad(): Boolean = partyOnHere() && flow.full == null && (isShown || restElsewhere) && !typeWanted && !editLive()
     /** Party mode on with Home's rest page shown (no module full screen): the disc's touch = Party mode off */
     fun partyOnRest(): Boolean = partyOnHere() && flow.full == null
 
@@ -2205,11 +2260,11 @@ class HomeView(
     private var laidPartyModule = false
     init {
         // QOL > Party > Party mode flipped: the module comes or goes at once
-        GameUi.onChange(weakly(this) { v -> v.post {
+        context.atHostEnd(GameUi.onChange(weakly(this) { v -> v.post {
             if (v.PARTY_MODULE != v.laidPartyModule) v.partyChanged()
             // EDIT TABS: the Party mode tab comes and goes with QOL > Party (open on it when it goes: Out of combat)
             v.edit?.let { m -> if (m.tabs.contains(HomeTab.PARTY) != v.PARTY_MODULE) v.editRun(m.tabsAre(v.PARTY_MODULE)) }
-        } })   // weakly: [weakly]
+        } }))   // weakly: [weakly]
     }
 
     /** a party document (or a box) changed what Home draws: re-placed when the module's size changed, else redrawn */
@@ -2259,11 +2314,11 @@ class HomeView(
         // party_design.md E: a Select press the reader sees flashes the tab's pressed look (the add-on's document turns it on / off)
         val sel = PadInput.isHeld(held, PadInput.SLOT_SELECT)
         // (never under a wheel: the pause wheel's Select is its power button, 2026-11-24)
-        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && isShown && overlayOpen?.invoke() != true) partyView.selectPressed()
+        if (sel && !partySelWas && PARTY_MODULE && flow.full == null && (isShown || restElsewhere) && overlayOpen?.invoke() != true) partyView.selectPressed()
         partySelWas = sel
         // b-class-takeover: the class wheel's D-pad never reaches the game (its guest keeps it), so the box's optimistic move would part
         // from the game's - the wheel's presses are the wheel's
-        if (fresh == 0 || !partyOnHere() || flow.full != null || !isShown || typeWanted || editLive() || (lent(castView) && castView.classRadialOpen())) return
+        if (fresh == 0 || !partyOnHere() || flow.full != null || !(isShown || restElsewhere) || typeWanted || editLive() || (lent(castView) && castView.classRadialOpen())) return
         for ((k, d) in dirs.withIndex()) if ((fresh and (1 shl k)) != 0 && party.move(d.second) != null) { partyView.invalidate(); castView.partyChanged() }
     }
 
@@ -3021,7 +3076,7 @@ class HomeView(
 
     override fun onMeasure(wSpec: Int, hSpec: Int) {
         setMeasuredDimension(MeasureSpec.getSize(wSpec), MeasureSpec.getSize(hSpec))
-        if (typeWanted) typeTool.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
+        if (typeWanted && typeTool.parent === this) typeTool.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         val cw = if (classRect.isEmpty) MeasureSpec.getSize(wSpec) else classRect.width()
         val ch = if (classRect.isEmpty) frameOf(hSpec) else classRect.height()
@@ -3029,7 +3084,7 @@ class HomeView(
         wheelLayer?.measure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(wSpec), MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(frameOf(hSpec), MeasureSpec.EXACTLY))
         for ((p, v) in views) {
-            if (v.visibility == View.GONE) continue
+            if (v.visibility == View.GONE || docked(v)) continue                 // (single screen mode: a piece in a play dock is laid there)
             val r = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             v.measure(MeasureSpec.makeMeasureSpec(max(1, r.width().toInt()), MeasureSpec.EXACTLY),
                       MeasureSpec.makeMeasureSpec(max(1, r.height().toInt()), MeasureSpec.EXACTLY))
@@ -3045,7 +3100,7 @@ class HomeView(
      */
     private fun placeFrame() {
         for ((p, v) in views) {
-            if (v.visibility == View.GONE) continue
+            if (v.visibility == View.GONE || docked(v)) continue
             val f = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             val x1 = max(x0 + 1, f.right.toInt()); val y1 = max(y0 + 1, f.bottom.toInt())
@@ -3069,9 +3124,10 @@ class HomeView(
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        if (typeWanted) typeTool.layout(0, 0, r - l, b - t - bottomInset)                  // f-trackpad-keyboard: the whole page
-        // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint
-        if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
+        if (typeWanted && typeTool.parent === this) typeTool.layout(0, 0, r - l, b - t - bottomInset)   // f-trackpad-keyboard: the whole page
+        // f-class-radial: its slot (the wheel between the columns), or the whole page for the hint (single screen mode: centred)
+        if (singleLayersOnly) singleLayersLayout(r - l, b - t - bottomInset)
+        else if (classRect.isEmpty) classLayer.layout(0, 0, r - l, b - t - bottomInset) else classLayer.layout(classRect.left, classRect.top, classRect.right, classRect.bottom)
         wheelLayer?.layout(0, 0, r - l, b - t - bottomInset)                              // f-radial-behind: the whole page, under the columns
         // fix/menus-fit: over the party list's column as laid (any share, either side: the chat's for Classic's dock; after 1518 the
         // map's when it sits there), under the band as it is now
@@ -3083,7 +3139,7 @@ class HomeView(
             targetMenu.layout(m.left.toInt(), m.top.toInt(), m.right.toInt(), m.bottom.toInt())
         }
         for ((p, v) in views) {
-            if (v.visibility == View.GONE) continue
+            if (v.visibility == View.GONE || docked(v)) continue
             val f = (if (p == Part.MAP) mapScaleTo else null) ?: now[p] ?: continue
             val x0 = f.left.toInt(); val y0 = f.top.toInt()
             v.layout(x0, y0, max(x0 + 1, f.right.toInt()), max(y0 + 1, f.bottom.toInt()))
@@ -3422,6 +3478,19 @@ class HomeView(
     /** 1518: edit mode is LIVE (open, not parked) or not any more (Done, Discard, a fight, another room): the host tells the add-on the
      *  record's D-pad sides and fight bar only while it is not live (the autosave writes every change; the pictures preview it meanwhile) */
     var onEditLive: ((Boolean) -> Unit)? = null
+    /** EDIT HOME'S TOP-SCREEN PREVIEW: a change edit mode made (a tab, a pick, the Swing timer): the host checks [editPreviewCode] again */
+    var onEditPreview: (() -> Unit)? = null
+    /** EDIT HOME'S TOP-SCREEN PREVIEW ([EditPreview]): the code the top screen should show now - the live session's tab and its page (the
+     *  draft), the app's Swing timer and the add-on's words; [EditPreview.OFF] with edit mode closed, parked (a fight, another room) */
+    fun editPreviewCode(): Int {
+        // the int/1533 review: single screen mode lays Edit Home in the centred panel, whose opaque ground covers every previewed piece
+        // (the Wings halves, the party rows: all inside x 340..1580) - nothing is sent that could not be seen, and the page-3 batches
+        // never hold up the mode's own `ss` lease (SingleTop) behind them
+        if (SingleScreen.inUse) return EditPreview.OFF
+        val m = edit?.takeIf { !it.parked && !editAway } ?: return EditPreview.OFF
+        val d = padMap?.dpad
+        return EditPreview.code(m.tab, m.page, HomeSettings.swingTimer, d?.ct, d?.cc)
+    }
 
     private fun editDraft(): HomeLayout? = edit?.takeIf { !it.parked || editBackDue }?.draft
     /** fix round 3: Home is back over a room-parked session and its resume is posted ([borrow]): the page is laid with the draft already */
@@ -3583,6 +3652,7 @@ class HomeView(
         val pieces = BandEdit.place(HomeLayoutSolver.Box(b.left, b.top, b.right, b.bottom), slots,
             chip?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) }, diamonds, grown, m.fightPreview,
             away = b.bottom <= 0f,                                        // Top screen's preview: the band above the page
+            // (ruling D 2026-11-25: the strip pencil full size everywhere - the party list's pencil is at the list's right end)
             strip = now[Part.FIGHT_CAST]?.takeIf { fightStrip.on && it.top >= -0.5f }?.let { HomeLayoutSolver.Box(it.left, it.top, it.right, it.bottom) })
         fun rf(x: HomeLayoutSolver.Box) = RectF(x.l, x.t, x.r, x.b)
         // fix/fight-pencil-strip (the user's pick 2026-11-23, "Hold still until closed"): with the fight pencil's bubble open the pencil
@@ -3705,6 +3775,82 @@ class HomeView(
         onEditLive?.invoke(true)
         onStateChanged?.invoke()
         return true
+    }
+
+    /**
+     * THE BOTTOM SCREEN COMES STRAIGHT BACK, ROUND 2 (the review, 2026-11-26: "Edit Home with an unsaved draft ... lost on every
+     * bottom-grid return"): the LIVE session as a host made again takes it back ([editRestore]) - the model (its draft, cursor, lift,
+     * menus, tab, and the record Discard puts back), the record it was read under, the last write. Null = none, or parked by a fight or
+     * a room (Home is Home then; every settled change is saved already)
+     */
+    fun editKeep(): HomeEditKeep? = edit?.takeIf { !it.parked }?.let { editHanded = true; HomeEditKeep(it, editOwner, editPersisted, editLate) }
+
+    /**
+     * ROUND 3 (the review, 2026-11-26: "HomeEditKeep hands the SAME mutable HomeEditModel to the new HomeView while the dead host's
+     * HomeView still holds it and still runs its owner listener on it"): a session handed to a host made again ([editKeep]) is let go
+     * here at this host's end - no write, no guest tap, nothing posted left - so only the new Home acts on it (its owner changes, its
+     * rebase, its end). The host's end also takes this view's store listeners off (CompanionHost's ends)
+     */
+    fun editLetGo() {
+        if (!editHanded) return
+        editHanded = false
+        editUi.removeCallbacksAndMessages(null)
+        edit = null; editOwner = null; editPersisted = null; editLate = null
+    }
+    private var editHanded = false
+
+    /**
+     * a kept session back on this (new) Home, as [editOpen] opens one - only on the record it was read under (another character's now:
+     * nothing, as edit mode ends then), never in a fight or with the key question up. The store's record as it is now is laid under the
+     * draft ([editRebase]: a change made meanwhile kept). True = edit mode is open again
+     */
+    fun editRestore(k: HomeEditKeep): Boolean {
+        if (edit != null || fightShown() || editBlocked?.invoke() == true) return false
+        if (k.owner != HomeLayoutStore.owner()) { Log.i(TAG, "home edit: not laid back (another record is active now)"); return false }
+        if (flow.full != null && !flow.takeover && flow.close()) changed()
+        mailCard(false); auraPane.close(); closeTypeTool()
+        if (classOpen) classLayerShow(false)
+        chromeModel = null
+        val m = k.model
+        editBandFeed(m)
+        edit = m
+        editOwner = k.owner
+        editPersisted = k.persisted; editLate = k.late
+        editAway = false
+        editView.visibility = View.VISIBLE
+        chromeFade(1f, HomeEditModel.CHROME_IN)
+        editGuest(true)
+        onEditChrome?.invoke(editView)
+        Log.i(TAG, "home edit: laid back on ${m.cursor.name.lowercase()} (a rebuilt bottom screen), ${HomeLayoutJson.json(m.draft)}")
+        editMotionStart(m.cursor)
+        editRebase(m)
+        liveDraft = m.draft
+        editRelay(Motion.MODULE_OPEN, force = true)
+        onEditChanged?.invoke(true)
+        onEditLive?.invoke(true)
+        onStateChanged?.invoke()
+        return true
+    }
+
+    /**
+     * ROUND 2 (2026-11-26: "Home's open layer ... lost on every bottom-grid return"; SPEC 4.4 step 5's restoreLayer): Home's open layer
+     * for a host made again - a full-screen module ("module:CHAT" / "module:MAP" / "module:BARS") or the Keyboard & Trackpad tool
+     * ("tool:<its tab>"); null = at rest. [layerRestore] opens it again by the routes a finger takes
+     */
+    fun layerKeep(): String? = when {
+        typeWanted -> "tool:${typeTool.tabNow}"
+        flow.full != null -> "module:${flow.full?.name}"
+        else -> null
+    }
+    fun layerRestore(id: String?): Boolean {
+        if (id == null || edit != null) return false
+        val ok = when {
+            id.startsWith("module:") -> runCatching { HomeModule.valueOf(id.removePrefix("module:")) }.getOrNull()?.let { touchOpen(it) } == true
+            id.startsWith("tool:") -> { openTypeTool(id.removePrefix("tool:").toIntOrNull() ?: 0); typeWanted }
+            else -> false
+        }
+        Log.i(TAG, "home: the layer $id laid back${if (ok) "" else ": not opened"}")
+        return ok
     }
 
     /**
@@ -3980,6 +4126,7 @@ class HomeView(
         editDecor()
         editView.invalidate()
         invalidate()
+        onEditPreview?.invoke()                                           // EditPreview: the tab or a pick may have changed
     }
 
     // ---------------------------------------------------------------- the motion's hooks (HomeEditMotion)
@@ -4597,6 +4744,7 @@ class HomeView(
     fun pageZoom(): Pair<Float, Float>? = if (pageMatrix(pageM)) FloatArray(9).also { pageM.getValues(it) }.let { it[0] to it[5] } else null
 
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        if (singleLayersOnly) return singleLayersTouch(e)                           // single screen mode's class wheel: its layer alone
         // EDIT TABS: the tab row over the zoomed page (its own finger), and every other touch mapped into Home's px through the zoom
         if (edit?.parked == false && pageMatrix(pageM)) {
             if (e.actionMasked == MotionEvent.ACTION_DOWN) tabFinger = e.y < HomeEditView.TAB_ROW && !holdTakes
@@ -4824,6 +4972,7 @@ class HomeView(
 
     /** P2: edit mode's chrome is drawn LAST, over Home's own paint (the zone band, the clock block, the wells' edges) */
     override fun dispatchDraw(c: Canvas) {
+        if (singleLayersOnly) { singleLayersDraw(c); return }                       // single screen mode's class wheel: its layer alone
         // EDIT TABS: the page (and the chrome over it) zoomed out under the tab row while edit mode's chrome shows ([pageMatrix])
         val zoomed = pageMatrix(pageM)
         val z = if (zoomed) c.save() else -1
@@ -4835,7 +4984,7 @@ class HomeView(
         if (z >= 0) c.restoreToCount(z)
         if (zoomed && editView.visibility == View.VISIBLE) editView.drawTabs(c, width.toFloat(), chromeA.coerceIn(0f, 1f))
     }
-    override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView) false else super.drawChild(c, child, drawingTime)
+    override fun drawChild(c: Canvas, child: View, drawingTime: Long): Boolean = if (child === editView || (singleLayersOnly && child !== classLayer)) false else super.drawChild(c, child, drawingTime)
 
     /** fix/menus-fit: the map's own paint follows the map view's real move during the pause / LB slides (Classic too: the user's pick
      *  2026-11-21, "Fix in Classic too") */
@@ -5047,6 +5196,16 @@ class HomeView(
 
         fun note(s: String) { noteText = s; noteUntil = System.currentTimeMillis() + NOTE_MS; invalidate() }
 
+        /** the 1535 polish: standing in single screen mode's quest dock - its plate see-through over the game ([dockFold]: its title row
+         *  only, the dock's in-fight size) */
+        var docked = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+        var dockFold = false
+            set(v) { if (field != v) { field = v; invalidate() } }
+        /** test 1536 (the user: "Make the font on the active quest smaller so that the quest tab is the same size as the map"): the
+         *  card's type in the quest dock at UiKit.CARD_DOCK_SCALE, the dock the map's own size (SinglePlayLayout), never folded there */
+        private val cardScale: Float get() = if (docked) UiKit.CARD_DOCK_SCALE else UiKit.CARD_HOME_SCALE
+
         private fun state(q: HomeQuest) = if (q.ready) UiKit.Quest.TURN_IN else UiKit.Quest.PROGRESS
 
         private val pGround by themed { Paint().apply { color = Theme.panel } }
@@ -5076,17 +5235,18 @@ class HomeView(
             // b125: minimized = the title row only once the shrink has landed; while the box eases the kit fades the objective lines
             // with the room they have (UI Art), so no half line peeks
             val q = homeCard()
-            val folded = HomeSettings.questMin &&
+            val folded = HomeSettings.questMin && !docked &&
                 h <= UiKit.questCardHeight(q, UiKit.CARD_HOME_SCALE, collapsed = true) + 0.5f
             // q64 (the user, 2026-11-17: "I didnt want the rewards on the quests in the home page ... showing the Icon for if there is a
             // usable quest Item"): no reward line; the quest's item at the card's right edge, redrawn while its cooldown runs
-            if (!cardHidden) UiKit.questCard(c, RectF(0f, 0f, w, h), q, scale = UiKit.CARD_HOME_SCALE,
-                bgAlpha = if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
+            if (!cardHidden) UiKit.questCard(c, RectF(0f, 0f, w, h), q, scale = cardScale,
+                bgAlpha = if (docked) SinglePlayLayout.CARD_ALPHA
+                    else if (cardOverMap()) lerp(UiKit.CARD_OVER_MAP_ALPHA.toFloat(), 255f, plate).toInt() else 255,
                 collapsed = folded, itemButton = true)
             if (!cardHidden && q?.item?.let { QuestItem.Cd.left(it.id) > 0.0 } == true) postInvalidateDelayed(250L)
             val n = noteText
             if (n != null && System.currentTimeMillis() < noteUntil) {
-                val p = UiKit.bodyPaint(24f, Theme.warn)
+                val p = UiKit.bodyPaint(if (docked) SingleType.SMALL else 24f, Theme.warn)
                 c.drawText(Tr.t(TextUtils.ellipsize(n, p, w - 36f, TextUtils.TruncateAt.END).toString()), 18f, h - 16f, p)
                 postInvalidateDelayed(NOTE_MS)
             } else noteText = null
@@ -5138,7 +5298,7 @@ class HomeView(
         private fun tap(x: Float, y: Float) {
             // q65 (the user, 2026-11-17: "make the quest item usable by tap out of combat"): a touch on the quest's item uses it
             val qi = if (cardHidden) null else homeCard()?.item
-            if (qi != null && UiKit.questItemBox(RectF(0f, 0f, width.toFloat(), height.toFloat()), UiKit.CARD_HOME_SCALE)
+            if (qi != null && UiKit.questItemBox(RectF(0f, 0f, width.toFloat(), height.toFloat()), cardScale)
                     .apply { inset(-14f, -14f) }.contains(x, y)) {
                 val ok = QuestItemTap.use(context, qi, pad, inFight() || questsFight) { note(it) }
                 Log.i(TAG, "quest item ${qi.id} (quest ${qi.quest}): ${if (ok) "tapped" else "refused"}")
@@ -5161,19 +5321,24 @@ class HomeView(
 
         fun refresh() { cache.keys.retainAll(chat.all.toSet()); invalidate() }
 
-        init { ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() }) }       // weakly: [weakly]
+        init { context.atHostEnd(ChatFilter.onChange(weakly(this) { v -> v.postInvalidate() })) }       // weakly: [weakly]
+
+        /** the 1535 polish: standing in single screen mode's chat dock over the game - a see-through well, the words shadowed to read */
+        var dockGround = false
+            set(v) { if (field != v) { field = v; invalidate() } }
 
         override fun onDraw(c: Canvas) {
             val w = width.toFloat(); val h = height.toFloat()
             UiKit.asBody(tp)
             // the chat's WELL (the harmony pass: every module the same well), the log inside its padding, from the bottom
-            UiKit.module(c, RectF(0f, 0f, w, h))
+            if (dockGround) UiKit.dockWell(c, RectF(0f, 0f, w, h)) else UiKit.module(c, RectF(0f, 0f, w, h))
+            if (dockGround) tp.setShadowLayer(4f, 0f, 1.5f, Color.BLACK) else tp.clearShadowLayer()
             // no "General" tab (user, 15:15: "remove the general tab from the chat ... just visual clutter")
             val pad = UiKit.MODULE_PAD
             // the game's world notice (the shard transfer's countdown) pinned at the top of the well; the log starts under it
             // chat40: the Battle.net friend notices under it ([drawNotices])
             val top = pad + drawNotices(c, RectF(pad, pad, w - pad, h - pad), bang, false, this)
-            tp.textSize = 27f
+            tp.textSize = if (dockGround) SingleType.BODY else 27f      // the tidy pass: the docks' one body size (SingleType)
             val width = (w - 2f * pad).toInt().coerceAtLeast(10)
             var y = h - pad
             c.save(); c.clipRect(pad, top, w - pad, h - pad)
@@ -6027,6 +6192,172 @@ class HomeView(
         QuestTier.VERY_DIFFICULT -> Theme.questOrange
         QuestTier.IMPOSSIBLE -> Theme.questRed
         QuestTier.UNKNOWN -> Theme.gameGold
+    }
+
+    // ===== SINGLE: CORE =====
+    /**
+     * single screen mode's PLAY state (SingleLook: the game alone, Home's page not drawn): Home's rest page IS the player's screen though
+     * not shown, so Party mode's D-pad hold and Select read as on Home ([partyHoldsDpad], [onPadHeld]'s Select). Set by the host from
+     * the look; false on two screens (always): nothing changes there
+     */
+    var restElsewhere = false
+
+    // ===== SINGLE: PLAY =====
+    /**
+     * SINGLE SCREEN MODE WHILE PLAYING (SingleDocks; the user's pick "1, 2, and also the chat on the left thr ds toolbar should have the
+     * same functionality in single screen mode"): Home's rest IS the game there (not drawn), so its own chat pane, party list and map
+     * stand over the game in the play docks - LENT, not copied (one map, one chat): [lendToDocks] moves them into the docks' slots,
+     * [reclaimFromDocks] puts them back exactly where they were BEFORE Home's page shows (a panel, Home's glance, a room). While lent,
+     * Home's layout passes leave them alone ([docked]: onMeasure / placeFrame / onLayout skip them); Home's own state still decides
+     * whether each is laid at all ([dockLaid]). The map is lent only while Home holds it (borrow); another room taking it back
+     * (giveBack) needs nothing from here.
+     */
+    private class DockLoan(val view: View, val parent: ViewGroup, val index: Int, val lp: ViewGroup.LayoutParams?, val alpha: Float,
+                           val tx: Float, val ty: Float, val cover: Float, val keepOut: List<RectF>, val vis: Int = View.VISIBLE)
+    private val dockLoans = ArrayList<DockLoan>()
+    /** [v] stands in a play dock now */
+    fun docked(v: View): Boolean = dockLoans.any { it.view === v }
+    /** something of Home's is in the docks */
+    val dockedNow: Boolean get() = dockLoans.isNotEmpty()
+
+    /** what Home's rest page lays now - the pieces the docks show: its chat, Party mode's list, the map (Home holding it) */
+    data class DockLaid(val chat: Boolean, val party: Boolean, val map: Boolean, val quest: Boolean = false, val cast: Boolean = false)
+    fun dockLaid(): DockLaid = DockLaid(chatPane.visibility == View.VISIBLE && now.containsKey(Part.CHAT),
+        partyView.visibility == View.VISIBLE && now.containsKey(Part.PARTY), lent(mapView) && mapSlot.visibility == View.VISIBLE,
+        quest = homeCard() != null, cast = castSideNow() != CastStripModel.Side.OFF)
+
+    /** the 1535 polish (the corner button's tap-to-cast bar): the bar's height as Home lays it (its own rows), else null */
+    fun dockCastH(): Int? = now[Part.STRIP]?.height()?.toInt()?.takeIf { it > 0 }
+
+    /** the tap-to-cast bar's own lay while it stands in the corner's window (Home's side and half, given back with it) */
+    private var castLoanSide: CastStripModel.Side? = null
+    private var castLoanHalf = 0
+
+    /** the 1535 polish (the user: "instead it should show our focused quest box like it does on the bottom screen"): the focused quest's
+     *  card's height for the quest dock - its title row only when [fold] (a fight) or minimized as on Home; null = no focused quest */
+    fun dockQuestH(fold: Boolean): Int? {
+        val q = homeCard() ?: return null
+        questPane.dockFold = fold
+        return kotlin.math.ceil(UiKit.questCardHeight(q, UiKit.CARD_DOCK_SCALE)).toInt()
+    }
+
+    /** Party mode's list as drawn: its height (the well and the Select tab) at the list's own row size; null in a Party-mode Top fight
+     *  (its rows fill whatever box they get) */
+    fun dockPartyH(): Int? {
+        if (partyView.mode == PartyLayout.Mode.FIGHT_TOP) return null
+        val m = partyView.module()
+        return (maxOf(m.well.b, m.tag.b) - minOf(m.well.t, m.tag.t)).toInt() + 4
+    }
+
+    /** Home's chat pane, party list and map into the docks' slots [chat], [party], [map] (each the slot's only child) */
+    fun lendToDocks(chat: ViewGroup, party: ViewGroup, map: ViewGroup, quest: ViewGroup? = null, cast: ViewGroup? = null) {
+        dockLend(chatPane, chat)
+        dockLend(partyView, party)
+        if (quest != null) { dockLend(questPane, quest); questPane.translationZ = 0f }
+        // the 1535 polish: the tap-to-cast bar (Home's own, its slots, scroll, cooldowns and fight rule) into the corner's window, as
+        // one scrolling bar (LEFT: four in view) whatever Home's split; its touches its own (TapBridge on the add-on's castbar row)
+        if (cast != null && !docked(castStrip)) {
+            castLoanSide = castStrip.side; castLoanHalf = castStrip.splitHalf
+            dockLend(castStrip, cast)
+            castStrip.splitHalf = 0; castStrip.side = CastStripModel.Side.LEFT
+            castStrip.visibility = View.VISIBLE
+        }
+        // the 1535 polish (the user: "The party mode box and text box bot have solid backgrounds and it needs to be way more see through")
+        chatPane.dockGround = true; partyView.dockGround = true; questPane.docked = quest != null
+        if (lent(mapView) && mapView.parent === mapSlot) {
+            dockLend(mapView, map)
+            mapView.compactCover = 0f; mapView.rimKeepOut = emptyList()       // (Home's card and buffs are not over it there)
+        }
+    }
+
+    private fun dockLend(v: View, into: ViewGroup) {
+        if (docked(v)) { if (v.parent !== into) { (v.parent as? ViewGroup)?.removeView(v); into.addView(v) }; return }
+        val parent = v.parent as? ViewGroup ?: return
+        val mv = v as? MapView
+        dockLoans.add(DockLoan(v, parent, parent.indexOfChild(v), v.layoutParams, v.alpha, v.translationX, v.translationY,
+            mv?.compactCover ?: 0f, mv?.rimKeepOut ?: emptyList(), v.visibility))
+        parent.removeView(v)
+        into.addView(v, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        v.translationX = 0f; v.translationY = 0f; v.alpha = 1f
+        if (v === questPane) v.visibility = View.VISIBLE                 // (a Home layout without the card still has it in the dock)
+    }
+
+    /** every lent view back where it came from (last lent first), as it was; Home lays its page again */
+    fun reclaimFromDocks() {
+        chatPane.dockGround = false; partyView.dockGround = false; questPane.docked = false; questPane.dockFold = false
+        castLoanSide?.let { castStrip.side = it; castStrip.splitHalf = castLoanHalf; castLoanSide = null }
+        questPane.translationZ = restZ(Part.QUESTS)
+        if (dockLoans.isEmpty()) return
+        while (dockLoans.isNotEmpty()) {
+            val l = dockLoans.removeAt(dockLoans.size - 1)
+            val v = l.view
+            // the map given back to its room meanwhile (another room opened: giveBack): it is that room's now
+            if (v === mapView && !lent(mapView)) continue
+            (v.parent as? ViewGroup)?.removeView(v)
+            if (l.lp != null) l.parent.addView(v, min(l.index, l.parent.childCount), l.lp) else l.parent.addView(v, min(l.index, l.parent.childCount))
+            v.translationX = l.tx; v.translationY = l.ty; v.alpha = l.alpha
+            if (v.visibility != l.vis) v.visibility = l.vis
+            if (v === mapView) { mapView.compactCover = l.cover; mapView.rimKeepOut = l.keepOut }
+        }
+        requestLayout(); invalidate()
+    }
+
+    // ===== SINGLE: NPC =====
+    /**
+     * NPC (single screen mode's class wheel, SingleLook row 7 HOME_LAYERS): Home draws ONLY its class wheel's layer over the game - no
+     * page, no modules, no ground of its own (the rooms column's is the host's), the layer laid as a centred square of its slot's size;
+     * a touch outside it is taken (nothing of Home's under it is pressed). False (two screens, always): Home exactly as before
+     */
+    var singleLayersOnly = false
+        set(v) {
+            if (field == v) return
+            field = v
+            background?.alpha = if (v) 0 else 255
+            requestLayout(); invalidate()
+        }
+
+    private fun singleLayersDraw(c: Canvas) {
+        if (classLayer.parent === this && classLayer.visibility == View.VISIBLE) drawChild(c, classLayer, drawingTime)
+    }
+
+    private fun singleLayersLayout(w: Int, h: Int) {
+        val side = (if (classRect.isEmpty) minOf(w, h) else minOf(classRect.width(), w, h)).coerceAtLeast(1)
+        val l = (w - side) / 2; val t = (h - side) / 2
+        classLayer.layout(l, t, l + side, t + side)
+    }
+
+    private fun singleLayersTouch(e: MotionEvent): Boolean {
+        if (classLayer.parent !== this || classLayer.visibility != View.VISIBLE) return true
+        val t = MotionEvent.obtain(e)
+        t.offsetLocation(-classLayer.left.toFloat(), -classLayer.top.toFloat())
+        try { classLayer.dispatchTouchEvent(t) } finally { t.recycle() }
+        return true
+    }
+
+    /** the Keyboard & Trackpad tool's tab while it is open (0 the Track Pad, 1 the Keyboard), else -1 */
+    fun toolTab(): Int = if (typeWanted) typeTool.tabNow else -1
+
+    /** Home's sub-states but the tool (SingleLook: the tool is the strip over the game, not Home's page) */
+    fun subBesidesTool(): Boolean = flow.full != null || auraPane.open != null || mailOpen
+
+    /** single screen mode (SingleNpc, spec 8.3): the open tool lent to the strip window (its strip look); null = none open / lent already */
+    fun singleToolLend(scale: Float): TypeToolView? {
+        if (!typeWanted || typeTool.parent !== this) return null
+        removeView(typeTool)
+        typeTool.translationZ = 0f
+        typeTool.stripScale = scale
+        typeTool.strip = true
+        return typeTool
+    }
+
+    /** the tool back on Home's page (the strip closed, or Home's page shows) */
+    fun singleToolBack() {
+        typeTool.onTab = null
+        typeTool.strip = false
+        if (typeTool.parent !== this) { (typeTool.parent as? ViewGroup)?.removeView(typeTool); addView(typeTool) }
+        typeTool.translationZ = TYPE_Z
+        if (typeWanted) typeTool.bringToFront()
+        requestLayout()
     }
 
     companion object {

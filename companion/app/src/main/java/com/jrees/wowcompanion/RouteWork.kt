@@ -63,7 +63,8 @@ object RouteWork {
         // load that failed - an IOException or an OutOfMemoryError - or the miss window after it) still sees the bump when its map arrives
         private val stored = HashSet<Int>()
         private val listeners = ArrayList<() -> Unit>()
-        @Synchronized fun onLoaded(l: () -> Unit) { listeners.add(l) }
+        /** returns the listener's removal (HostEnds: a host or its map takes its own off at its end) */
+        @Synchronized fun onLoaded(l: () -> Unit): () -> Unit { listeners.add(l); return { synchronized(this) { listeners.remove(l) } } }
 
         fun get(map: Int): T? = get(map, true)
 

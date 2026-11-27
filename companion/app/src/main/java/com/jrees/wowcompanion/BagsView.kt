@@ -53,7 +53,25 @@ private val bmpPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
  *
  * Pixel sizes are physical px on the 1240 x 1080 bottom screen, like every other room.
  */
-class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
+class BagsView(c: Context) : FrameLayout(c), BLeadsHome, RoomKeep {
+
+    /**
+     * BottomSync round 3 (RoomKeep; the review, 2026-11-26: "Bags' view ... comes back without its state" on the bottom-grid return, a
+     * rebuild): the clean view's toggle, the search's words and the grid's scroll, for a host made again (the add-on's documents draw
+     * the bags themselves). No game action
+     */
+    override fun keepUi(): Map<String, String> = buildMap {
+        if (state.clean) put("clean", "1")
+        (search.text?.toString() ?: "").takeIf { it.isNotEmpty() }?.let { put("search", it) }
+        if (gridScroll.scrollY > 0) put("scroll", gridScroll.scrollY.toString())
+    }
+    override fun restoreUi(k: Map<String, String>) {
+        post {
+            if ((k["clean"] == "1") != state.clean) state.toggleClean()
+            k["search"]?.let { t -> search.setText(t); search.setSelection(t.length) }
+            k["scroll"]?.toIntOrNull()?.let { y -> gridScroll.post { gridScroll.scrollTo(0, y) } }
+        }
+    }
 
     private val column = LinearLayout(c)
     private val head = Header(c)
@@ -104,13 +122,33 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     // its VOICE page too (the user's pick 2026-11-16: X on the strip's Search, Bags.lua bags-voice1): the words replace the search, and the
     // grid dims as they come
     private val kb = ChatKeyboard(c, swap = false, voice = true).apply { visibility = View.GONE; sendWord = "Search" }
-    private val ctlLayer = CtlLayer(c, state, grid, gridScroll, bar) { search }
+    private val ctlLayer = CtlLayer(c, state, grid, gridScroll, bar, { wideLeft.toFloat() }) { search }
+
+    /**
+     * THE 16:9 LAYOUT (single screen mode's DS menu, the 1536 pass 1: SingleMenu.WIDE; the user: "I want it to be its own experience
+     * that feels like it was made for the top screen"): laid across the top screen's stage, the room keeps its bottom-screen page on the
+     * LEFT ([wideLeft] px wide: the bag bar, the search, the grid of 10 - the add-on's D-pad walks the same 10) and the RIGHT is the
+     * tooltip's own column: the item, its actions and its compare stand there, level with the cursor's row, never over the grid.
+     * 0 = the bottom screen's page (the grid the room's whole width, the tooltip beside the cursor)
+     */
+    var wideLeft: Int = 0
+        set(v) {
+            if (field == v) return
+            field = v
+            column.layoutParams = FrameLayout.LayoutParams(if (v > 0) v else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            requestLayout(); invalidate(); ctlLayer.invalidate()
+        }
 
     // the room's ground (beautify 8.4, the user 2026-11-17: "I do really like having the background image there"): the kit's rock
     private val groundBox = RectF()
     override fun onDraw(c: Canvas) {
         super.onDraw(c)
         groundBox.set(0f, 0f, width.toFloat(), height.toFloat()); RoomGround.bags(c, groundBox)
+        // the 16:9 layout: the tooltip's column a pane of its own, a rule between it and the page
+        if (wideLeft > 0) {
+            groundBox.set(wideLeft + 14f, 14f, width - 14f, height - 14f)
+            UiKit.pane(c, groundBox, right = true, light = 0.55f)
+        }
     }
 
     init {
@@ -225,7 +263,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
     // drawn from bags.ctl; the addon holds the controller, so nothing here sends anything.
 
     private class CtlLayer(c: Context, private val st: State, private val grid: Grid, private val scroll: View,
-                           private val bar: BagBar, private val searchBox: () -> View) : View(c) {
+                           private val bar: BagBar, private val wideLeft: () -> Float, private val searchBox: () -> View) : View(c) {
         private val at = IntArray(2); private val gat = IntArray(2); private val sat = IntArray(2)
         private val warm = BagsCursor.WarmFade()           // the quarter second before the FIRST tooltip only (d)
 
@@ -251,6 +289,7 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
             const val DE_COLS = 10       // bags-de1: the grid as wide as Bags' own (Grid.COLS): drawSlot and the tooltip's place reused
             const val DE_GAP = 10f
             const val DE_GOT_MS = 6000L  // bags-de1: the strip of what the loot gave shows this long
+            const val WIDE_TIP_MAX = 680f  // the 16:9 layout: the tooltip's width at most in its own column
             /** the Y menu's rows: the add-on's names -> their words, and a finger's tap (bmvq 19 / 20 / 21; Compare by its prefix) */
             val MENU_WORDS = linkedMapOf("split" to "Split Stack", "bind" to "Bind to a Button", "compare" to "Compare", "destroy" to "Destroy")
             val MENU_TAP = mapOf("split" to 19, "bind" to 20, "compare" to COMPARE_TAP, "destroy" to 21)
@@ -447,6 +486,14 @@ class BagsView(c: Context) : FrameLayout(c), BLeadsHome {
          * tooltip, [UiKit.COMPARE_SCALE]). Returns (x, width, compare x).
          */
         private fun place(cur: RectF, cmpScale: Float = 1f): Triple<Float, Float, Float> {
+            // the 16:9 layout: the tooltip's own column right of the grid's page, the compare beside it there
+            val wl = wideLeft()
+            if (wl > 0f) {
+                val x0 = wl + 30f
+                val room = width - 24f - x0
+                val tw = minOf(WIDE_TIP_MAX, (room - 12f) / (1f + cmpScale))
+                return Triple(x0, tw, x0 + tw + 12f)
+            }
             val half = width / 2f
             val tw = (half - 30f) * 0.9f
             val cw = tw * cmpScale

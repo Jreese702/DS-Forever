@@ -19,7 +19,7 @@ object ReportFlow {
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     fun init(c: Context) { if (prefs == null) prefs = c.applicationContext.getSharedPreferences("report", Context.MODE_PRIVATE) }
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     private fun changed() { for (l in listeners) runCatching { l() } }
 
     /** something said (the Thor, batch15: "two words" kept Record grey after a short line): 3+ characters, a letter or digit among them */

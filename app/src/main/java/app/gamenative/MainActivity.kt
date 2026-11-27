@@ -299,6 +299,13 @@ class MainActivity : ComponentActivity() {
         super.onUserLeaveHint()
     }
 
+    // DS Forever's single screen mode (the user, 2026-11-25): Android's launcher on the bottom screen takes the controller's keys at a touch
+    // there; this activity stays resumed (multi-resume) but is no more the TOP resumed one - the game's task is brought back (keysTop)
+    override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
+        super.onTopResumedActivityChanged(isTopResumedActivity)
+        com.jrees.wowcompanion.fork.DsForeverScreen.topResumedFor(this, isTopResumedActivity)
+    }
+
     override fun onStop() {
         com.jrees.wowcompanion.IndoorKeepAlive.shown(applicationContext, false, "DS Forever stopped")   // issue 568 (see onPause)
         com.jrees.wowcompanion.fork.DsForeverScreen.hideFor(this)

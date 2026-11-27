@@ -61,10 +61,10 @@ class WorldMapRoomView(context: Context) : View(context) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
     private val inFlight = HashSet<String>()
-    init { MemWatch.source("worldroom") { bmps.size().toLong() } }
+    init { context.atHostEnd(MemWatch.source("worldroom") { bmps.size().toLong() }) }
     // 1.0.28 (the low-memory kill #173: 70 - 72 MB of this room's pictures held in the killed run's last 5 minutes, the game at
     // 3.6 GB): Android's running-low warning lets them go while the room is not on screen (they are read again when it opens)
-    init { MemWatch.onTrim("worldroom") { level -> trimmed(level) } }
+    init { context.atHostEnd(MemWatch.onTrim("worldroom") { level -> trimmed(level) }) }
     /**
      * The trim's let-go (MemWatch.onTrim's "worldroom"): what it freed, bytes. 2026-11-17: while Home's map is zoomed out on these
      * pictures the warning also stops it asking for them ([backdropPaused]: Home's map falls back to its zone, today's map) until its

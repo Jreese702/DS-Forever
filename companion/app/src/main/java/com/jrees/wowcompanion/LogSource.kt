@@ -18,6 +18,12 @@ interface LogSource {
     fun gapCount(): Int
     /** issue #231 (diagnostics only): the reader's state in one line for the report (the add-ons' silence line) */
     fun diag(): String = kind
+    /** the bottom screen comes straight back (BottomSync, 2026-11-25): a parked host's reader stops reading and keeps its place, the
+     *  return reads on from there ([LogTail]); Streaming's bridge keeps the no-op */
+    fun pause() {}
+    fun resume() {}
+    /** where a new reader may go on from (a rebuilt host: BottomSync), null = none (the bridge) */
+    fun place(): LogTail.Place? = null
 }
 
 /** which game the app plays: LOCAL = the container on the Thor (today), STREAM = the PC through Moonlight + the Desktop bridge */

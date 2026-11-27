@@ -106,7 +106,8 @@ object Theme {
         try { return block() } finally { cur = was; UiKit.dropThemed() }
     }
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    /** returns the listener's removal (HostEnds: a host takes its own off at its end) */
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }
     fun removeListener(l: () -> Unit) { listeners.remove(l) }
     private const val KEY = "theme"
     private const val KEY_CUSTOM = "theme_custom"

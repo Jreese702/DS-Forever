@@ -79,7 +79,14 @@ class ControllerView(
     onBind: (SpellsModel.Entry) -> Unit = {},
     /** another view reads the controller now (one reader at a time): the page does not read the triggers then */
     otherReader: () -> Boolean = { false },
-) : View(context), BLeadsHome {
+) : View(context), BLeadsHome, RoomKeep {
+
+    /**
+     * BottomSync round 3 (RoomKeep; the review, 2026-11-26: "the Spellbook / Controller tab ... come back without their state" on the
+     * bottom-grid return, a rebuild): the page's tab, set, chosen button and radial page (PadTabPage's own), for a host made again
+     */
+    override fun keepUi(): Map<String, String> = page.keepUi()
+    override fun restoreUi(k: Map<String, String>) { page.restoreUi(k); invalidate() }
 
     private var book: SpellsModel.Book? = null
     private var ctl: SpellsModel.Ctl? = null
@@ -104,8 +111,8 @@ class ControllerView(
         RadialMeta.init(context)
         // p55: on the main looper, not the view's queue: a room view not attached (Home or Settings on show) still tells the add-on at
         // once (Show in combat arms the bar's in-combat layer, the bar Off its pages)
-        HomeSettings.onChange { MAIN.post { cbSetting(false); invalidate() } }   // the radial's way (Hold / Tap); p53: the bar's setting
-        CastStripModel.Live.onChange { MAIN.post { cbSetting(false); invalidate() } }    // p53: the Cast bar tab's slots
+        context.atHostEnd(HomeSettings.onChange { MAIN.post { cbSetting(false); invalidate() } })   // the radial's way (Hold / Tap); p53: the bar's setting
+        context.atHostEnd(CastStripModel.Live.onChange { MAIN.post { cbSetting(false); invalidate() } })    // p53: the Cast bar tab's slots
     }
 
     private val page = PadTabPage(this, { cells -> onPadCells(cells) }, { e -> onBind(e) }, otherReader, cursorOnTabs = { false },

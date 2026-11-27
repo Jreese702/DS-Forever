@@ -360,6 +360,20 @@ class PadTabPage(
 
     /** the tab on show, for [ControllerView] */
     fun currentView(): String = view
+    /**
+     * BottomSync round 3 (the review, 2026-11-26: "the Spellbook / Controller tab ... come back without their state" on the bottom-grid
+     * return, a rebuild; the add-on's padtabctl is never kept by DocMemory): the tab, the set, the chosen button and the radial's page,
+     * for a host made again. Laid back as the add-on's own (no echo window, no tap: the game's window is still on them, and the add-on's
+     * next document wins as always)
+     */
+    fun keepUi(): Map<String, String> = mapOf("view" to view, "set" to set.toString(), "pos" to pos.toString(), "rpage" to rpage.toString())
+    fun restoreUi(k: Map<String, String>) {
+        k["view"]?.takeIf { it.isNotEmpty() }?.let { view = it; viewUntil = 0L }
+        k["set"]?.toIntOrNull()?.let { set = it }
+        k["pos"]?.toIntOrNull()?.let { pos = it }
+        k["rpage"]?.toIntOrNull()?.let { rpage = it }
+        host.invalidate()
+    }
     /** a finger chose a tab: shown at once; the addon's echo (its padtab pick) follows */
     fun showTabLocal(v: String) {
         view = v; viewUntil = SystemClock.uptimeMillis() + ECHO_MS; tChooser = null; tBox = null
@@ -546,8 +560,8 @@ class PadTabPage(
     private fun fight(): Boolean = view == "combat"
 
     // ---------------------------------------------------------------- p29 (f-combat-forms, PadMap m55): the In combat tab's FORM row
-    /** the form whose own set the bare set shows now (the In combat tab, a form chosen, no trigger set); null = the caster's */
-    private fun formNow(): Int? = ctl?.form?.takeIf { cv() == "combat" && shown() == 1 && (map?.forms?.any { f -> f.id == it } == true) }
+    /** the form whose own set the room shows now (the In combat tab, a form chosen; PadMap m204: every set); null = the caster's */
+    private fun formNow(): Int? = ctl?.form?.takeIf { cv() == "combat" && (map?.forms?.any { f -> f.id == it } == true) }
     /** the button as the room shows it: with a form chosen, the bare set's positions are that form's own In-combat spells (empty = the
      *  caster's spell fights there); B (7) stays the game's Back */
     private fun slotOf(m: PadMapModel.Map, s: Int, p: Int): PadMapModel.Slot? {
@@ -556,11 +570,8 @@ class PadTabPage(
     }
     /** p56: the controller's button [p] as drawn (the cursor on the bar or not) */
     private fun ctlSlotOf(m: PadMapModel.Map, s: Int, p: Int): PadMapModel.Slot? {
-        val f = formNow()
-        if (f == null || s != 1 || p == 7) return PadMapModel.slot(m, s, p)
-        val r = PadMapModel.formFight(m, f, p)
-        return if (r != null) PadMapModel.Slot(p, null, PadMapModel.Kind.COMBAT, r.id, r.name, r.icon, combat = r, ov = true)
-               else PadMapModel.Slot(p, null, PadMapModel.Kind.NONE, null, null, 0)
+        val f = formNow() ?: return PadMapModel.slot(m, s, p)
+        return PadMapModel.formSlot(m, f, s, p) ?: PadMapModel.slot(m, s, p)         // PadMap m204: that form's own on every set
     }
     /** the form row: Caster, then the forms (between the set row and the buttons) */
     private fun formRect(i: Int) = PadDiamonds.rect(PadDiamonds.formRect(i))
@@ -739,7 +750,7 @@ class PadTabPage(
 
     /** m34 / p43 why the chosen button cannot take a game binding (PadMap's rule, ChooserTabs.bindBlock), or null when it can */
     private fun bindBlock(m: PadMapModel.Map): String? =
-        ChooserTabs.bindBlock(shown(), pos, toolbar = m.dpad?.want == true, form = formNow() != null && pos != 7)
+        ChooserTabs.bindBlock(shown(), pos, toolbar = m.dpad?.want == true, form = formNow() != null && (shown() != 1 || pos != 7))
 
     private fun bindWhy(m: PadMapModel.Map): String? = when (bindBlock(m)) {
         "form" -> "A form's set has no game key of its own"                // p43 (PadMap m141)
@@ -1019,7 +1030,7 @@ class PadTabPage(
             UiKit.pad(c, glyph(p), r.centerX() + 36f * k, r.centerY() - 36f * k, 40f * k)
         }
         // m190 HOLD TO CAST: a button with a hold spell wears it as a small round badge at its top left (the study's room mockup)
-        if (!onBar && cv() != "party" && cv() != "radial" && m.holdOn == true && HoldCast.usable) for (p in 1..8) PadMapModel.slot(m, s, p)?.holdOf(cv() == "combat")?.let { hr ->
+        if (!onBar && cv() != "party" && cv() != "radial" && m.holdOn == true) for (p in 1..8) if (p != 7) PadMapModel.slot(m, s, p)?.holdOf(cv() == "combat")?.let { hr ->
             val r = ctlSquare(p); val k = r.width() / 80f
             HoldArt.badge(c, r.left + 12f * k, r.top + 12f * k, 15f * k, Icons.get(hr.icon), -1f, lit = false)
         }
@@ -1770,8 +1781,8 @@ class PadTabPage(
     /** the hold pane belongs on this page: WoW Defaults / In combat's eight buttons (never a bar page, the radial, Party mode, a stick); an
      *  add-on before m190 (no `hold` in its padmap) keeps the pages as they were */
     private fun holdHere(m: PadMapModel.Map): Boolean = m.holdOn != null && !castBar() && cv() != "party" && view != "radial" && pos in 1..8
-    /** hold to cast works now (the add-on's word and the app's probe) */
-    private fun holdOn(m: PadMapModel.Map): Boolean = m.holdOn == true && HoldCast.usable
+    /** hold to cast works now (the add-on's word; PadMap m194: always, no probe) */
+    private fun holdOn(m: PadMapModel.Map): Boolean = m.holdOn == true
     /** the Hold spell button is on the page now: the pane's, nothing carried, the toolbar not on the button */
     private fun holdButtonShown(m: PadMapModel.Map): Boolean =
         holdHere(m) && holdOn(m) && talkKind() == TALK_NONE && carryNow() == null && toolAt(shown(), pos) == null && chooserList() == null
@@ -1838,10 +1849,12 @@ class PadTabPage(
             c.drawText(holdWord, x0 + 112f, r2 + 34f, pl)
             val markX = x0 + 112f + pl.measureText(holdWord) + 22f
             HoldArt.mark(c, markX, r2 + 26f, 11f, HOLD_MARK)
-            c.drawText(HoldCast.holdWord(), markX + 22f, r2 + 34f, pd)              // the hold time ("0.4 s"), beside its mark
+            // round 1533: the fire point ("0.7 s, casts when full": the hold spell casts the moment the ring fills, while still held);
+            // the int/1533 review: fitted into the pane (es / fr ran past the view's edge, cut mid-word; en over the page margin) -
+            // after the mark while it fits there, else on its own line under the hold spell's name
+            val hint = holdHint(Tr.t(HOLD_POINT.replace("%s", HoldCast.holdWord())), pd, pl.measureText(holdWord), w)
+            c.drawText(hint.text, hint.x, r2 + hint.dy, Paint(pd).apply { textSize = hint.size })
             if (hr != null) c.drawText(TextUtils.ellipsize(Tr.t(hr.name), TextPaint(ps), x1 - x0 - 128f, TextUtils.TruncateAt.END).toString(), x0 + 112f, r2 + 80f, ps)
-        } else if (!holdOn(m)) {
-            c.drawText(Tr.t(HOLD_OFF_LINE), x0 + 8f, r2 + 50f, pd)
         }
         // the red line over the buttons: a note (a refusal, a fight), else a real problem of a base face
         val act = actRect(w, h)
@@ -2790,7 +2803,40 @@ class PadTabPage(
         private val HOLD_MARK = Color.rgb(150, 110, 40)
         /** the user, 2026-11-24: "Use the word bind instead of change" - one word for the button, set or not */
         const val HOLD_BIND = "Bind hold"
-        const val HOLD_OFF_LINE = "Hold to cast isn't available yet"
+        /** m194 / round 1533: the Hold row's hint - the fire point, and that the hold spell casts there (the ring full, still held) */
+        const val HOLD_POINT = "%s, casts when full"
+        /** the Hold row's hint at its smallest before it is cut (the pane's dim 24 px is its size) */
+        const val HOLD_HINT_MIN_PX = 16f
+        /** ... and its smallest after the Hold mark: smaller than this, it takes its own line */
+        const val HOLD_HINT_INLINE_MIN_PX = 20f
+        /** its own line's baseline below the Hold row's top (under the hold spell's name, r2 + 80; above the red note line) */
+        const val HOLD_HINT_LINE = 118f
+
+        /** where the Hold row's hint is drawn: [text] as fitted, at x [x], [dy] below the row's top, [size] px */
+        data class HoldHint(val text: String, val x: Float, val dy: Float, val size: Float)
+
+        /**
+         * THE HOLD ROW'S HINT (the int/1533 review: es "se lanza al llenarse" and fr "se lance une fois plein" ran past the view's edge,
+         * cut mid-word - the one line saying the hold casts when full was lost; en ran over the page margin): [text] after the Hold
+         * mark ([holdW] = the Hold word's width in the row's 24 px) while it fits there at [HOLD_HINT_INLINE_MIN_PX] or more, else on its
+         * own line under the hold spell's name (x0 + 112, the name's column) at its size or smaller down to [HOLD_HINT_MIN_PX], cut with
+         * an ellipsis only past that. [base] is the row's dim paint (its size the most), [w] the view's width
+         */
+        fun holdHint(text: String, base: Paint, holdW: Float, w: Float): HoldHint {
+            val x0 = SPLIT + 40f; val x1 = w - 56f
+            val hx = x0 + 112f + holdW + 22f + 22f
+            val p = Paint(base)
+            if (shrinkTo(text, p, x1 - hx, HOLD_HINT_INLINE_MIN_PX)) return HoldHint(text, hx, 34f, p.textSize)
+            val lx = x0 + 112f
+            p.textSize = base.textSize
+            shrinkTo(text, p, x1 - lx, HOLD_HINT_MIN_PX)
+            return HoldHint(UiKit.fitEnd(text, p, x1 - lx), lx, HOLD_HINT_LINE, p.textSize)
+        }
+        /** [p] a pixel smaller at a time, not below [minPx], until [text] fits [maxW]; true = it fits */
+        private fun shrinkTo(text: String, p: Paint, maxW: Float, minPx: Float): Boolean {
+            while (p.measureText(text) > maxW && p.textSize > minPx) p.textSize = maxOf(minPx, p.textSize - 1f)
+            return p.measureText(text) <= maxW
+        }
         /** m190: the Hold spell button (touch: Book b80's page-3 code 28 opens the add-on's hold chooser) */
         private const val DOWN_HOLD = 970
     }

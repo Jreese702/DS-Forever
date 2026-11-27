@@ -1531,6 +1531,19 @@ fun XServerScreen(
             // presses: a release always passes, so nothing sticks down. DS Forever's own copy (PadFeed, above) still gets them
             if (it.event.repeatCount == 0) com.jrees.wowcompanion.SetupBridge.log?.invoke("pop-up: ${KeyEvent.keyCodeToString(it.event.keyCode)} held back from the game")
             true
+        } else if (isGamepad && com.jrees.wowcompanion.PopupHold.holdsKey(false, it.event.keyCode, it.event.action == KeyEvent.ACTION_DOWN,
+                room = com.jrees.wowcompanion.SetupBridge.roomShoulderPress(it.event.keyCode, it.event.action == KeyEvent.ACTION_DOWN,
+                    it.event.repeatCount))) {
+            // DS FOREVER (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"): a tabbed room (Character,
+            // Group Finder, Professions, Social) owns L / R - they step its tab row from DS Forever's own copy (PadFeed, above) - so the
+            // game never gets the bumper press too (LB is its emulated Ctrl, RB its targeting / bar paging). A release always passes
+            true
+        } else if (isGamepad && com.jrees.wowcompanion.PopupHold.holdsKey(false, it.event.keyCode, it.event.action == KeyEvent.ACTION_DOWN,
+                trigger = com.jrees.wowcompanion.SetupBridge.roomTriggers)) {
+            // DS FOREVER (the 1536 DS menu, the user: "HOLD THEM BACK from the game while a room is open, so they only switch rooms"): a
+            // room on single screen mode's menu stage owns ZL / ZR (the next / previous room from DS Forever's own copy, PadFeed); their
+            // digital keys never reach the game meanwhile (the analog pull: WinHandler.holdOut). A release always passes
+            true
         } else if (isGamepad && com.jrees.wowcompanion.LaunchLoad.holdsPad() && it.event.action == KeyEvent.ACTION_DOWN) {
             // DS FOREVER (the launch screen, 2026-11-24): until the game's first picture nothing of the game shows, so a press never
             // reaches it (a stray A at its login screen); a release always passes, so nothing sticks down. The abort chord and DS
@@ -1548,14 +1561,31 @@ fun XServerScreen(
                 val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.deviceId)
                 // 1.0.29 key lag ("insane input lag on my face buttons"): the press's event time -> the game's handler, rate-limited
                 com.jrees.wowcompanion.KeyLag.atGame(it.event)
-                if (assignedSlot > 0) {
-                    handled = winHandler.onKeyEvent(it.event)
-                } else {
-                    winHandler.setCurrentController(it.event.deviceId)
-                    handled = physicalControllerHandler?.onKeyEvent(it.event) == true
-                    if (!handled) handled = PluviaApp.inputControlsView?.onKeyEvent(it.event) == true
-                    // Final fallback to WinHandler passthrough
-                    if (!handled) handled = winHandler.onKeyEvent(it.event)
+                // DS Forever (the int/1533 review, single screen mode): Android's CANCELLED up (a touch on the other screen moved the keys
+                // to the window there while the button was held) is handed to hold to cast as one - a kept press stays down for the game
+                // to its fill and casts the hold there (HoldRelease.cancelUp); any other press gets its up as before
+                val cancelUp = it.event.action == KeyEvent.ACTION_UP && it.event.isCanceled
+                // round 2 of the review: a REAL up (the player let go; Android hands it to this window even after it cancelled the
+                // down) first lets go a kept press that key made - its up came cancelled and it was still down for the game to its
+                // fill (HoldCast.realUp: the tap, as a release before the fill). Every press's source (this device, this key) is
+                // taken at its down edge while the handlers write it
+                val realUp = it.event.action == KeyEvent.ACTION_UP && !it.event.isCanceled && it.event.repeatCount == 0
+                if (realUp) com.jrees.wowcompanion.HoldCast.realUp(it.event.deviceId, it.event.keyCode)
+                com.jrees.wowcompanion.HoldCast.inputFrom(it.event.deviceId, it.event.keyCode)
+                if (cancelUp) com.jrees.wowcompanion.HoldCast.canceling(true)
+                try {
+                    if (assignedSlot > 0) {
+                        handled = winHandler.onKeyEvent(it.event)
+                    } else {
+                        winHandler.setCurrentController(it.event.deviceId)
+                        handled = physicalControllerHandler?.onKeyEvent(it.event) == true
+                        if (!handled) handled = PluviaApp.inputControlsView?.onKeyEvent(it.event) == true
+                        // Final fallback to WinHandler passthrough
+                        if (!handled) handled = winHandler.onKeyEvent(it.event)
+                    }
+                } finally {
+                    if (cancelUp) com.jrees.wowcompanion.HoldCast.canceling(false)
+                    com.jrees.wowcompanion.HoldCast.inputFrom(0, 0)
                 }
             }
             if (!handled && isKeyboard) {
@@ -1610,14 +1640,26 @@ fun XServerScreen(
                 val winHandler = xServerView!!.getxServer().winHandler
                 ControllerManager.getInstance().noteGamepadActivity(it.event)
                 val assignedSlot = ControllerManager.getInstance().getSlotForDevice(it.event.deviceId)
-                if (assignedSlot > 0) {
-                    handled = winHandler.onGenericMotionEvent(it.event)
-                } else {
-                    winHandler.setCurrentController(it.event.deviceId)
-                    handled = physicalControllerHandler?.onGenericMotionEvent(it.event!!) == true
-                    if (!handled) handled = PluviaApp.inputControlsView?.onGenericMotionEvent(it.event) == true
-                    // Final fallback to WinHandler passthrough
-                    if (!handled) handled = winHandler.onGenericMotionEvent(it.event)
+                // DS Forever (the int/1533 review): a joystick's ACTION_CANCEL (the keys moved to the other screen while held: its hat is
+                // let go, ExternalController) is handed to hold to cast as a cancel, as a cancelled key's up above
+                val cancelPad = it.event.actionMasked == MotionEvent.ACTION_CANCEL
+                // round 2: a D-pad press made by this motion has the hat's direction as its source (its real up: ExternalController's
+                // first released reading after a cancel, HoldCast.hatUp)
+                com.jrees.wowcompanion.HoldCast.inputFrom(it.event.deviceId, com.jrees.wowcompanion.HoldCast.SRC_MOTION)
+                if (cancelPad) com.jrees.wowcompanion.HoldCast.canceling(true)
+                try {
+                    if (assignedSlot > 0) {
+                        handled = winHandler.onGenericMotionEvent(it.event)
+                    } else {
+                        winHandler.setCurrentController(it.event.deviceId)
+                        handled = physicalControllerHandler?.onGenericMotionEvent(it.event!!) == true
+                        if (!handled) handled = PluviaApp.inputControlsView?.onGenericMotionEvent(it.event) == true
+                        // Final fallback to WinHandler passthrough
+                        if (!handled) handled = winHandler.onGenericMotionEvent(it.event)
+                    }
+                } finally {
+                    if (cancelPad) com.jrees.wowcompanion.HoldCast.canceling(false)
+                    com.jrees.wowcompanion.HoldCast.inputFrom(0, 0)
                 }
             }
             if (PluviaApp.touchpadView?.hasPointerCapture() != true && !PluviaApp.isOverlayPaused) {
@@ -1708,12 +1750,11 @@ fun XServerScreen(
                     Lifecycle.Event.ON_RESUME -> {
                         Timber.d("Synchronizing XServerView renderer for lifecycle event: $event")
                         syncRendererToCurrentLifecycleState()
+                        // DS Forever, hold to cast round 1533: away from the game screen nothing fires early; back, a forced button that reads up is let go
+                        if (event == Lifecycle.Event.ON_PAUSE) com.jrees.wowcompanion.HoldCast.focusLost() else com.jrees.wowcompanion.HoldCast.focusBack()
                         if (event == Lifecycle.Event.ON_RESUME) {
                             xServerView?.getxServer()?.winHandler?.reassertPrimaryController()
                         }
-                        // DS Forever, hold to cast: the app losing the game screen lets every held-back press go (nothing sticks down)
-                        if (event == Lifecycle.Event.ON_PAUSE) com.jrees.wowcompanion.HoldCast.focusLost()
-                        else com.jrees.wowcompanion.HoldCast.focusBack()
                     }
                     else -> Unit
                 }

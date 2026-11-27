@@ -272,9 +272,12 @@ def party_pin(L):
     chk("C. review pin: the party document's on / aside / fight are PM.on() / R.aside / fighting() (what the app reads)", doc is not None)
     chk("C. review pin: the app's PartyModel.onLive = on && (aside == null || fight), Home's partyOnHere reads it",
         "val onLive: Boolean get() = on && (aside == null || fight)" in kt and "private fun partyOnHere(): Boolean = party.party?.onLive == true" in hv)
-    nb = re.search(r"function NB\.partyOn\(\)(.*?)\nend", ab, re.S)
+    # (nbar24, the 1532 audit: the real state moved to NB.partyReal, which NB.partyOn returns when no preview is up)
+    nb = re.search(r"function NB\.partyReal\(\)(.*?)\nend", ab, re.S)
+    no = re.search(r"function NB\.partyOn\(\)(.*?)\nend", ab, re.S)
     chk("C. review pin: NB.partyOn reads PadMap's live (on() for an older PadMap), no raid gate, not Trail's P.partyModeOn",
-        nb is not None and "p.live" in nb.group(1) and "IsInRaid" not in nb.group(1) and "partyModeOn" not in nb.group(1))
+        nb is not None and no is not None and "return NB.partyReal()" in no.group(1) and "p.live" in nb.group(1)
+        and "IsInRaid" not in nb.group(1) and "partyModeOn" not in nb.group(1))
     if m is None:
         return
     mk = L.eval('function(src) local f, e = loadstring("local PM, R, fighting = ...; return " .. src); if not f then error(e) end; '
@@ -302,7 +305,7 @@ def main():
     W = G.WowCompanion
     NB = W.nbar
     src = open(AB, encoding="utf-8").read()
-    chk("0. ActionBar's tag nbar18 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar20"' in src
+    chk("0. ActionBar's tag nbar18 and nbar7's / nbar8's / nbar9's / nbar10's / nbar11's notes", 'local NB = { V = "nbar30"' in src
         and "nbar12 THE WINGS' PLATES AND PARTY MODE" in src and "nbar11 THE WINGS REWORK" in src and "nbar11 COMBAT SAFETY OF THE SLIDE" in src and "nbar7 THE COMBAT BAR ON THE TOP SCREEN" in src
         and "nbar8 (the fix pass on movable Home)" in src and "nbar9 (movable Home fix round 1)" in src
         and "nbar10 (movable Home fix round 2)" in src)

@@ -237,11 +237,14 @@ object SettingsTabs {
     }
     fun viewBlocks(tab: Tab): List<Block> = blocks(tab).filter { it in VIEW_BLOCKS }
 
-    /** the tab [dir] (-1 / +1) steps from [tab] among the VISIBLE tabs, wrapping (L on the first goes to the last) */
-    fun step(tab: Tab, dir: Int): Tab {
+    /**
+     * the tab [dir] (-1 / +1) steps from [tab] among the VISIBLE tabs; null past an end. NO WRAP (the user's pick, 2026-11-25: "Stop
+     * everywhere": every room's L / R and its tab row stop at the ends, as the Controller room's and the tabs moved on top: RoomTabRow.step)
+     */
+    fun step(tab: Tab, dir: Int): Tab? {
         val all = visible
         val i = all.indexOf(tab).let { if (it < 0) 0 else it }
-        return all[Math.floorMod(i + dir, all.size)]
+        return RoomTabRow.step(i, all.size, dir)?.let { all[it] }
     }
 
     /**

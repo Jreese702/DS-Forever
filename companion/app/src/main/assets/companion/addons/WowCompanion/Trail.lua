@@ -3905,6 +3905,12 @@ do
     end
 end
 
+-- prd25 EDIT HOME'S TOP-SCREEN PREVIEW (the user on test 1530, 2026-11-25: "When choosing the top screen options in combat it should
+-- also display the top screen ui so that its easy to visualize. Likewise the party mode should show a full party"): while PadMap m198's
+-- preview stands (out of combat only: P.pvNow is nil in the lockdown or with the player in combat), the HUD is held up as for the layout
+-- editor (why "preview"), and Party mode's preview lays it as Party mode does (P.partyModeOn: the lift for Hub hub79's four placeholder
+-- rows, the pet strip and aura row moved, ActionBar nbar23's centring); the In combat tab's preview lays it as Party mode off. Our own
+-- frames only, as ever.
 -- prd24 THE 1523 TEST BUILD MERGE: feat/extras-polish's prd22 (the pet's happiness left the HUD) and feat/fight-castbar's prd22 +
 -- prd23 (Party mode centred on the top screen; centre the rows) took the same numbers from prd21; all kept, their notes as each
 -- wrote them below; nothing else changed.
@@ -3926,7 +3932,7 @@ end
 -- prd23 (the user's pick 11-23, "Centre the rows"): with our HUD bars off (P.wanted false: P.tick returns before it reads Party mode,
 -- so P.partyOn kept its last word) P.cxFor reads Party mode live (P.partyModeOn), so P.partyGeo still carries ActionBar nbar15's
 -- shift and Hub's rows and Select tab fade to the centre alone; none of Trail's frames move (P.cx is left as it is).
-WC.prd = { V = "prd24", cx = 0, PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
+WC.prd = { V = "prd25", cx = 0, PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
@@ -5186,7 +5192,21 @@ do
     end
     -- ---------------------------------------------------------------- prd15: Party mode's [me][pet] row and Hub's grid under it
     -- Party mode on (PadMap's on, plainly true) outside a raid (raids: unchanged)
+    -- prd25: Edit Home's preview now (PadMap m198), nil in a fight
+    function P.pvNow()
+        local okL, l = pcall(InCombatLockdown)
+        if okL and l == true then return nil end
+        local okC, c = pcall(UnitAffectingCombat, "player")
+        if okC and c == true then return nil end
+        local pm = WC.padMap
+        local fn = type(pm) == "table" and pm.preview or nil
+        if type(fn) ~= "function" then return nil end
+        local ok, v = pcall(fn)
+        return (ok and type(v) == "table") and v or nil
+    end
     function P.partyModeOn()
+        local pv = P.pvNow()
+        if pv then return pv.party == true end                          -- prd25: the preview's own lay
         local p = type(WC.padMap) == "table" and WC.padMap.party or nil
         if type(p) ~= "table" or type(p.on) ~= "function" then return false end
         local okO, on = pcall(p.on)
@@ -5403,7 +5423,8 @@ do
         local picked = P.partyWho ~= nil or P.partyOn == true
         -- prd18: while the layout editor is open the HUD is held up too (why "layout": the piece being moved is seen)
         local editing = type(WC.lay) == "table" and WC.lay.editing == true
-        picked = picked or editing
+        local preview = P.pvNow() ~= nil                                -- prd25: Edit Home's preview holds it too
+        picked = picked or editing or preview
         local fight = P.fight()
         local hurt, src = P.hurt()
         if fight then P.lastFight = t end
@@ -5433,14 +5454,14 @@ do
         -- the target: 1 while wanted; out of combat and full (or no signal), HOLD_S then a FADE_S fade
         local target = 1
         if not on then target = (t - P.offAt >= P.HOLD_S) and 0 or 1 end
-        if hurt == nil and not fight and not P.lastFight and not powerOff then target = 0 end   -- no signal and no fight yet: nothing to show
+        if hurt == nil and not fight and not P.lastFight and not powerOff and not preview then target = 0 end   -- no signal and no fight yet: nothing to show
         -- the eased fade-and-slide: P.vis linear in time, the alpha and the offset on one curve (continuous both ways)
         if target > P.vis then P.vis = math.min(target, P.vis + dt / P.IN_S) else P.vis = math.max(target, P.vis - dt / P.OUT_S) end
         local e = 1 - (1 - P.vis) ^ 2
         P.alpha = e
         local dy = -P.TRAVEL * (1 - e)
         if dy ~= P.dy then P.dy = dy; P.place() end
-        P.why = fight and "fight" or (editing and "layout") or (picked and "party") or (powerOff and "power") or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
+        P.why = fight and "fight" or (editing and "layout") or (preview and "preview") or (picked and "party") or (powerOff and "power") or (src == "curve" and "curve") or (hurt and "hurt") or (P.alpha > 0 and "fading") or "full"
         if P.alpha > 0 then
             if not P.f:IsShown() then P.f:Show() end
             P.f:SetAlpha(P.alpha * P.REST * ((P.hudFade and P.petFadeA) or 1))   -- prd15: the HUD fades too while its lift changes

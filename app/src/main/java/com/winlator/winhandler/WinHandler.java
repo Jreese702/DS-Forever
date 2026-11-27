@@ -95,81 +95,61 @@ public class WinHandler {
 
     private static volatile WinHandler activeInstance;
 
-    // DS FOREVER, HOLD TO CAST (PadMap m190; the user, 2026-11-24: "hold to cast on a button so that we can have 2 spells per button"):
-    // player 1's buttons go through DS Forever's gate (com.jrees.wowcompanion.HoldGate, via HoldCast) before the game sees them. Only a
-    // press of a button whose place has a hold spell NOW is held back (a tap goes on release, a hold at the hold time with the Guide
-    // button as the marker); every other button, and everything while hold to cast is off, passes in the same call (no delay). The gate
-    // times itself on the main thread's clock: holdTick sends again at its next moment. Both roads to the game (the shared memory and
-    // the winhandler packets) carry the gated state; the Guide marker only the shared memory's (SDL button 5).
-    private final android.os.Handler holdTimer = new android.os.Handler(android.os.Looper.getMainLooper());
-    private final GamepadState holdOut = new GamepadState();
-    private volatile boolean holdGuide = false;
-    private ExternalController holdController = null;
-    private GamepadState holdLastState = null;          // the last raw state the gate saw, and its road (the virtual pad's or the controller's)
+    // DS Forever, hold to cast round 1533 (PadMap m199; the user on test 1532, 2026-11-25: "I also want this to cast right when
+    // the hold bar is filled, not when its released"). Player 1's presses and releases are still written in the same call, as made: no
+    // timer touches a press, no marker, no delay. Only a press DS Forever's add-on said it KEPT for a hold (its keep word), still held at
+    // its fire point, is written as RELEASED for the game from then on (com.jrees.wowcompanion.HoldCast / HoldRelease: A / X / Y / the
+    // D-pad only, never B, never the triggers, the shoulders, Select, Start or the sticks): the game's router casts the hold on that up,
+    // as it did on the physical up in 1532, and the physical release later changes nothing the game sees. holdFeed gives HoldCast each
+    // state before it is written; holdOut is that state with the forced controls up (the same object when none is: one volatile read).
+    private GamepadState holdLastState = null;          // the last state slot 0 wrote, and its road (the virtual pad's or the controller's)
     private boolean holdLastVirtual = false;
-    private final Runnable holdTick = this::holdResend;
 
-    /** player 1's state as the game gets it, the controller's road (sendMemoryFileState) */
-    private GamepadState holdGated(ExternalController controller, int slot) {
-        if (slot == 0) holdController = controller;
-        return holdGatedState(controller.state, slot, false);
-    }
-
-    /** player 1's state as the game gets it (main thread: the controller callbacks and holdTick), either road: the controller's
-     *  (sendMemoryFileState) or the profile's virtual pad (sendVirtualGamepadState: PhysicalControllerHandler maps player 1 there) */
-    private GamepadState holdGatedState(GamepadState s, int slot, boolean virtual) {
-        if (slot != 0 || s == null) return s;
-        long now = SystemClock.uptimeMillis();
-        int o;
+    // DS Forever, hold to cast round 1533: player 1's state [s] is about to be written (main thread): its edges onto HoldCast
+    private void holdFeed(GamepadState s, boolean virtual) {
+        if (s == null) return;
         try {
-            o = com.jrees.wowcompanion.HoldCast.filter(s.buttons & 0xFFFF, s.dpad[0], s.dpad[1], s.dpad[2], s.dpad[3],
-                    s.triggerL, s.triggerR, now);
+            // fix/hold-tweaks: the fire's mark needs a free trigger; int/1536: as the game gets them (a menu room's hold-back: both free)
+            boolean held = com.jrees.wowcompanion.SetupBridge.INSTANCE.getRoomTriggers();
+            com.jrees.wowcompanion.HoldCast.trigIn(held ? 0f : s.triggerL, held ? 0f : s.triggerR);
+            com.jrees.wowcompanion.HoldCast.padIn(s.buttons, s.dpad[0], s.dpad[1], s.dpad[2], s.dpad[3], SystemClock.uptimeMillis());
         } catch (Throwable t) {
-            holdGuide = false;
-            return s;                                                   // never in the way of the pad
+            // never in the way of the pad
         }
-        synchronized (holdOut) {
-            holdOut.copy(s);
-            holdOut.dpad[0] = (o & (1 << 10)) != 0;
-            holdOut.dpad[1] = (o & (1 << 11)) != 0;
-            holdOut.dpad[2] = (o & (1 << 12)) != 0;
-            holdOut.dpad[3] = (o & (1 << 13)) != 0;
-            holdOut.triggerL = com.jrees.wowcompanion.HoldCast.ltOut();
-            holdOut.triggerR = com.jrees.wowcompanion.HoldCast.rtOut();
-            // the 1528 audit: GamepadState's digital L2 / R2 (bits 10 / 11) kept for the packets (o's 10..13 are the gate's D-pad)
-            holdOut.buttons = (short) com.jrees.wowcompanion.HoldCast.packetButtons(o, s.buttons & 0xFFFF,
-                    s.triggerL, s.triggerR, holdOut.triggerL, holdOut.triggerR);
-        }
-        holdGuide = (o & (1 << 15)) != 0;
-        holdLastState = s;
         holdLastVirtual = virtual;
-        holdTimer.removeCallbacks(holdTick);
-        long next = com.jrees.wowcompanion.HoldCast.nextAt();
-        if (next != Long.MAX_VALUE) holdTimer.postAtTime(holdTick, Math.max(next, now + 1));
-        return holdOut;
+        if (virtual) holdLastState = s;
     }
 
-    /** the state the winhandler packets carry for [c]: player 1's gated copy, else its own */
-    private void holdWrite(ExternalController c, ByteBuffer out) {
-        if (c != null && c == holdController) {
-            synchronized (holdOut) { holdOut.writeTo(out); }
-        } else if (c != null) {
-            c.state.writeTo(out);
-        }
+    // DS Forever, hold to cast round 1533: player 1's state as the game gets it - [s] itself, or a copy with the forced controls up
+    // (every other bit, the L2 / R2 bits, the axes and the sticks as they are). The int/1533 review (single screen mode): and with the
+    // KEPT controls down - a kept press whose up Android cancelled (the keys moved to the other screen while it was held) stays down
+    // for the game to its fire point (HoldRelease.cancelUp), same bits as the forced mask
+    // fix/hold-tweaks (THE FIRE'S MARK, PadMap m204; the user's pick "Cast at the fill"): the code for the add-on's router on each FREE
+    // trigger (its analog value under HoldCast.TRIG_FREE, far below the game's trigger button): 3 while an A / X / Y / D-pad press is
+    // held, 6 + the control in the write that lets a kept press go at its ring's full point; a free trigger's own small value is 0 when no
+    // code is written (only the launcher's codes ever sit in that band)
+    // int/1536: the body lives in PadOut (no native library: its tests load it alone)
+    private static GamepadState holdOut(GamepadState s) {
+        return PadOut.holdOut(s);
     }
 
-    /** the gate's next moment (or HoldCast's ask: the probe's pulse, a new map): player 1's state sent again, by the road it came */
-    private void holdResend() {
+    // DS Forever, hold to cast round 1533: the fire point came (HoldCast's main-looper timer) - player 1's state sent again by the road
+    // slot 0 last used, with the fired control up
+    public void holdResend() {
         if (holdLastVirtual && holdLastState != null) {
             sendVirtualGamepadState(holdLastState, 0);
-            sendGamepadState();
-            return;
+        } else {
+            ExternalController c = getControllerFromSlot(0);
+            if (c == null) c = currentController;
+            if (c != null) sendMemoryFileState(c, getGamepadBuffer(0), 0);
         }
-        ExternalController c = holdController != null ? holdController : getControllerFromSlot(0);
-        if (c == null) c = currentController;
-        if (c == null) return;
-        sendMemoryFileState(c, getGamepadBuffer(0), 0);
         sendGamepadState();
+    }
+
+    // DS Forever, hold to cast round 1533: HoldCast's resend, through the live handler (never a reference to this one)
+    public static void holdResendActive() {
+        WinHandler w = activeInstance;
+        if (w != null) w.holdResend();
     }
 
     /**
@@ -247,7 +227,6 @@ public class WinHandler {
         for (int i = 0; i < rumbleDeviceIds.length; i++) {
             rumbleDeviceIds[i] = -1;
         }
-        com.jrees.wowcompanion.HoldCast.setResend(() -> holdTimer.post(holdTick));      // hold to cast: the gate's own sends
     }
 
     public void refreshControllerMappings() {
@@ -260,6 +239,7 @@ public class WinHandler {
 
     private void refreshControllerMappings(boolean clearDisconnectedSlots) {
         Log.d(TAG, "Refreshing controller assignments from settings...");
+        int holdWas = currentController != null ? currentController.getDeviceId() : -1;
         currentController = null;
         for (int i = 0; i < extraControllers.length; i++) {
             extraControllers[i] = null;
@@ -276,6 +256,11 @@ public class WinHandler {
             Log.i(TAG, "Player 1 has no assigned connected controller");
         }
         setGamepadSlotConnected(0, currentController != null || isVirtualGamepadActive());
+        // DS Forever, hold to cast round 1533: player 1's controller changed - its pending fires are off
+        int holdNow = currentController != null ? currentController.getDeviceId() : -1;
+        if (holdNow != holdWas) {
+            try { com.jrees.wowcompanion.HoldCast.padReset(false); } catch (Throwable t) { }
+        }
         // Initialize Extra Players (2, 3, 4)
         for (int i = 0; i < extraControllers.length; i++) {
             // Player 2 is slot 1, which corresponds to extraControllers[0]
@@ -593,7 +578,15 @@ public class WinHandler {
 
     public void stop() {
         this.running = false;
+        boolean holdWasActive = activeInstance == this;
         if (activeInstance == this) activeInstance = null;
+        // DS Forever, hold to cast round 1533: the session's end - nothing pending, nothing forced (the live handler's only)
+        if (holdWasActive) {
+            try {
+                com.jrees.wowcompanion.HoldCast.setResend(null);
+                com.jrees.wowcompanion.HoldCast.padReset(true);
+            } catch (Throwable t) { }
+        }
         for (int slot = 0; slot < MAX_PLAYERS; slot++) {
             rumbleTeardown(slot);
         }
@@ -768,9 +761,9 @@ public class WinHandler {
                     if (enabled3) {
                         this.sendData.putInt(gamepadId);
                         if (useVirtualGamepad2) {
-                            inputControlsView.getProfile().getGamepadState().writeTo(this.sendData);
+                            holdOut(inputControlsView.getProfile().getGamepadState()).writeTo(this.sendData);   // DS Forever, hold to cast round 1533
                         } else {
-                            holdWrite(this.currentController, this.sendData);   // hold to cast: player 1's gated copy
+                            holdOut(this.currentController.state).writeTo(this.sendData);   // DS Forever, hold to cast round 1533
                         }
                     }
                     sendPacket(port);
@@ -840,6 +833,8 @@ public class WinHandler {
         refreshControllerMappings();
         this.running = true;
         activeInstance = this;
+        // DS Forever, hold to cast round 1533: HoldCast's resend goes through the live handler (a static: nothing of this one is held)
+        try { com.jrees.wowcompanion.HoldCast.setResend(WinHandler::holdResendActive); } catch (Throwable t) { }
         startSendThread();
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
@@ -1033,9 +1028,9 @@ public class WinHandler {
                 if (enabled) {
                     this.sendData.putInt(!useVirtualGamepad ? this.currentController.getDeviceId() : inputControlsView.getProfile().id);
                     if (useVirtualGamepad) {
-                        inputControlsView.getProfile().getGamepadState().writeTo(sendData);
+                        holdOut(inputControlsView.getProfile().getGamepadState()).writeTo(sendData);   // DS Forever, hold to cast round 1533
                     } else {
-                        holdWrite(this.currentController, this.sendData);   // hold to cast: player 1's gated copy
+                        holdOut(this.currentController.state).writeTo(this.sendData);   // DS Forever, hold to cast round 1533
                     }
                 }
                 sendPacket(port);
@@ -1185,10 +1180,11 @@ public class WinHandler {
     }
 
     private void sendMemoryFileState(ExternalController controller, MappedByteBuffer buffer, int slot) {
+        if (slot == 0 && controller != null) holdFeed(controller.state, false);   // DS Forever, hold to cast round 1533: the edges first
         if (buffer == null || controller == null) {
             return;
         }
-        GamepadState state = holdGated(controller, slot);               // hold to cast: player 1 through the gate
+        GamepadState state = slot == 0 ? holdOut(controller.state) : controller.state;   // DS Forever, hold to cast round 1533
         buffer.putInt(OFF_CONNECTED, 1);
 
         buffer.putShort(OFF_LX, (short)(state.thumbLX * 32767));
@@ -1220,8 +1216,6 @@ public class WinHandler {
         sdlButtons[12] = state.dpad[2] ? (byte)1 : (byte)0;      // DPAD_DOWN
         sdlButtons[13] = state.dpad[3] ? (byte)1 : (byte)0;      // DPAD_LEFT
         sdlButtons[14] = state.dpad[1] ? (byte)1 : (byte)0;      // DPAD_RIGHT
-        // hold to cast's marker: SDL's GUIDE (button 5 of the virtual Xbox 360 pad; evshim passes all 15), player 1 only
-        sdlButtons[5] = (slot == 0 && holdGuide) ? (byte)1 : (byte)0;
         for (int i = 0; i < 15; i++) {
             buffer.put(OFF_BTN + i, sdlButtons[i]);
         }
@@ -1231,11 +1225,12 @@ public class WinHandler {
     }
 
     public void sendVirtualGamepadState(GamepadState state, int slot) {
+        if (slot == 0 && state != null) holdFeed(state, true);   // DS Forever, hold to cast round 1533: the edges first
         MappedByteBuffer buffer = getGamepadBuffer(slot);
         if (buffer == null || state == null) {
             return;
         }
-        state = holdGatedState(state, slot, true);                      // hold to cast: player 1 through the gate (this road too)
+        if (slot == 0) state = holdOut(state);   // DS Forever, hold to cast round 1533
         buffer.putInt(OFF_CONNECTED, 1);
 
         // Axes: write by fixed offsets, not sequential position
@@ -1273,7 +1268,6 @@ public class WinHandler {
         sdlButtons[12] = state.dpad[2] ? (byte) 1 : 0;        // Down
         sdlButtons[13] = state.dpad[3] ? (byte) 1 : 0;        // Left
         sdlButtons[14] = state.dpad[1] ? (byte) 1 : 0;        // Right
-        sdlButtons[5]  = (slot == 0 && holdGuide) ? (byte) 1 : 0;   // hold to cast's marker (SDL GUIDE), player 1 only
 
         for (int i = 0; i < 15; i++) {
             buffer.put(OFF_BTN + i, sdlButtons[i]);

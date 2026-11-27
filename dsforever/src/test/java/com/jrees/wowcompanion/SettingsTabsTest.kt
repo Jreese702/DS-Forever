@@ -2,6 +2,7 @@ package com.jrees.wowcompanion
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -369,14 +370,17 @@ class SettingsTabsTest {
         }
     }
 
-    @Test fun lAndRWrap() {
-        assertEquals(T.PERFORMANCE, SettingsTabs.step(T.GENERAL, -1))
-        assertEquals(T.GENERAL, SettingsTabs.step(T.PERFORMANCE, 1))
+    /** the user's pick 2026-11-25 ("Stop everywhere"): L / R and the row's Left / Right stop at the ends, as every other room's tabs */
+    @Test fun lAndRStopAtTheEnds() {
+        assertNull("L on the first tab: nothing", SettingsTabs.step(T.GENERAL, -1))
+        assertNull("R on the last tab: nothing", SettingsTabs.step(T.PERFORMANCE, 1))
         assertEquals(T.BOTTOM, SettingsTabs.step(T.GENERAL, 1))
         assertEquals(T.CONTROLLER, SettingsTabs.step(T.TOP, 1))
-        var t = T.GENERAL
-        repeat(SettingsTabs.visible.size) { t = SettingsTabs.step(t, 1) }
-        assertEquals(T.GENERAL, t)
+        assertEquals(T.ADDONS, SettingsTabs.step(T.PERFORMANCE, -1))
+        var t: SettingsTabs.Tab? = T.GENERAL
+        val seen = ArrayList<SettingsTabs.Tab>()
+        while (t != null) { seen += t; t = SettingsTabs.step(t, 1) }
+        assertEquals("R walks every visible tab once, then stops", SettingsTabs.visible, seen)
     }
 }
 

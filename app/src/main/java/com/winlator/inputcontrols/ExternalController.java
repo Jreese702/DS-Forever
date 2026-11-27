@@ -187,20 +187,30 @@ public class ExternalController {
         if (historyPos == -1 && !JoyConSupport.isJoyCon(event.getDevice())) {
             float axisX = getCenteredAxis(event, MotionEvent.AXIS_HAT_X, historyPos);
             float axisY = getCenteredAxis(event, MotionEvent.AXIS_HAT_Y, historyPos);
-            GamepadState gamepadState = this.state;
-            gamepadState.dpad[0] = axisY == -1.0f;
-            GamepadState gamepadState2 = this.state;
-            gamepadState2.dpad[1] = axisX == 1.0f;
-            GamepadState gamepadState3 = this.state;
-            gamepadState3.dpad[2] = axisY == 1.0f;
-            GamepadState gamepadState4 = this.state;
-            boolean[] zArr = gamepadState4.dpad;
             if (axisX == -1.0f) {
                 z = true;
             }
-            zArr[3] = z;
+            boolean[] hat = { axisY == -1.0f, axisX == 1.0f, axisY == 1.0f, z };
+            for (int i = 0; i < 4; i++) {
+                hatRead[i] = hat[i];
+                // DS Forever (the int/1533 review, round 2): a direction Android's cancel let go while it was held stays up until the
+                // hat first reads it released - a held key's down is never sent again, so the hat's next motion (a stick turn, trigger
+                // noise) must not press it a second time. That released reading is its real up (hold to cast: a kept press made by
+                // it is let go then, a release before the fill)
+                if (hatCut[i]) {
+                    if (hat[i]) { this.state.dpad[i] = false; continue; }
+                    hatCut[i] = false;
+                    try { com.jrees.wowcompanion.HoldCast.hatUp(event.getDeviceId(), i); } catch (Throwable t) { }
+                }
+                this.state.dpad[i] = hat[i];
+            }
         }
     }
+
+    /** DS Forever (the int/1533 review, round 2): the hat as last read (up, right, down, left), and the directions Android's cancel let
+     *  go while they were held - kept up until the hat reads them released (processJoystickInput) */
+    private final boolean[] hatRead = new boolean[4];
+    private final boolean[] hatCut = new boolean[4];
 
     private static float updateAxis(MotionEvent event, int axis, int historyPos, float retained) {
         InputDevice device = event.getDevice();
@@ -283,6 +293,32 @@ public class ExternalController {
     }
 
     public boolean updateStateFromMotionEvent(MotionEvent event) {
+        // DS Forever (the int/1533 review, single screen mode): Android's ACTION_CANCEL for a joystick - the keys moved to another
+        // screen's window while the pad was held (a palm on the bottom screen gives Android's launcher there the keys). It carries the
+        // last axis values and no ACTION_MOVE follows here, so the hat's D-pad stayed down for the game until its next motion: let go,
+        // as a cancelled key's up is. Hold to cast keeps a kept press down to its fire point itself (HoldCast.canceling, set by
+        // XServerScreen around this event). Round 2: the hat's directions that were down are held up until it reads them released (no
+        // second press from the next motion, processJoystickInput); the sticks and the analog triggers let go too - at rest no motion
+        // follows, so a held LT (the layer) or a pushed stick stayed the game's until the pad was touched again (the next motion gives
+        // them back as they are; a digital trigger's key has its own cancelled up)
+        if (isJoystickCancel(event)) {
+            boolean joyCon = JoyConSupport.isJoyCon(event.getDevice());
+            if (!joyCon) {
+                for (int i = 0; i < 4; i++) {
+                    if (hatRead[i]) hatCut[i] = true;
+                    hatRead[i] = false;
+                }
+                java.util.Arrays.fill(this.state.dpad, false);
+            }
+            state.thumbLX = 0f; state.thumbLY = 0f; state.thumbRX = 0f; state.thumbRY = 0f;
+            if (triggerType == TRIGGER_IS_AXIS && !joyCon) {
+                axisL2 = 0f; axisR2 = 0f; applyTriggers();
+            } else if (triggerType == TRIGGER_IS_BUTTON && isXboxController()) {
+                state.triggerL = 0f; state.triggerR = 0f;
+                state.setPressed(IDX_BUTTON_L2, false); state.setPressed(IDX_BUTTON_R2, false);
+            }
+            return true;
+        }
         if (isJoystickDevice(event)) {
             if (triggerType == TRIGGER_IS_AXIS && !JoyConSupport.isJoyCon(event.getDevice()))
                 processTriggerButton(event);
@@ -464,6 +500,11 @@ public class ExternalController {
 
     public static boolean isJoystickDevice(MotionEvent event) {
         return (event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && event.getAction() == MotionEvent.ACTION_MOVE;
+    }
+
+    /** DS Forever (the int/1533 review): Android's cancel of a joystick's stream (see updateStateFromMotionEvent) */
+    public static boolean isJoystickCancel(MotionEvent event) {
+        return (event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && event.getActionMasked() == MotionEvent.ACTION_CANCEL;
     }
 
     public static int getButtonIdxByKeyCode(int keyCode) {

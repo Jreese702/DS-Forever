@@ -39,7 +39,29 @@ class SpellbookView(
     onPadTab: (List<Pair<String, Int>>) -> Boolean = { false },
     /** another view reads the controller now (one reader at a time): the tab does not read the triggers then */
     otherReader: () -> Boolean = { false },
-) : View(context), BLeadsHome {
+) : View(context), BLeadsHome, RoomKeep {
+
+    /**
+     * BottomSync round 3 (RoomKeep; the review, 2026-11-26: "the Spellbook on its first tab while the game's window can still be on the
+     * other one" after the bottom-grid return, a rebuild; the add-on's spellsctl is never kept by DocMemory): the book's tab, page and
+     * chosen spell, the Controller tab and its page's own state, for a host made again (the add-on's next document wins, as always)
+     */
+    override fun keepUi(): Map<String, String> = buildMap {
+        tabKey?.let { put("tab", it) }
+        put("page", page.toString())
+        chosenId?.let { put("chosen", it.toString()) }
+        if (tabOpen) put("ctrl", "1")
+        for ((key, v) in padTab.keepUi()) put("pad.$key", v)
+    }
+    override fun restoreUi(k: Map<String, String>) {
+        k["tab"]?.let { tabKey = it }
+        k["page"]?.toIntOrNull()?.let { page = it }
+        k["chosen"]?.toIntOrNull()?.let { chosenId = it }
+        padTab.restoreUi(k.filterKeys { it.startsWith("pad.") }.mapKeys { it.key.removePrefix("pad.") })
+        if (k["ctrl"] == "1" && !tabOpen) openTab(byTouch = false)
+        settle()
+        invalidate()
+    }
 
     private var book: SpellsModel.Book? = null
     private var ctl: SpellsModel.Ctl? = null
@@ -195,6 +217,31 @@ class SpellbookView(
         }
     }
 
+    /** L / R step the book's tabs now: the book itself shows (no Controller page in it, not the Controller room's hold, no Bind box) */
+    fun shouldersFree(): Boolean = !tabOpen && ctl?.croom != true && (ctl?.on != true || ctl?.mode == "book")
+
+    /**
+     * L / R (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"; every tabbed room alike): the book's tab
+     * before / after, no wrap (the Controller room's LB / RB), from the app's own reader. The same as a finger on that tab (its first
+     * page, its first known spell; the controller's cursor told the tab, Book b72), but a controller press: the add-on's cursor stays drawn
+     */
+    fun shoulder(right: Boolean) {
+        val b = book ?: return
+        if (!shouldersFree()) return
+        val tabs = SpellsModel.tabs(b).take(8)
+        val at = tabs.indexOfFirst { it.key == tabKey }
+        if (at < 0) return
+        val t = tabs[RoomTabRow.step(at, tabs.size, if (right) 1 else -1) ?: return]
+        tabKey = t.key; page = 1; descScroll = 0f
+        val onPage = pageOf(t)
+        chosenId = onPage.getOrNull(SpellsModel.firstKnown(b, onPage))?.let { idOf(it) }
+        if (held && ctl?.mode == "book") lineOf(t.key)?.let { CastStripModel.bookTabCells(it) }?.let { cells ->
+            val sent = padTabCells(cells)
+            Log.i(TAG, "tab '${t.key}' by ${if (right) "R" else "L"}: ${cells.joinToString { "${it.first} ${it.second}" }} ${if (sent) "tapped" else "not sent"}")
+        }
+        invalidate()
+    }
+
     /** a tab key's skill line ("line:3" -> 3, "pet" -> the pet's book), as Book's tabs carry it (`k`) */
     private fun lineOf(key: String): Int? = if (key == "pet") SpellsModel.PET_LINE else key.removePrefix("line:").toIntOrNull()
 
@@ -234,7 +281,10 @@ class SpellbookView(
 
     // ---------------------------------------------------------------- geometry (SPEC 2)
 
-    private fun tabRect(i: Int) = RectF(36f + i * 124f, 66f, 36f + i * 124f + 116f, 166f)
+    // L / R step the book's tabs (the user, 2026-11-25) and the row shows them, L far left and R far right (the user's pick, "Add
+    // them"): the tabs a little narrower (108 x 93, the art's aspect, their feet still under the page), UiKit.TAB_END_W kept left of
+    // the first for the L glyph, the R glyph right of the last
+    private fun tabRect(i: Int) = RectF(TAB_X0 + i * TAB_PITCH, 73f, TAB_X0 + i * TAB_PITCH + 108f, 166f)
     /** the Controller tab's place: right after the last skill line's tab (the addon's "Right past the last line") */
     private fun ctrlIndex(lines: Int) = lines.coerceAtMost(8)
     private fun rh(h: Float) = ((h - 111f - Y0) / 5f).coerceIn(111f, 118f)
@@ -255,9 +305,22 @@ class SpellbookView(
         if (UiKit.bookGlowLive) { UiKit.bookGlowLive = false; if (isShown) postInvalidateDelayed(50L) }
     }
 
+    /**
+     * THE 16:9 LAYOUT (single screen mode's DS menu, the 1536 pass 2: SingleMenu.WIDE; the user's order "Character, then the Spellbook"):
+     * laid across the top screen's stage, the open book stays as on the bottom screen in the left [wideRight] px (its tabs, its pages,
+     * Bind, every touch and the controller's glow as before) and a THIRD PAGE opens beside it: the line's next page of spells (the page
+     * before on the last one), to read - so a line of twenty spells shows whole. 0 = the bottom screen's book alone
+     */
+    var wideRight: Int = 0
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** the book's own width: the page width on the bottom screen, the left [wideRight] px in the 16:9 layout */
+    private fun bookW(): Float = width.toFloat().let { if (wideRight > 0) minOf(wideRight.toFloat(), it) else it }
+
     private fun drawRoom(c: Canvas) {
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = bookW(); val h = height.toFloat()
         c.drawColor(Theme.ink)
+        if (width - w > WIDE_MIN) thirdPage(c, RectF(w, 158f, width - 8f, h - 4f), h)
         UiKit.header(c, w, "Spellbook")
         if (SystemClock.uptimeMillis() < busyUntil) {
             val pb = UiKit.bodyPaint(24f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
@@ -273,6 +336,7 @@ class SpellbookView(
             if (i >= 8) break
             UiKit.bookTab(c, tabRect(i), tabIcon(t), !tabOpen && t.key == tab?.key, cursor = onTabs && !tabOpen && t.key == tab?.key)
         }
+        if (tabs.isNotEmpty()) UiKit.tabEnds(c, tabRect(0), tabRect(minOf(tabs.size, 8) - 1))     // L / R on the row's outsides, always
         if (onDoor != null) UiKit.door(c, "talents", w - 74f, 116f, 88f, doorDown)
 
         UiKit.bookPage(c, RectF(8f, 158f, SPLIT, h - 4f))
@@ -310,6 +374,32 @@ class SpellbookView(
             ?: tab.entries.firstNotNullOfOrNull { t -> SpellsModel.ranksOf(b, t).firstOrNull { idOf(it) == chosenId } }   // b23: a lower rank
             ?: onPage.getOrNull(SpellsModel.firstKnown(b, onPage)) ?: return
         drawChosen(c, b, e, w, h)
+    }
+
+    /** the third page ([r], the 16:9 layout): the open line's next page of spells (the one before on its last page), to read */
+    private fun thirdPage(c: Canvas, r: RectF, h: Float) {
+        UiKit.bookPage(c, r, right = true)
+        val b = book ?: return
+        if (tabOpen) return
+        val tab = SpellsModel.tabs(b).firstOrNull { it.key == tabKey } ?: return
+        val pages = pagesOf(tab)
+        val other = when { page < pages -> page + 1; page > 1 -> page - 1; else -> null }
+        val left = r.left + 40f
+        if (other == null) {
+            UiKit.bookHeading(c, left, 208f, r.width() - 80f, tab.name)
+            val p = UiKit.inkPaint(26f).apply { color = Theme.parchmentInkDim }
+            c.drawText(Tr.t("Every spell of the line is on the page beside"), left + 8f, 290f, p)
+            return
+        }
+        UiKit.bookHeading(c, left, 208f, r.width() - 80f, Tr.t("Page") + " $other / $pages")
+        val list = SpellsModel.pageOf(tab, other, PER_PAGE)
+        val cw = (r.width() - 72f) / 2f
+        for ((i, e) in list.withIndex()) {
+            val x = r.left + 26f + (i % 2) * cw; val y = Y0 + (i / 2) * rh(h)
+            UiKit.bookEntry(c, RectF(x, y, x + cw - 8f, y + rh(h)), Icons.get(e.icon), e.name, SpellsModel.sub(b, e),
+                kitState(SpellsModel.status(b, e)), onBar = SpellsModel.onBar(b, e), chosen = false, passive = e.passive,
+                autoCast = SpellsModel.autoCast(e), noMana = NoMana.has(e.spellId), rank = rankOf(e))
+        }
     }
 
     /** the right page while the cursor is on a tab: the line's picture and name, what it holds, and what is not on a button yet (the
@@ -540,7 +630,7 @@ class SpellbookView(
     private var padDown = false                 // a touch that began on the Controller tab's pages
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = bookW(); val h = height.toFloat()
         if (ev.actionMasked == MotionEvent.ACTION_UP) fingerSinceCtl = true
         // the Controller tab's pages are its own; the tab row stays the book's
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) padDown = tabOpen && ev.y > 173f
@@ -671,6 +761,11 @@ class SpellbookView(
         private const val BUSY_MS = 5000L
         const val PER_PAGE = 10
         private const val SPLIT = 740f
+        /** the least width beside the book worth a third page (the 16:9 layout) */
+        private const val WIDE_MIN = 400f
+        /** the book's tab row: the first tab's left (the L glyph's room before it) and the tabs' pitch */
+        private const val TAB_X0 = 16f + UiKit.TAB_END_W
+        private const val TAB_PITCH = 116f
         private const val Y0 = 250f
         private const val CW = 334f
         private const val SLOP = 18f

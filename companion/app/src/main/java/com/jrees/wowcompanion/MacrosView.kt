@@ -137,6 +137,26 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
         if (msg.optString("k") == "BACK" && shown) { leftByB = true; onLeave() }
     }
 
+    /** L / R step the grid's two tabs now: the grid shows (no editor, builder, presets, preview), nothing popped out or asking, no keyboard */
+    fun shouldersFree(): Boolean {
+        val s = state ?: return false
+        return kbField == null && s.ready && !s.off && s.view !in setOf("edit", "move", "build", "pre", "ps") && s.pop == null &&
+            s.builder == null && s.pick == null && !s.del && s.remLine == null
+    }
+
+    /**
+     * L / R (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"; every tabbed room alike): General /
+     * the character's macros, no wrap (the Controller room's LB / RB), from the app's own reader. The same as a finger on that tab (its
+     * `tg` / `tc` cell: the add-on switches the game's tab and its cursor; no game action of ours)
+     */
+    fun shoulder(right: Boolean) {
+        val s = state ?: return
+        if (!shouldersFree()) return
+        val to = RoomTabRow.step(if (s.tab == "c") 1 else 0, 2, if (right) 1 else -1) ?: return
+        val sent = tap(if (to == 0) "tg" else "tc")
+        Log.i(TAG, "tab ${if (to == 0) "General" else "character"} by ${if (right) "R" else "L"}: ${if (sent) "tapped" else "not sent"}")
+    }
+
     /** a finger's A / B in the Bind box this room hosts (SpellsOverlay's hosted Keep / Undo / Back): the room's own a / b cells */
     fun boxKey(k: String) { if (k == "a" || k == "b") tap(k) }
 
@@ -448,6 +468,8 @@ class MacrosView(c: Context) : FrameLayout(c), BLeadsHome {
                 hit(tr, MacrosModel.cell(s, if (i == 0) "tg" else "tc"))
             }
             if (onTabs) UiKit.moveArrows(c, tabs[curTab], left = curTab > 0, right = curTab < 1, words = false)
+            // L / R step these tabs now (the user, 2026-11-25; MacrosView.shoulder): L far left and R far right, the house rule (15 Oct)
+            gridGaps.badges(c)
             // the cells: 6 x 4, an icon in its slot and the name under it
             val gx = lp.left + 24f; val gy = r.top + 96f
             val cw = 112f; val ch = 142f

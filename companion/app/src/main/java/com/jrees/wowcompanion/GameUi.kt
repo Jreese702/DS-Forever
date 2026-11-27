@@ -21,10 +21,10 @@ import org.json.JSONObject
 object GameUi {
     private var prefs: SharedPreferences? = null
     private var appCtx: Context? = null
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     /** split-hud: the layout bit of the "hud" element carries the three parts' riding mode ([hudBitMode]) */
-    private val policy = GameUiPolicy({ tracking }) { id -> if (id == HudSplit.CONTROLLER_ID) hudBitMode() else mode(id) }
+    private val policy = GameUiPolicy({ tracking }) { id -> if (id == HudSplit.CONTROLLER_ID) hudBitMode() else effMode(id) }
     /** hub11: the game's cast bar (its own Show / Hide, not a layout bit) */
     private val castBar = CastBarPolicy()
     /** hub67 (PR #532 reworked): the ONE restore tap per load; the hub document's `rst` (null = an add-on set without it) */
@@ -90,6 +90,26 @@ object GameUi {
         return saved ?: def
     }
 
+    /**
+     * SINGLE SCREEN MODE (SingleScreen, 11-25): the mode that decides the GAME's element now - SingleUi's preset while the mode is on,
+     * else the saved one ([mode], which Settings draws). Never saved: the player's choices come back as they were with two screens
+     */
+    fun effMode(id: String): UiMode {
+        val saved = mode(id)
+        return if (SingleScreen.inUse) SingleUi.mode(id, saved) else saved
+    }
+
+    /**
+     * single screen mode's switch (DsForeverScreen.toggleSingle, the new host's onStart): no top-screen tap before [untilMs] (wall ms),
+     * so the old host's away and the new host's back are ONE reconcile after it (status [SWITCHING]); a later call replaces it
+     */
+    fun holdTaps(untilMs: Long) { tapHoldUntil = untilMs }
+    fun tapsHeld(now: Long): Boolean = now < tapHoldUntil
+    /** the hold now (wall ms): a parked bottom screen holds every tap and gives this back at its return (CompanionHost.park) */
+    fun tapHold(): Long = tapHoldUntil
+    @Volatile private var tapHoldUntil = 0L
+    const val SWITCHING = "Switching screens"
+
     /** the user picked a mode: one touch, so at most one tap follows */
     fun setMode(id: String, m: UiMode) {
         val ed = prefs?.edit() ?: return
@@ -119,9 +139,9 @@ object GameUi {
     }
 
     /** the three parts' modes now */
-    private fun partModes(): Map<String, UiMode> = HudSplit.PARTS.associateWith { mode(it) }
+    private fun partModes(): Map<String, UiMode> = HudSplit.PARTS.associateWith { effMode(it) }
     /** the mode the "hud" bit carries: the parts' riding one; an add-on before the split: the controller tile's, exactly as before */
-    fun hudBitMode(): UiMode = if (hs == null) mode(HudSplit.CONTROLLER_ID) else HudSplit.riding(partModes().values)
+    fun hudBitMode(): UiMode = if (hs == null) effMode(HudSplit.CONTROLLER_ID) else HudSplit.riding(partModes().values)
     /** each part's word for the add-on */
     fun hsWant(modes: Map<String, UiMode> = partModes()): Map<String, String> {
         val r = HudSplit.riding(modes.values)
@@ -146,7 +166,7 @@ object GameUi {
             return Row(id, label, home, m, el != null, false, if (state == null) "Waiting for the game" else "The game does not offer this yet")
         val now = h.hidden[id] == true
         if (id == HudSplit.CONTROLLER_ID && m == UiMode.NINTENDO) return Row(id, label, home, m, true, now, nbarNote(sw?.nbar))
-        val want = HudSplit.wantsHidden(m, room.name, visible)
+        val want = HudSplit.wantsHidden(effMode(id), room.name, visible)
         val steady = if (now) "Hidden now" else "On the top screen now"
         val note = when {
             now == want -> steady
@@ -289,7 +309,7 @@ object GameUi {
     /** this character's choice for [part] (its default until one is made); the resource bar's old "HUD mode" choice carries over */
     fun swWant(part: String): Boolean {
         if (part == SW_PMODE) return prefs?.getBoolean("sw.$SW_PMODE", true) ?: true
-        if (part == SW_NBAR) return nbarWanted(mode("hud"))
+        if (part == SW_NBAR) return nbarWanted(effMode("hud"))
         // 2026-11-13 (the user's pick): a class with neither a res nor Revive Pet: off, whatever was saved
         if (part == SW_SRES && sresClass(playerClass) == false) return false
         val who = character ?: return SW_DEFAULT[part] ?: false
@@ -775,6 +795,8 @@ object GameUi {
     /** f-top-castbar-toggle: the user's Hide for the game's cast bar. Default HIDE (1.0.10-test3, the user: "The cast bar needs to be
      *  hidden": Home's bottom bar shows every cast); a player who picked Show keeps it */
     fun castBarHide(): Boolean = prefs?.getBoolean("castbar.hide", true) ?: true
+    /** the Hide that decides the game's cast bar now: single screen mode's (SingleUi) while it is on, else the saved one */
+    private fun castBarHideNow(): Boolean = if (SingleScreen.inUse) SingleUi.castBarHide(castBarHide()) else castBarHide()
     /** one touch, so at most one tap follows */
     fun setCastBar(show: Boolean) {
         prefs?.edit()?.putBoolean("castbar.hide", !show)?.apply()
@@ -785,7 +807,7 @@ object GameUi {
     fun castBarRow(): Row? {
         val h = castBarHidden ?: return null
         val hide = castBarHide()
-        val want = castBar.wantsHidden(hide, visible)
+        val want = castBar.wantsHidden(castBarHideNow(), visible)
         val note = when {
             h == want -> if (h) "Hidden now" else "On the top screen now"
             last is UiStep.Tap -> "Waits for the layout first"
@@ -883,6 +905,9 @@ object GameUi {
         changed()
     }
 
+    /** BottomSync round 3: the game's UI is as the modes want it now (nothing left to tap: fork/DsForeverScreen's give-back reader ends) */
+    fun inPlace(): Boolean = last == UiStep.InPlace
+
     /** once a second: the game becoming live, and a reply that never came */
     fun tick() {
         val before = last
@@ -893,6 +918,8 @@ object GameUi {
     private fun reconcile() {
         val ctx = appCtx ?: return
         val now = System.currentTimeMillis()
+        // single screen mode's switch: nothing is tapped on the top screen until the new window has settled (one reconcile after it)
+        if (tapsHeld(now)) { last = UiStep.Wait(SWITCHING); return }
         val live = GameInput.live(now)
         // a state the game wrote before it went quiet says nothing about now
         val s = state?.let { if (live) it else it.copy(current = false) }
@@ -929,7 +956,7 @@ object GameUi {
         last = step
         // hub11: the cast bar's own tap, never in the same moment as a layout tap (one tap at a time)
         if (step !is UiStep.Tap) {
-            val col = castBar.step(castBarHidden, castBarHide(), visible, s, live, now, settleAt())
+            val col = castBar.step(castBarHidden, castBarHideNow(), visible, s, live, now, settleAt())
             if (col != null) GameInput.tap(ctx, pad, ROW, col)
             // hub13: HUD mode's own tap, never in the same moment as another (one tap at a time); no character known = nothing
             else if (character != null) {
@@ -1041,7 +1068,7 @@ object GameUi {
 
     private fun roomOf(name: String): Room? = try { Room.valueOf(name) } catch (_: Throwable) { null }
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     private fun changed() { for (l in listeners) l() }
     /** a reset (ResetRun) removed saved switches: the game is told the defaults where it differs, the rows read them again */
     fun resetDone() { runCatching { reconcile() }; changed() }

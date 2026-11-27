@@ -30,9 +30,25 @@ import org.json.JSONObject
  * sent only when the addon's pick names the chosen player. When the pick has gone stale, the one touch sends a fresh pick
  * first and the act as soon as the addon names the player (the pick is no game action: the lock's "pick before the act").
  */
-class SocialView(context: Context) : View(context), BLeadsHome {
+class SocialView(context: Context) : View(context), BLeadsHome, RoomKeep {
 
     val model = SocialModel()
+
+    /** BottomSync round 2 (RoomKeep): the page (and the Ignore list) and each list's scroll, for a host made again */
+    override fun keepUi(): Map<String, String> = buildMap {
+        put("page", page.name)
+        if (ignoreOpen) put("ignore", "1")
+        for ((k, v) in scroll) put("scroll.$k", v.toString())
+    }
+    /** that page again (its view tap: no game action - the add-on lists its rows), the scrolls laid back */
+    override fun restoreUi(k: Map<String, String>) {
+        val p = k["page"]?.let { n -> Page.values().firstOrNull { it.name == n } } ?: return
+        goTo(p)
+        if (k["ignore"] == "1" && page == Page.FRIENDS && !ignoreOpen) { ignoreOpen = true; chosen.remove(Tab.IGNORE); sendView() }
+        for ((key, v) in k) if (key.startsWith("scroll.")) v.toFloatOrNull()?.let { scroll[key.removePrefix("scroll.")] = it }
+        if (!menuOpen && confirm == null) focus = Fk.Tab(page.ordinal)
+        invalidate()
+    }
     /** B that leaves the room, and the page's own way out: the activity shows Home */
     var onLeave: () -> Unit = {}
     /** Whisper: the Chat room with the name ready (the chat session's `whisperTo`); nothing is sent to the game */
@@ -344,13 +360,21 @@ class SocialView(context: Context) : View(context), BLeadsHome {
     private var listBox = RectF(); private var raidDrop: List<Pair<Int, RectF>> = emptyList()
     private val raidPlaces = HashMap<String, RectF>()
 
+    private val tabRow = RoomTabRow(this)
+
     override fun onDraw(c: Canvas) {
         nav.clear(); hits.clear()
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = width.toFloat(); val h0 = height.toFloat()
         c.drawColor(Theme.ink)
         UiKit.header(c, w, "Social")
-        val tabsX = w - 118f
-        val right = tabsX - 4f
+        // THE PAGES ON TOP (the user, 2026-11-25: "On all of the rooms that have the tabs on the right side we need to move the test to the
+        // top and make them so that L and R shift the tabs left and right"): one row under the header (RoomTabRow), drawn before the page
+        // (its top edge covers their feet); the page under it the whole width, drawn RoomTabRow.DY lower. The controller's cursor on a
+        // tab is the tab lit (LATER 19), with the game's gold arrows beside it
+        tabRow.draw(c, w, Page.values().map { UiKit.tex(it.tex) }, page.ordinal, (focus as? Fk.Tab)?.i)
+        c.save(); c.translate(0f, RoomTabRow.DY)
+        val h = h0 - RoomTabRow.DY
+        val right = w
         val wide = page == Page.RAID && model.inRaid
         val split = right * 0.62f
         if (wide) UiKit.pane(c, RectF(0f, 62f, right, h))
@@ -359,14 +383,9 @@ class SocialView(context: Context) : View(context), BLeadsHome {
             UiKit.pane(c, RectF(split, 62f, right, h), right = true)
             UiKit.paneDivider(c, split, 62f, h)
         }
-        // the user's decision for SIDE tabs (via UI Art, after b118's gaps): "(a) No glyphs" -- the three tabs sit together as before (the
-        // chosen one raised, the controller's tab lit); LB / RB still page them, with no badge and no gap
-        val tabs = Page.values().indices.map { i -> RectF(tabsX, 72f + i * 128f, tabsX + 116f, 72f + i * 128f + 126f) }
         for ((i, p) in Page.values().withIndex()) {
-            val r = tabs[i]
-            // LATER 19 (the user's pick, 2026-10-07: "lit + the gold edge shaped to the tab"): the controller's cursor on a tab is the tab lit
-            UiKit.sideTab(c, r, UiKit.tex(p.tex), p == page, cursor = focus == Fk.Tab(i))
-            target(Fk.Tab(i), RectF(tabsX - 6f, r.top, w, r.bottom + 2f)) { closeOverlays(); goTo(p) }
+            val r = tabRow.pageBox(i) ?: continue
+            target(Fk.Tab(i), RectF(r.left - 4f, r.top, r.right + 4f, r.bottom)) { closeOverlays(); goTo(p) }
         }
         val list = RectF(0f, 68f, split - 8f, h - 6f)
         val detail = RectF(split + 26f, 72f, right - 22f, h - 16f)
@@ -389,6 +408,9 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         if (focus == null || nav.none { it.key == focus }) focus = restingTarget()
         // the gold box for everything but a tab (a tab lights itself up, above: never the box on a tab)
         nav.firstOrNull { it.key == focus && it.key !is Fk.Tab }?.let { UiKit.focus(c, it.r) }
+        c.restore()
+        // the row was drawn before the cursor came to rest: a cursor that moved onto / off a tab is lit on the next frame
+        if ((focus as? Fk.Tab)?.i != tabRow.cursorDrawn) postInvalidateOnAnimation()
         syncB()
     }
 
@@ -629,7 +651,8 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         }
         UiKit.hints(c, box.right - 28f, box.bottom - 56f, "rev_a" to "Choose", "rev_b" to "Back")
         // a tap outside the box closes the menu
-        hits.add(0, Nav(Fk.No, RectF(0f, 0f, width.toFloat(), height.toFloat())) { menuOpen = false; focus = Fk.More; invalidate() })
+        // the whole view, the tab row above the page too (the page is drawn RoomTabRow.DY lower)
+        hits.add(0, Nav(Fk.No, RectF(0f, -RoomTabRow.DY, width.toFloat(), height.toFloat())) { menuOpen = false; focus = Fk.More; invalidate() })
     }
 
     // ---------------------------------------------------------------- the confirmation (the game's dialog, naming the player)
@@ -641,7 +664,7 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         // the name the addon itself resolved; until it answers, the row's own name, and Yes waits
         val sure = r != null && model.pickMatches(r, act, now)
         val name = if (sure) (model.pickedTag ?: model.pickedName ?: r!!.label) else (confirmLabel ?: "")
-        UiKit.cover(c, RectF(0f, 0f, w, h))
+        UiKit.cover(c, RectF(0f, -RoomTabRow.DY, w, h))          // the whole view: the page is drawn RoomTabRow.DY lower
         val text = confirmText(act, name)
         val tp = TextPaint(UiKit.bodyPaint(42f, Color.WHITE))
         val sl = StaticLayout.Builder.obtain(Tr.span(text), 0, Tr.span(text).length, tp, (1040f - 140f).toInt()).setAlignment(Layout.Alignment.ALIGN_CENTER)
@@ -678,7 +701,13 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         page == Page.GUILD -> "guild"; else -> "party"
     }
 
-    override fun onTouchEvent(e: MotionEvent): Boolean {
+    /** a finger, in the page's coordinates (the page is drawn [RoomTabRow.DY] lower; the tab row's boxes are kept in the same ones) */
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        val e = MotionEvent.obtain(ev).apply { offsetLocation(0f, -RoomTabRow.DY) }
+        try { return touch(e) } finally { e.recycle() }
+    }
+
+    private fun touch(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x; downY = e.y; lastY = e.y; moved = false; dragging = null
@@ -741,15 +770,8 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         val k = msg.optString("k")
         // so7: B closed the game's own window (the capture's binding clicked its close) and the addon let go with "B": Home
         if (k == "BACK") { onLeave(); return }
-        // so12: LB / RB = the previous / next page (the Group Finder and Professions rooms' rule: no wrap, not while the menu or a
-        // confirmation is open); the cursor lands on the new page's tab
-        if (k == "PADLSHOULDER" || k == "PADRSHOULDER") {
-            if (!menuOpen && confirm == null) {
-                val to = page.ordinal + if (k == "PADLSHOULDER") -1 else 1
-                if (to in Page.values().indices) { goTo(Page.values()[to]); padSteered = true }
-            }
-            invalidate(); return
-        }
+        // so12: LB / RB = the previous / next page (the host drops this relayed copy while the app's own reader delivers them: [shoulder])
+        if (k == "PADLSHOULDER" || k == "PADRSHOULDER") { shoulder(k == "PADRSHOULDER"); return }
         // the cursor is already shown, so every press acts (no "first press only shows the cursor": the user 2026-09-30)
         if (focus == null || nav.none { it.key == focus }) focus = restingTarget()
         padSteered = true
@@ -762,6 +784,21 @@ class SocialView(context: Context) : View(context), BLeadsHome {
                 chosenRow()?.let { r -> oneAction(r).let { (a, ok) -> if (ok) perform(a, r) } }
             "PAD4" -> if (!menuOpen && confirm == null) openMenu()                                         // Y = More
         }
+        invalidate()
+    }
+
+    /**
+     * L / R from the app's own reader (the host's direct route; a relayed LB / RB the same): the page before / after (the Group Finder
+     * and Professions rooms' rule: no wrap, not while the menu or a confirmation is open). From the tab row the cursor moves with the
+     * page; from the page it goes to the new page's own resting place ([restingTarget]: a new page chooses nobody, so its tab)
+     */
+    fun shoulder(right: Boolean) {
+        if (menuOpen || confirm != null) return
+        val to = RoomTabRow.step(page.ordinal, Page.values().size, if (right) 1 else -1) ?: return
+        val onRow = focus is Fk.Tab
+        goTo(Page.values()[to])
+        if (RoomTabRow.lands(onRow, to) == null) focus = null       // restingTarget at the next draw
+        padSteered = true
         invalidate()
     }
 
@@ -819,19 +856,17 @@ class SocialView(context: Context) : View(context), BLeadsHome {
         }
     }
 
-    /** the glow moves to the nearest target that way; on the side tabs, up / down changes the page at once, and a move that lands on a
-     *  tab opens that tab (b117, the user's rule for every room's tabs) */
+    /** the glow moves to the nearest target that way; along the tab row on top Left / Right only, Down leaves it, Up from the page
+     *  reaches it (RoomTabRow.mayLand); a move that lands on a tab opens that tab (b117, the user's rule for every room's tabs) */
     private fun move(dx: Int, dy: Int) {
         val f = focus ?: return
         val cur = nav.firstOrNull { it.key == f } ?: return
-        if (f is Fk.Tab && dy != 0 && !menuOpen && confirm == null) {
-            val i = (f.i + dy).coerceIn(0, Page.values().size - 1)
-            goTo(Page.values()[i]); focus = Fk.Tab(i); return
-        }
         val cx = cur.r.centerX(); val cy = cur.r.centerY()
         var best: Nav? = null; var bestD = Float.MAX_VALUE
         for (n in nav) {
             if (n.key == f) continue
+            if (!RoomTabRow.mayLand(f is Fk.Tab, n.key is Fk.Tab, dx, dy, toOpen = n.key == Fk.Tab(page.ordinal))) continue
+            if (menuOpen && n.key is Fk.Tab) continue                  // the open menu keeps the cursor (B or a pick closes it)
             val ex = n.r.centerX() - cx; val ey = n.r.centerY() - cy
             val along = if (dx != 0) ex * dx else ey * dy
             if (along <= 4f) continue

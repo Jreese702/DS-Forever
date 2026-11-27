@@ -274,29 +274,29 @@ class ControllerTapTabsTest {
         assertEquals("already on its bar: the slot only", listOf(CastStripModel.slotCells(3)!!), q.cells)
     }
 
-    @Test fun lbRbWalkTheSixStopsInReadingOrder() {
-        val b = box()
+    /** fix/hold-tweaks (the user on test 1533, 2026-11-26: "The L and R in the bind menu is really confusing when it cycles to the tap to
+     *  cast bar. Instead I want select to cycle to the tap to cast and l and r to keep swapping tabs"): LB / RB step the situations only,
+     *  the device kept; Select (Book b89's counted `bsel`) moves between the situation's controller and its bar */
+    @Test fun lbRbStepTheSituationsAndSelectSwitchesTheDevice() {
+        val b = box(""","bsel":0""")
         b.draw()
         b.bump(rb = true)
-        assertEquals("Out of combat's bar", listOf(CastStripModel.tabCells()), b.cells)
-        b.doc(""","bcb":1"""); b.cells.clear()
-        b.bump(rb = true)
-        assertEquals("then In combat's controller", listOf(12), b.taps)
-        b.doc(""","bf":true"""); b.taps.clear()
-        b.bump(rb = true)
-        assertEquals("then In combat's bar", listOf(listOf("padtab" to 39, "padtab" to 4)), b.cells)
-        b.doc(""","bcb":1,"bcf":1"""); b.cells.clear()
-        if (!GameUi.partyModeOn()) return
-        b.bump(rb = true)
-        assertEquals("then Party mode's controller", listOf(CastStripModel.page2(4)), b.cells)
-        b.doc(""","bpm":1"""); b.cells.clear()
-        b.bump(rb = true)
-        assertEquals("then Party mode's bar", listOf(CastStripModel.page2(5)), b.cells)
-        b.doc(""","bcb":1,"bcp":1"""); b.cells.clear(); b.taps.clear()
-        b.bump(rb = true)
-        assertTrue("the last: no wrap", b.cells.isEmpty() && b.taps.isEmpty())
+        assertEquals("RB from Out of combat's controller: In combat's CONTROLLER (never the bar)", listOf(12), b.taps)
+        assertTrue(b.cells.isEmpty())
+        b.doc(""","bf":true,"bsel":0"""); b.taps.clear()
+        b.doc(""","bf":true,"bsel":1""")
+        assertEquals("Select: In combat's bar", listOf(listOf("padtab" to 39, "padtab" to 4)), b.cells)
+        b.doc(""","bcb":1,"bcf":1,"bsel":1"""); b.cells.clear()
         b.bump(rb = false)
-        assertEquals("LB: back to Party mode's controller", listOf(CastStripModel.page2(4)), b.cells)
+        assertEquals("LB on the bar: Out of combat's BAR (the device kept)", listOf(CastStripModel.tabCells()), b.cells)
+        b.doc(""","bcb":1,"bsel":1"""); b.cells.clear(); b.taps.clear()
+        b.doc(""","bcb":1,"bsel":2""")
+        assertTrue("Select again: Out of combat's controller (bf-off)", b.taps.size == 1 && b.taps[0] != 12 && b.cells.isEmpty())
+        b.doc(""","bsel":2"""); b.taps.clear()
+        b.bump(rb = false)
+        assertTrue("LB at the first situation: nothing (no wrap)", b.taps.isEmpty() && b.cells.isEmpty())
+        // the old Select count seen once: a repeated doc changes nothing
+        b.doc(""","bsel":2"""); assertTrue(b.taps.isEmpty() && b.cells.isEmpty())
     }
 
     @Test fun macrosAndBagsGetTheBarInEverySituation() {
@@ -375,7 +375,9 @@ class ControllerTapTabsTest {
         v.update(b)
         val tabs = SpellsModel.tabs(b)
         assertTrue("the book has two tabs or more", tabs.size >= 2)
-        fun tabAt(i: Int) = RectF(36f + i * 124f, 66f, 36f + i * 124f + 116f, 166f)
+        // the book's own tab boxes (its row narrowed for its L / R glyphs, 2026-11-25), never a copy of the numbers
+        fun tabAt(i: Int) = SpellbookView::class.java.getDeclaredMethod("tabRect", Int::class.javaPrimitiveType)
+            .also { it.isAccessible = true }.invoke(v, i) as RectF
         fun line(key: String) = if (key == "pet") SpellsModel.PET_LINE else key.removePrefix("line:").toInt()
         // not held: the finger's tab only
         touch(v, tabAt(1).centerX(), tabAt(1).centerY())

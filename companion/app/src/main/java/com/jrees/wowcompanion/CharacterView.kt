@@ -106,7 +106,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private val pending = ArrayDeque<String>()
     private val drags = ArrayList<Pair<RectF, String>>()
 
-    init { CharacterBars.listen { if (model.tab == CharTab.CHARACTER) invalidate() } }
+    init { context.atHostEnd(CharacterBars.listen { if (model.tab == CharTab.CHARACTER) invalidate() }) }
 
     /** the room holds the controller, as the last CURRENT document said (a document replayed from the log's backlog at app start
      *  tells who held it THEN, and must not leave a stale "held" behind: a later room change would tap `close` for nothing) */
@@ -363,11 +363,13 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val list = slotKits(slot)
         if (list.isEmpty()) { post { if (kitFor == slot && slotKits(slot).isEmpty()) closeKits() }; return }    // the bags changed under it
         if (kitSel > list.size - 1) kitSel = list.size - 1
-        UiKit.cover(c, RectF(0f, 0f, w, h))
+        UiKit.cover(c, RectF(0f, -RoomTabRow.DY, w, h))          // the whole view: the page is drawn RoomTabRow.DY lower
         val bw = minOf(760f, w - 80f)
         val rowH = 84f
         val shown = list.size.coerceAtMost(7)
-        val box = RectF(w / 2f - bw / 2f, 90f, w / 2f + bw / 2f, 90f + 80f + shown * rowH + 20f)
+        // where it stood on the screen before the tabs moved on top (the page is drawn RoomTabRow.DY lower): seven kits' hints still fit
+        val top = 90f - RoomTabRow.DY
+        val box = RectF(w / 2f - bw / 2f, top, w / 2f + bw / 2f, top + 80f + shown * rowH + 20f)
         val inner = UiKit.menu(c, box, solid = true)
         val name = worn()[slot]?.optString("name") ?: ""
         c.drawText(Tr.t("Apply to"), inner.left + 16f, inner.top + 40f, UiKit.bodyPaint(30f, Theme.gold))
@@ -555,9 +557,10 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val slot = moreFor ?: return
         val rows = moreRows(slot)
         if (rows.isEmpty()) { moreFor = null; return }
-        UiKit.cover(c, RectF(0f, 0f, w, h))
+        UiKit.cover(c, RectF(0f, -RoomTabRow.DY, w, h))          // the whole view: the page is drawn RoomTabRow.DY lower
         val bw = 520f
-        val box = RectF(w / 2f - bw / 2f, 220f, w / 2f + bw / 2f, 220f + 56f + rows.size * 96f + 24f)
+        val top = 220f - RoomTabRow.DY                     // where it stood on the screen (the page is drawn RoomTabRow.DY lower)
+        val box = RectF(w / 2f - bw / 2f, top, w / 2f + bw / 2f, top + 56f + rows.size * 96f + 24f)
         val inner = UiKit.menu(c, box, solid = true)
         val name = worn()[slot]?.optString("name")?.takeIf { it.isNotEmpty() } ?: Doll.NAMES[slot] ?: ""
         val np = UiKit.bodyPaint(26f, Color.WHITE)
@@ -854,12 +857,20 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             if (pending.isNotEmpty()) postInvalidateOnAnimation()
         }
         hits.clear(); drags.clear(); focusables.clear(); tabCursors.clear()
-        val w = width.toFloat(); val h = height.toFloat()
+        // the 16:9 layout (single screen mode's DS menu): the page as on the bottom screen in the left [wideRight] px, the next page beside it
+        val full = width.toFloat()
+        val w = if (wideRight > 0) minOf(wideRight.toFloat(), full) else full; val h0 = height.toFloat()
         c.drawColor(Theme.ink)
         val tab = model.tab
         header(c, w, tab)
+        // THE TABS ON TOP (the user, 2026-11-25: "On all of the rooms that have the tabs on the right side we need to move the test to the
+        // top and make them so that L and R shift the tabs left and right"): one row under the header (RoomTabRow), drawn before the page
+        // (its top edge covers their feet); the page under it the whole width, drawn RoomTabRow.DY lower. The lit tab = the cursor's
+        tabRow.draw(c, w, CharTab.values().map { tabIcon(it) }, tab.ordinal, rowCursor())
+        c.save(); c.translate(0f, RoomTabRow.DY)
+        val h = h0 - RoomTabRow.DY
 
-        val tabsX = w - 118f
+        val tabsX = w + 4f                       // the page's right edge (w): the side column is gone
         val split = 704f
         val wide = tab == CharTab.STATISTICS
         UiKit.pane(c, RectF(0f, 62f, if (wide) tabsX - 4f else split, h))
@@ -892,6 +903,77 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         if ((drawnTab != null && drawnTab != model.tab) || (drawnSide != null && drawnSide != model.side))
             if (railFor != null || moreFor != null || kitFor != null) post { closeMore() }
         drawnTab = model.tab; drawnSide = model.side
+        c.restore()
+        if (full - w > WIDE_MIN) beside(c, RectF(w + 18f, 10f, full - 18f, h0 - 8f))
+        // the row was drawn before the cursor came to rest (startFocus, on this frame's targets): a cursor that is on / off a tab now is
+        // lit on the next frame
+        restKey = if (active) current()?.key else null
+        restFrom = focusKey
+        if (rowCursor() != tabRow.cursorDrawn) postInvalidateOnAnimation()
+    }
+    private val tabRow = RoomTabRow(this)
+
+    /**
+     * THE 16:9 LAYOUT (single screen mode's DS menu, the 1536 pass 2: SingleMenu.WIDE; the user: "I want it to be its own experience that
+     * feels like it was made for the top screen"; their order "Character, then the Spellbook"): laid across the top screen's stage, the
+     * room keeps its bottom-screen page on the LEFT ([wideRight] px wide: its tabs, its panes, its cursor, every touch as before) and the
+     * width beyond it shows the NEXT PAGE beside it, to read: the Reputation beside the Character tab (the study's mockup), the
+     * character's stats beside every other tab. Read only (no touch, no cursor: the controller's cursor stays on the page). 0 = the
+     * bottom screen's page alone
+     */
+    var wideRight: Int = 0
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** the page beside ([r]): its title, then the Reputation's factions (name, standing bar) or the stats' sections */
+    private fun beside(c: Canvas, r: RectF) {
+        UiKit.pane(c, r, right = true, light = 0.8f)
+        val inner = RectF(r.left + 28f, r.top + 18f, r.right - 28f, r.bottom - 18f)
+        val rep = model.tab == CharTab.CHARACTER
+        val title = if (rep) model.word(TAB_WORD[CharTab.REPUTATION.ordinal], TAB_FALLBACK[CharTab.REPUTATION.ordinal])
+            else model.word("CHARACTER", "Character")
+        val tp = UiKit.titlePaint(38f, Theme.gold)
+        c.drawText(Tr.t(title), inner.left, inner.top + 40f, tp)
+        UiKit.paneRule(c, inner.left, inner.top + 62f, inner.right)
+        val top = inner.top + 84f
+        c.save(); c.clipRect(inner.left - 4f, top, inner.right + 4f, inner.bottom)
+        if (rep) {
+            val list = model.reputation.entries.filter { !it.header && it.bar != null }
+            if (list.isEmpty()) {
+                centred(c, inner.centerX(), top + 60f, Tr.t("Open the Reputation tab once to see it here"), 25f, Theme.dim)
+            } else {
+                var y = top
+                for (e in list) {
+                    if (y > inner.bottom) break
+                    name(c, e.name, inner.left, y + 22f, inner.width() * 0.62f, Color.WHITE)
+                    bar(c, RectF(inner.left, y + 46f, inner.right, y + 82f), e, Kind.REP, 22f)
+                    y += 100f
+                }
+            }
+        } else {
+            var y = top
+            for (sec in withXp(model.stats)) {
+                if (y > inner.bottom) break
+                UiKit.sectionTitle(c, RectF(inner.left, y, inner.right, y + 58f), sec.title)
+                y += 62f
+                for ((i, row) in sec.rows.withIndex()) {
+                    UiKit.statLine(c, RectF(inner.left, y, inner.right, y + 44f), label(row.label), row.value, row.colour, i % 2 == 0, null)
+                    y += 44f
+                }
+                y += 8f
+            }
+        }
+        c.restore()
+    }
+    /** where the cursor really was at the end of the last frame ([current]: its key, or its start place when the key is unset or gone) */
+    private var restKey: String? = null
+    /** [focusKey] when [restKey] was taken: while it is unchanged, [restKey] is where the cursor is */
+    private var restFrom: String? = null
+    /** the tab the row lights for the cursor, only while held: the cursor's own key when it is a main tab, else where it really rested
+     *  last frame (a key unset, or one no longer drawn: a tab switched under it) while the key has not moved since */
+    private fun rowCursor(): Int? {
+        if (!active) return null
+        val k = focusKey?.takeIf { it.startsWith("tab:") } ?: restKey?.takeIf { focusKey == restFrom && it.startsWith("tab:") }
+        return k?.removePrefix("tab:")?.toIntOrNull()
     }
     private var drawnTab: CharTab? = null
     private var drawnSide: CharSide? = null
@@ -947,12 +1029,12 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val cur = current() ?: return
         when (key) {
             "PAD1" -> { cur.act(); return }
-            "PADDUP", "PADDDOWN" -> if (cur.key.startsWith("tab:")) {
-                // on the side tabs, up / down changes the tab at once, counted from the tab the GLOW is on (the glow can
-                // reach a side tab by a sideways move while another tab is shown: seen on the emulator 2026-09-29 23:59)
+            // the tabs on top (RoomTabRow): Left / Right along the row step the tab the GLOW is on (landing opens it, below); Up on the
+            // row does nothing, Down leaves it for the page ([nearest] keeps the row's rules)
+            "PADDLEFT", "PADDRIGHT" -> if (cur.key.startsWith("tab:")) {
                 val from = cur.key.removePrefix("tab:").toIntOrNull() ?: model.tab.ordinal
-                val i = (from + if (key == "PADDUP") -1 else 1).coerceIn(0, CharTab.values().size - 1)
-                model.tab = CharTab.values()[i]; focusKey = "tab:$i"; invalidate(); return
+                val i = RoomTabRow.step(from, CharTab.values().size, if (key == "PADDLEFT") -1 else 1) ?: return
+                choose(CharTab.values()[i]); focusKey = "tab:$i"; invalidate(); return
             }
         }
         val next = nearest(cur, key) ?: return
@@ -978,8 +1060,12 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private fun nearest(cur: Focus, key: String): Focus? {
         val cx = cur.r.centerX(); val cy = cur.r.centerY()
         var best: Focus? = null; var bestScore = Float.MAX_VALUE
+        val ddx = when (key) { "PADDRIGHT" -> 1; "PADDLEFT" -> -1; else -> 0 }
+        val ddy = when (key) { "PADDDOWN" -> 1; "PADDUP" -> -1; else -> 0 }
         for (f in focusables) {
             if (f === cur) continue
+            // the tab row on top: along it Left / Right only, Down leaves it, Up from the page reaches it (RoomTabRow.mayLand)
+            if (!RoomTabRow.mayLand(cur.key.startsWith("tab:"), f.key.startsWith("tab:"), ddx, ddy, toOpen = f.key == "tab:${model.tab.ordinal}")) continue
             val dx = f.r.centerX() - cx; val dy = f.r.centerY() - cy
             // only what lies BEYOND the current item's edge in that direction: a neighbour whose centre is a few pixels
             // lower is beside it, not below it (seen on the emulator: down from a small tab jumped to a side tab)
@@ -1008,16 +1094,30 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             listOf(who?.name ?: "", line).filter { it.isNotEmpty() }.joinToString("   "))
     }
 
+    /** the six tabs, in the row on top (drawn by [tabRow] before the page, the cursor's tab lit there): their boxes in the page's
+     *  coordinates; the glow draws nothing of its own on them */
+    @Suppress("UNUSED_PARAMETER")
     private fun sideTabs(c: Canvas, w: Float, tabsX: Float) {
-        // b120 (the user on side tabs: "(a) No glyphs"): the tabs sit together, no gap and no LB/RB glyph; LB/RB still switch them
-        val boxes = UiKit.tabColumn(CharTab.values().size, tabsX, 72f, height - 8f, gap = 2f)
         for (t in CharTab.values()) {
             val i = t.ordinal
-            val r = boxes[i]
-            UiKit.sideTab(c, r, tabIcon(t), t == model.tab)
-            tabCursors["tab:$i"] = { cc -> UiKit.sideTab(cc, r, tabIcon(t), t == model.tab, cursor = true) }
-            hit(RectF(tabsX - 6f, r.top, w, r.bottom + 2f), "tab:$i") { choose(t) }
+            val r = tabRow.pageBox(i) ?: continue
+            tabCursors["tab:$i"] = { _ -> }
+            hit(RectF(r.left - 4f, r.top, r.right + 4f, r.bottom), "tab:$i") { choose(t) }
         }
+    }
+
+    /**
+     * L / R from the app's own reader (the host's direct route; Character's capture never relays them): the tab before / after, no
+     * wrap (the Controller room's LB / RB), not while the slide-out, the More menu, its kit list or the game's question is up. From the
+     * tab row the cursor moves with the tab; from the page it goes to the new page's own start ([startFocus])
+     */
+    fun shoulder(right: Boolean) {
+        if (railFor != null || moreFor != null || kitFor != null || model.setPad?.ask != null) return
+        val to = RoomTabRow.step(model.tab.ordinal, CharTab.values().size, if (right) 1 else -1) ?: return
+        val onRow = rowCursor() != null
+        choose(CharTab.values()[to])
+        focusKey = RoomTabRow.lands(onRow, to)?.let { "tab:$it" }
+        invalidate()
     }
 
     /** the six tabs' pictures (SPEC 2): the class's picture for Character (the game shows the player's portrait, which
@@ -1311,8 +1411,8 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         val pad = model.setPad ?: return
         val ask = pad.ask ?: return
         hits.clear(); focusables.clear(); tabCursors.clear()
-        UiKit.cover(c, RectF(0f, 0f, w, h))
-        val r = RectF((w - 980f) / 2f, 260f, (w + 980f) / 2f, 640f)
+        UiKit.cover(c, RectF(0f, -RoomTabRow.DY, w, h))          // the whole view: the page is drawn RoomTabRow.DY lower
+        val r = RectF((w - 980f) / 2f, 260f - RoomTabRow.DY, (w + 980f) / 2f, 640f - RoomTabRow.DY)     // where it stood on the screen
         UiKit.dialog(c, r)
         val pt = UiKit.bodyPaint(32f, Color.WHITE)
         val sl = StaticLayout.Builder.obtain(ask.text, 0, ask.text.length, TextPaint(pt), (r.width() - 200f).toInt())
@@ -1592,6 +1692,9 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         return r.top + min(sl.height.toFloat(), r.height())
     }
 
+    /** the least width beside the page worth a page of its own (the 16:9 layout) */
+    private val WIDE_MIN = 400f
+
     private fun layout(t: String, p: Paint, width: Int, spacing: Float): StaticLayout =
         StaticLayout.Builder.obtain(Tr.span(t), 0, Tr.span(t).length, TextPaint(p), max(1, width))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setLineSpacing(spacing, 1f).build()
@@ -1606,7 +1709,13 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     private var dragKey: String? = null
     private var moved = false
 
-    override fun onTouchEvent(e: MotionEvent): Boolean {
+    /** a finger, in the page's coordinates (the page is drawn [RoomTabRow.DY] lower; the tab row's boxes are kept in the same ones) */
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        val e = MotionEvent.obtain(ev).apply { offsetLocation(0f, -RoomTabRow.DY) }
+        try { return touch(e) } finally { e.recycle() }
+    }
+
+    private fun touch(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x; downY = e.y; lastY = e.y; moved = false
@@ -1680,7 +1789,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
     }
 
     /** nothing to tap in x 550 .. 690 of the room's last 34 px: Home's button stands there (SPEC 2) */
-    private fun underHome(x: Float, y: Float) = x in 550f..690f && y > height - 34f
+    private fun underHome(x: Float, y: Float) = x in 550f..690f && y > height - RoomTabRow.DY - 34f     // the page's coordinates
 
     companion object {
         private const val TAG = "CharacterView"

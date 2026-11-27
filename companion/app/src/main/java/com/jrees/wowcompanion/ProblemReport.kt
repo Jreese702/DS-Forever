@@ -170,6 +170,8 @@ object ProblemReport {
             runCatching { add("Game art: ${ArtHarvest.state.javaClass.simpleName}" + ((ArtHarvest.state as? ArtHarvest.State.Failed)?.let { " (${it.why})" } ?: "")) }
             add("Game running: ${LauncherHooks.gameUp()}")
             runCatching { add(ScreenSwap.line(Settings.swapScreens)) }   // #232: Swap screens and the display ids chosen
+            runCatching { add(SingleScreen.line()) }            // single screen mode (11-25): on / off, why, the controller's trips
+            runCatching { add(BottomSync.line()) }              // the bottom screen comes straight back (11-25): kept, shown again, rebuilt and why
             runCatching { add(PadDiag.line()) }                 // issues #16 / #84 / #116 / #147: did any press reach DS Forever
             runCatching { add(KeyLag.line()) }                  // 1.0.29 "insane input lag on my face buttons": how late the game got them
             runCatching { add(PadSlow.line()) }                 // the 1.0.29 review: a room's press work on the main thread, named

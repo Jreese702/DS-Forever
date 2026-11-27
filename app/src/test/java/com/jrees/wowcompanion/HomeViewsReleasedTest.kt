@@ -59,6 +59,19 @@ class HomeViewsReleasedTest {
         return listOf(WeakReference<View>(home), WeakReference<View>(map), WeakReference<View>(cast), WeakReference<View>(chat))
     }
 
+    /**
+     * CastView's art decodes on its ART_EXEC (one real background thread, shared by every CastView in the JVM) and lands through the
+     * main looper (decode's mainHandler.post, holding its CastView until it runs). The full app suite for test 1533 (2026-11-26, batch 5:
+     * HomeLayoutShotsTest / HomeTopBarShotsTest before this class, their art root still set) left that thread busy, so these pages'
+     * decodes came back after the wait below and their landing posts held the CastViews: a late landing, not a leak (the post runs and
+     * lets go). Drained as HomeEditShotsTest.drainArt does: every task handed to the executor done (a no-op submitted after them runs
+     * last), its results posted and run, three times over (a landing may ask for more)
+     */
+    private fun drainArt() {
+        val ex = CastView::class.java.getDeclaredField("ART_EXEC").apply { isAccessible = true }.get(null) as java.util.concurrent.ExecutorService
+        repeat(3) { ex.submit { }.get(10, java.util.concurrent.TimeUnit.SECONDS); ShadowLooper.idleMainLooper() }
+    }
+
     @Test fun aHomeThatIsGoneIsCollected() {
         val refs = ArrayList<WeakReference<View>>()
         repeat(3) { refs += page() }
@@ -70,6 +83,12 @@ class HomeViewsReleasedTest {
         HomeSettings.swingTimer = !HomeSettings.swingTimer
         settle()
         for (i in 0 until 20) {
+            // (test 1533's full suite: one red in a 20-class batch - the "cast-art" decoder's answer, posted to the main looper after this
+            // loop had ended, held the CastView and through it every page; GC order, not a holder). Both waits, as test 1533 and
+            // feat/bottom-sync each fixed it: CastView's own ART_EXEC drained three times with a 10 s bound (HomeEditShotsTest.drainArt),
+            // then every other worker of the companion's let finish too (HostHolders.quietWorkers)
+            drainArt()
+            HostHolders.quietWorkers(rounds = 2) { settle(2) }
             System.gc(); System.runFinalization()
             settle(2)
             if (refs.all { it.get() == null }) break

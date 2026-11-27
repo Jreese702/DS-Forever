@@ -53,7 +53,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
     /** feat/beautify (themes 8.4, the user 2026-11-17: "the background on some of the OLED themes look lifeless"): the page stands on
      *  RoomGround.settings, drawn once behind the scroll (it does not scroll); the scroll and its parts paint no ink */
     private val ground = object : View(context) {
-        init { Theme.onChange { postInvalidate() } }
+        init { context.atHostEnd(Theme.onChange { postInvalidate() }) }
         override fun onDraw(c: Canvas) = RoomGround.settings(c, android.graphics.RectF(0f, 0f, width.toFloat(), height.toFloat()))
     }
     private val scroll = ScrollView(context)
@@ -112,7 +112,7 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         page.addView(ground, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         page.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         val body = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        pad = SettingsPad(context, scroll, sections, gameUis, padSource, tabBar, { dir -> show(SettingsTabs.step(tab, dir)) },
+        pad = SettingsPad(context, scroll, sections, gameUis, padSource, tabBar, { dir -> SettingsTabs.step(tab, dir)?.let { show(it) } },
             { v, r -> rowOf(v, r.centerX(), r.centerY()) })
         // Top screen's tiles (2026-11-16): ONE band open in the room - a tile's band opening closes any other part's - and the cursor
         // and the band follow it (a tap and A alike)
@@ -168,12 +168,12 @@ class SettingsRoom(context: Context, private val view: SettingsView, padSource: 
         for (bt in bottomTiles) bt.onContent = again
         for (at in addonTiles) at.onContent = again
         view.onContent = again
-        GameUi.onChange(again); ThirdPartyAddons.onChange(again); ImportedAddons.onChange(again); Settings.onChange(again); HomeAttackSwitch.onChange(again)
-        CompassSwitch.onChange(again); RingsSwitch.onChange(again); TipsSwitch.onChange(again); HomeLootSwitch.onChange(again)
-        FrameGen.onChange(again)
+        context.atHostEnd(GameUi.onChange(again)); context.atHostEnd(ThirdPartyAddons.onChange(again)); context.atHostEnd(ImportedAddons.onChange(again)); context.atHostEnd(Settings.onChange(again)); context.atHostEnd(HomeAttackSwitch.onChange(again))
+        context.atHostEnd(CompassSwitch.onChange(again)); context.atHostEnd(RingsSwitch.onChange(again)); context.atHostEnd(TipsSwitch.onChange(again)); context.atHostEnd(HomeLootSwitch.onChange(again))
+        context.atHostEnd(FrameGen.onChange(again))
         // the layout editor's row comes with the add-on set's first "lay" document (only that change: its documents come often)
         var layAvail = LayoutModel.Live.available()
-        LayoutModel.Live.onChange { val a = LayoutModel.Live.available(); if (a != layAvail) { layAvail = a; again() } }
+        context.atHostEnd(LayoutModel.Live.onChange { val a = LayoutModel.Live.available(); if (a != layAvail) { layAvail = a; again() } })
         show(SettingsTabs.last, force = true)
     }
 
@@ -377,7 +377,7 @@ class SettingsFoldHeading(context: Context, val group: SettingsTabs.Group, priva
     private var downX = 0f
     private var downY = 0f
 
-    init { Theme.onChange { postInvalidate() } }
+    init { context.atHostEnd(Theme.onChange { postInvalidate() }) }
 
     /** the heading's box (the cursor's stop and its touch area), in this view's coordinates */
     fun rect(): RectF = RectF(16f, 4f, width - 16f, H - 4f)

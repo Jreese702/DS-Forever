@@ -122,7 +122,11 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
      *  while B leads Home - B closes the cursor */
     var barB = false
         set(v) { if (field != v) { val t = now(); val was = redB; val from = redNow(t); field = v; flowIf(was, from, t) } }
-    private val redB get() = bGoesHome || barB
+    /** THE DS MENU's swirl (single screen mode, SingleMenu.swirlRed): true = red with B (a fight: B goes straight back to the game),
+     *  false = its blue at rest (a room on the stage: B folds into the row), null = the bar's own rule ([bGoesHome] / [barB]) */
+    var menuRed: Boolean? = null
+        set(v) { if (field != v) { val t = now(); val was = redB; val from = redNow(t); field = v; flowIf(was, from, t) } }
+    private val redB get() = menuRed ?: (bGoesHome || barB)
     /** test26: the red / B look goes to its target AT ONCE, no flow (a wheel's close: the disc comes back from under the hub blue) */
     fun snapRed() { redAt = 0L; invalidate() }
     /** the red / B state changed ([was] -> [redB]): its flow starts from where the red stood ([from]) */
@@ -551,6 +555,24 @@ class Strip(context: Context, private val onPick: (Room) -> Unit) : View(context
         glyph = HOME / 56f * 20f / 24f * 1.1f
         if (editTick) { drawEditTick(c); return }
         icon(c, Room.MAP, homeX, homeY, true, home = true)
+    }
+
+    /**
+     * THE 1535 POLISH (single screen mode's swirl corner button, SingleDocks.CornerButton): Home's own disc - the stone button with its
+     * swirl, its live light, its B look - drawn at ([cx], [cy]) [d] px across on another view's canvas; false = its pieces are not on the
+     * device (the caller draws its stand-in). The bar's own place for the disc is untouched (restored after)
+     */
+    private val discClip = Path()
+    fun drawDiscAt(c: Canvas, cx: Float, cy: Float, d: Float): Boolean {
+        val hx = homeX; val hy = homeY; val anim = animating
+        val k = d / (HOME + 2f * RING)
+        val save = c.save()
+        c.translate(cx, cy); c.scale(k, k)
+        // round, as the bar shows it (the live light's square pictures never past the stone's edge)
+        discClip.reset(); discClip.addCircle(0f, 0f, HOME / 2f + RING, Path.Direction.CW); c.clipPath(discClip)
+        homeX = 0f; homeY = 0f
+        val ok = try { drawKitHome(c) } finally { homeX = hx; homeY = hy; animating = anim; c.restoreToCount(save) }
+        return ok
     }
 
     /** P2: edit mode's gold tick over the disc (a touch on it saves and leaves); the game's tick art, else a drawn one */

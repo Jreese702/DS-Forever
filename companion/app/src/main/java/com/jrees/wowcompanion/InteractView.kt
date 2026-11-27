@@ -71,6 +71,8 @@ class InteractView(context: Context) : View(context) {
     private var doc: JSONObject? = null
     private var docGt = -1L
     private var kind = Kind.NONE
+    /** the window shown is the LOOT window (single screen mode leaves the game undimmed under it: SingleLook.DIM_LOOT) */
+    fun looting(): Boolean = kind == Kind.LOOT
     private var sig = ""
     private var dismissedSig: String? = null
     private var dismissedAt = 0L                        // when close() hid this window (the game's own may refuse to close)
@@ -765,8 +767,11 @@ class InteractView(context: Context) : View(context) {
                 val au = d.optJSONObject("auction")
                 for (cat in arr(au, "cats")) out.add(Entry("ahcat ${cat.optString("i")}", slotOf(cat), cat, K_AH))
                 for (r in arr(au, "results")) out.add(Entry("ahres ${r.optInt("i")}", slotOf(r), r, K_AH))
+                // Interact i174: a listing's own cell (an older add-on), else the AH's one listing cell (AhList)
+                val listCol = au?.optJSONObject("act")?.let { slotOf(it, "list") } ?: -1
                 au?.optJSONObject("item")?.let { it ->
-                    if (!it.optBoolean("commodity")) for (r in arr(it, "rows")) out.add(Entry("ahrow ${r.optInt("i")}", slotOf(r), r, K_AH))
+                    if (!it.optBoolean("commodity")) for (r in arr(it, "rows"))
+                        out.add(Entry("ahrow ${r.optInt("i")}", AhList.cell(slotOf(r), listCol, r.optInt("i")), r, K_AH))
                 }
                 au?.optJSONObject("act")?.let { a -> out.add(Entry("ahbuy", slotOf(a, "buy"), a, K_AH)) }
             }
@@ -878,6 +883,13 @@ class InteractView(context: Context) : View(context) {
      * [pick] > 0 (i172, the auction house's star on a result row) sends the count cell pick-1 first ALWAYS (row 1 too): the row it names.
      */
     private fun send(cmd: String, slot: Int, count: Int = 1, pick: Int = 0) {
+        // Interact i174: an AH listing with no cell of its own is pressed on the one listing cell, its row number first (AhList)
+        if (kind == Kind.AUCTION && cmd.startsWith("ahrow ")) {
+            val au = doc?.optJSONObject("auction")
+            val own = arr(au?.optJSONObject("item"), "rows").firstOrNull { "ahrow ${it.optInt("i")}" == cmd }?.let { slotOf(it) } ?: -1
+            val p = AhList.press(cmd, own, au?.optJSONObject("act")?.let { slotOf(it, "list") } ?: -1)
+            if (p != null && p.cmd != cmd) { send(p.cmd, p.slot, pick = p.pick); return }
+        }
         val now = System.currentTimeMillis()
         blocked(now)?.let { note(it, false); return }
         if (slot < 0) { note("The game gave this no tap cell", false); return }
@@ -3601,7 +3613,7 @@ class InteractView(context: Context) : View(context) {
             val price = pe?.o?.optLong("price", 0) ?: 0L
             val ok = pe != null && pe.slot >= 0 && price > 0 && !pe.o.optBoolean("mine") && price <= purse
             val hx = UiKit.hints(c, bx - 280f, cy, "rev_minus" to "Favorite", UiKit.backGlyph() to "Back")
-            stripButton(c, RectF(bx - 260f, cy - 55f, bx, cy + 56f), "Buy Now", "go", ok, busy && pendingCmd == pe?.cmd, "rev_a")
+            stripButton(c, RectF(bx - 260f, cy - 55f, bx, cy + 56f), "Buy Now", "go", ok, busy && AhList.waiting(pendingCmd, pe?.cmd), "rev_a")
             goCmd = pe.takeIf { ok }
             if (!ok) goWhy = when {
                 pe == null -> "Choose a listing first"
@@ -3964,7 +3976,9 @@ class InteractView(context: Context) : View(context) {
         val x = (t / dur).coerceIn(0f, 1f)
         val k = if (closing) 1f - lootCurve.getInterpolation(x) else lootCurve.getInterpolation(x)
         if (x < 1f) postInvalidateOnAnimation()
-        UiKit.cover(c, full, 0.45f * k)
+        // the 1535 polish (the user on test 1533: "When looting the screen dims but thats excessive"): over the game in single screen mode
+        // the window's own cover goes too (SingleLook.DIM_LOOT: the game undimmed); over Home on the bottom screen as ever
+        if (!SingleScreen.inUse) UiKit.cover(c, full, 0.45f * k)
         val items = arr(lt, "items").filter { it.optInt("i") != landHideFrom && vanishes.none { v -> v.i == it.optInt("i") } }
         val shownN = min(5, max(1, items.size))
         if (lootOpenAt != fxOpenSeen) { fxOpenSeen = lootOpenAt; slides.clear() }
@@ -5146,7 +5160,7 @@ class InteractView(context: Context) : View(context) {
         val yes = RectF(box.centerX() - 400f, by, box.centerX() - 20f, by + 111f)
         val no = RectF(box.centerX() + 20f, by, box.centerX() + 400f, by + 111f)
         val ok = buyE != null && buyE.slot >= 0
-        stripButton(c, yes, "Buy Now", if (ok) "do:${buyE!!.cmd}" else "why:The game gave this no tap cell", ok, pendingCmd == buyE?.cmd, "rev_a", always = true)
+        stripButton(c, yes, "Buy Now", if (ok) "do:${buyE!!.cmd}" else "why:The game gave this no tap cell", ok, AhList.waiting(pendingCmd, buyE?.cmd), "rev_a", always = true)
         val back = act?.let { slotOf(it, "back") } ?: -1
         stripButton(c, no, "Cancel", if (back >= 0) "act:ahback|$back" else "why:Press ${Glyphs.name("b")}", true, false, UiKit.backGlyph(), always = true)
     }

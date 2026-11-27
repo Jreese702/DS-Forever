@@ -14,9 +14,9 @@ object NoMana {
     /** where the set came from: "game", "model", "mixed", "none" */
     var src: String = "none"
         private set
-    private val listeners = ArrayList<() -> Unit>()
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
 
     fun has(id: Int?): Boolean = id != null && id > 0 && id in ids
 

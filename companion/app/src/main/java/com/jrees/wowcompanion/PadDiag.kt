@@ -260,6 +260,16 @@ object AddonSilence {
         }
 
         private fun restart(at: Long, c: Clock, after: Long) { from = at; clock = c; said = false; nextAt = at + after }
+
+        /**
+         * the bottom screen was kept away [awayMs] (BottomSync: a park is no silence - its reader and this clock's tick were stopped): a
+         * silent clock's start and its next say move on by that much, a pending bye's wait too; a clock that heard the add-ons stays
+         */
+        fun resumed(awayMs: Long) {
+            if (awayMs <= 0L) return
+            if (silent) { from += awayMs; nextAt += awayMs }
+            if (byeAt > 0L) byeWall += awayMs
+        }
     }
 
     /** the report's / log's line for a silence of [silentMs] measured from [clock] */

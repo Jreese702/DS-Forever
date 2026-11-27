@@ -413,8 +413,21 @@ class HomeEditShotsTest {
         settle()
         return p
     }
-    /** the band's pixels as Home draws it now */
+    /**
+     * The band's art and icons decode on CastView's ART_EXEC (a real background thread) and land through the main looper: a capture taken
+     * while a decode is in flight draws the vector stand-ins, the next one the art - two "wiggle times" that differ all over the band
+     * (theTopBarStaysStillOutsideItsPieces failed so, alongside other tests: the decode's real time against the shadow clock). Drained
+     * here: every task handed to the executor done (it is single-threaded: a no-op submitted after them runs last), its results posted
+     * and run, twice over (a landing may ask for more)
+     */
+    private fun drainArt() {
+        val ex = CastView::class.java.getDeclaredField("ART_EXEC").apply { isAccessible = true }.get(null) as java.util.concurrent.ExecutorService
+        repeat(3) { ex.submit { }.get(10, java.util.concurrent.TimeUnit.SECONDS); ShadowLooper.idleMainLooper() }
+    }
+
+    /** the band's pixels as Home draws it now (its art landed first: [drainArt]) */
     private fun bandPx(p: Page, bars: RectF): IntArray {
+        drainArt()
         setField(p.home, "clockText", "9:51 AM"); setField(p.home, "batteryPct", 98)
         // the band's own clock: its hud as just received (a hud older than CastView's STALE_MS draws the bar greyed; a new hud document
         // would play its own focus glow)
@@ -878,8 +891,12 @@ class HomeEditShotsTest {
             assertNotNull("$n: the fight pencil stays reachable", pen)
             // (the fight strip there - Cast bar in fights = Bottom screen, the default: on the strip's left end, the user's pick
             // 2026-11-23; theFightPencilSitsAtTheStripsLeftEnd has the cases)
-            assertEquals("$n: on the fight strip's left end", BandEdit.onStrip(HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)), pen)
-            assertTrue("$n: on the page's top ($pen)", pen!!.t >= 0f && pen.b <= 60f)
+            // (ruling D, the user's pick 2026-11-25 "Party pencil to the right": BandEdit.onStrip's full-size pencil everywhere - the
+            // Party mode tab's too: the party list's pencil is at the list's right end, 1530's 32 px fallback gone)
+            val sb = HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)
+            assertEquals("$n: on the fight strip's left end, full size", BandEdit.onStrip(sb), pen)
+            // (test 1530, "way to small": the strip's pencil PEN_ON_STRIP now - it hangs from the strip's left end, 1530's 32 px stood in it)
+            assertTrue("$n: on the page's top ($pen)", pen!!.t >= 0f && pen.b <= BandEdit.RING + BandEdit.PEN_ON_STRIP + 0.5f)
             p.home.editAct { it.pencilTap(EditStop.FIGHT_PEN) }; settle(10)
             assertEquals(EditStop.FIGHT_PEN, model(p).menu)
             val bubble = p.home.editChrome.menuBox(EditStop.FIGHT_PEN)
@@ -939,8 +956,8 @@ class HomeEditShotsTest {
             if (strip != null) {
                 at("$n: the fight strip ($strip)", strip == RectF(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H))
                 at("$n: the pencil at the strip's left end ($pen / $strip)", pen.cx >= strip.left && pen.cx <= strip.left + 64f)
-                val cy = (pen.t + pen.b) / 2f
-                at("$n: its centre on the strip's height ($pen / $strip)", cy > strip.top && cy < strip.bottom)
+                // (test 1530: the bigger pencil hangs from the strip's left end, over the strip's whole height)
+                at("$n: over the strip's height ($pen / $strip)", pen.t < strip.bottom && pen.b > strip.bottom && pen.t <= strip.top + BandEdit.RING)
                 at("$n: the strip's middle clear ($pen / $strip)", pen.r < strip.centerX() - strip.width() / 4f)
                 at("$n: the cursor round it on the page ($pen)", pen.l - BandEdit.RING >= -0.01f && pen.t - BandEdit.RING >= -0.01f)
             } else {
@@ -948,6 +965,22 @@ class HomeEditShotsTest {
                 at("$n: no strip - AWAY_TOP down ($pen)", kotlin.math.abs(pen.t - BandEdit.AWAY_TOP) <= 0.5f)
             }
             stops[EditStop.PARTY_PEN]?.let { q -> at("$n: clear of the party list's pencil ($pen / $q)", !pen.overlaps(q)) }
+            // RULING D (the user's pick 2026-11-25, "Party pencil to the right (Recommended)"): the fight pencil full size everywhere -
+            // the Party mode tab's too, the list at the top of the left column under the strip - and the party list's pencil at the
+            // list's RIGHT end (left of its Select tab when the tab is on the right), never on the strip's pencil
+            if (strip != null) at("$n: the fight pencil full size (${pen.w})", pen.w >= BandEdit.PEN_ON_STRIP - 0.5f && pen == BandEdit.onStrip(
+                HomeLayoutSolver.Box(strip.left, strip.top, strip.right, strip.bottom)))
+            if (party) {
+                val q = stops[EditStop.PARTY_PEN]
+                val pl = b.getValue("PARTY")
+                at("$n: the party list's pencil there", q != null)
+                if (q != null) {
+                    at("$n: the party list's pencil at the list's right end ($q / $pl)", q.cx > pl.centerX())
+                    val tabRight = pl.left > 0.5f
+                    if (tabRight) at("$n: ... left of the Select tab on the right ($q / $pl)", q.r <= pl.right - PartyLayout.TAB_W)
+                    at("$n: the party list's pencil full size (${q.w})", q.w >= BandEdit.PEN_PARTY - 0.5f)
+                }
+            }
             // back Down off it, and a tap on it opens its bubble
             p.home.editKey("PADDDOWN"); settle(4)
             assertNotEquals("$n: Down leaves the pencil", EditStop.FIGHT_PEN, model(p).cursor)
@@ -997,6 +1030,7 @@ class HomeEditShotsTest {
         val stripBox = HomeLayoutSolver.Box(8f, 8f, W - 8f, 8f + HomeLayoutSolver.FIGHT_STRIP_H)
         // its own place (theFightPencilSitsAtTheStripsLeftEnd): the strip's left end, or the page's top centre AWAY_TOP down
         fun ownPlace(pen: HomeLayoutSolver.Box?, strip: Boolean): Boolean = pen != null &&
+            // (ruling D 2026-11-25: the full-size strip pencil everywhere, the Party mode tab's too)
             if (strip) pen == BandEdit.onStrip(stripBox) else kotlin.math.abs(pen.cx - W / 2f) <= 1f && kotlin.math.abs(pen.t - BandEdit.AWAY_TOP) <= 0.5f
         // the changes: (name, the record's Cast bar in fights, the game's swing timer `gsw` at the open, Swing timer at the open, the row's
         // key and pick - or, [gswTo], the add-on's padmap saying the game's own swing timer went on / off: the swing-alone strip comes or
@@ -1771,7 +1805,9 @@ class HomeEditShotsTest {
         touch(p, MotionEvent.ACTION_DOWN, x1, y1)
         for (i in 1..12) { touch(p, MotionEvent.ACTION_MOVE, x1 - 52f * i, y1 - 48f * i); settle(2) }
         touch(p, MotionEvent.ACTION_UP, x1 - 52f * 12, y1 - 48f * 12); settle(40)
-        assertEquals(classic, HomeSettings.layout)
+        // (ruling B, the user's pick 2026-11-25 "Keep my pick here too": moved on the Party mode tab, the list's place is Party mode's own
+        // even back above the chat, where Out of combat has it)
+        assertEquals(classic.copy(partyTab = HomeLayout.TabPlaces.of(classic), partyPicked = true), HomeSettings.layout)
         party = boxes(p.home).getValue("PARTY")
         assertEquals(0f, party.left, 0.5f)
         assertEquals(party.bottom + PartyLayout.CHAT_GAP, boxes(p.home).getValue("CHAT").top, 0.5f)

@@ -26,7 +26,7 @@ class ThemeMakerHost(context: Context, private val held: () -> Boolean) : View(c
         page.onChange = { postInvalidate() }
         page.later = { ms -> postDelayed({ invalidate() }, ms) }
         page.onClose = { close() }
-        Theme.onChange { postInvalidate() }
+        context.atHostEnd(Theme.onChange { postInvalidate() })
     }
 
     fun open() {

@@ -126,7 +126,7 @@ object VoiceModels {
     /** offline voice is in this build (libdsfwhisper.so): Settings > Add-ons shows the Voice group (the off-device tests set their own) */
     @Volatile var offered: () -> Boolean = { WhisperNative.available }
 
-    fun onChange(l: () -> Unit) { listeners.add(l) }
+    fun onChange(l: () -> Unit): () -> Unit { listeners.add(l); return { listeners.remove(l) } }   // its removal: HostEnds
     fun offChange(l: () -> Unit) { listeners.remove(l) }
     private fun changed() { for (l in listeners) runCatching { l() } }
 

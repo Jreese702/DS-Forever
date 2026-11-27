@@ -127,13 +127,13 @@ class SettingsView(context: Context, val onReload: () -> Unit) : View(context) {
     init {
         // the stores the room's parts read (this view is built first, as the host's hub: each init here once, as before the tiles)
         Theme.init(context)
-        Theme.onChange { postInvalidate() }
+        context.atHostEnd(Theme.onChange { postInvalidate() })
         ThirdPartyAddons.init(context)
         VoiceModels.init(context)
-        VoiceModels.onChange { postInvalidate() }
+        context.atHostEnd(VoiceModels.onChange { postInvalidate() })
         ImportedAddons.init(context)
-        ImportedAddons.onChange { post { requestLayout(); invalidate() } }   // the worker's thread: the card's rows come and go
-        Settings.onChange { postInvalidate() }
+        context.atHostEnd(ImportedAddons.onChange { post { requestLayout(); invalidate() } })   // the worker's thread: the card's rows come and go
+        context.atHostEnd(Settings.onChange { postInvalidate() })
         ReportFlow.init(context)
         FrameGen.init(context)
         CastSettings.init(context)
