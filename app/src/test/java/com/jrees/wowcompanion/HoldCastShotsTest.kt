@@ -644,4 +644,89 @@ class HoldCastShotsTest {
         for (i in 0 until sets.length()) { val sl = sets.getJSONObject(i).getJSONArray("slots"); for (j in 0 until sl.length()) { sl.getJSONObject(j).remove("h"); sl.getJSONObject(j).remove("hc") } }
         return m
     }
+
+    /**
+     * feat/hold-morph (the user, 2026-11-27: "I want there to be a slick transition on a button hold, I want the button hold to transition
+     * that small circle into the big one and then back after the cast is complete or canceled"): Home's band (Diamonds, the A) at 0 / 25
+     * / 50 / 75 / 100 % of the morph in (from the fire: HoldMorph.IN_MS), then back at 100 / 75 / 50 / 25 / 0 % (from the cast's end:
+     * HoldMorph.OUT_MS). Pixel checks: the start and the end are the same picture (no jump), so are both ends of the full morph, the
+     * picture moves further from the start at each step in, the gold checked ring is there at the full morph only. HOLD_SHOTS_DIR: the
+     * frames (app_morph_in_*, app_morph_out_*) and app_morph_sheet.png (x2)
+     */
+    @Test fun theHoldMorphFrames() {
+        lang("en")
+        val cast = CastView(app) { }
+        cast.layout = CastView.Layout.DIAMONDS
+        val ww = 1240; val hh = 354
+        cast.measure(View.MeasureSpec.makeMeasureSpec(ww, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(hh, View.MeasureSpec.EXACTLY))
+        cast.layout(0, 0, ww, hh)
+        val icons = listOf(136048, 136026, 135990, 136052, 135813, 136015, 135824, 136075)
+        fun layer() = JSONArray().apply { for (p in 1..8) put(JSONObject().put("p", p).put("k", "spell").put("id", 400 + p).put("i", icons[p - 1])) }
+        val hud = JSONObject().put("hud", JSONObject().put("ok", true).put("page", 1).put("pages", JSONArray().put(true).put(true).put(true))
+            .put("L", JSONObject().put("n", layer()).put("lt", layer()).put("rt", layer()).put("lr", layer())))
+        cast.update(hud)
+        for (i in 0 until 20) { Thread.sleep(25); org.robolectric.shadows.ShadowLooper.idleMainLooper() }
+        cast.update(hud)
+        cast.holdRefs = PadMapModel.holdRefs(PadMapModel.parse(padmap())!!)
+        CastView::class.java.getDeclaredMethod("onPad", Boolean::class.java, Boolean::class.java, Boolean::class.java, Boolean::class.java)
+            .apply { isAccessible = true }.invoke(cast, false, false, false, false)
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(2))
+        HoldCast.watch.reset(); HoldCast.watch.map = setOf(HoldCast.key(0, 8))
+        HoldCast.takeover.clear()
+        HoldCast.release.cn = 3; HoldCast.release.ft = 17
+        HoldCast.schedule = { }; HoldCast.later = { _, _ -> }; HoldCast.gates = { true }
+        val buttons = CastView::class.java.getDeclaredMethod("onButtons", Int::class.java).apply { isAccessible = true }
+        fun draw(): Bitmap { val b = Bitmap.createBitmap(ww, hh, Bitmap.Config.ARGB_8888); val c = Canvas(b); c.drawColor(Theme.ink); cast.draw(c); return b }
+        val ready = draw()
+        // A held, kept, its fire point: the takeover starts there (the cast at the fill, untouched)
+        buttons.invoke(cast, 1 shl PadInput.SLOT_FACE_BOTTOM)
+        HoldCast.padIn(1, false, false, false, false, SystemClock.uptimeMillis())
+        HoldCast.onFacecast(JSONObject().put("type", "facecast").put("pos", 8).put("hk", "keep").put("kind", "holdkeep")
+            .put("lay", "bare").put("key", "PAD1").put("need", 3))
+        ShadowSystemClock.advanceBy(Duration.ofMillis(HoldCast.fireMs(3, 17)))
+        HoldCast.fireNow(SystemClock.uptimeMillis())
+        val s0 = HoldCast.takeover.startedAt
+        assertTrue("the fire started the takeover", HoldCast.takeover.pos == 8)
+        HoldCast.onHoldCast(JSONObject().put("type", "holdcast").put("pos", 8).put("st", "cast").put("d", 0.6))
+        fun to(at: Long) { val d = at - SystemClock.elapsedRealtime(); if (d > 0) ShadowSystemClock.advanceBy(Duration.ofMillis(d)) }
+        fun inAt(v: Double) = Math.round(HoldMorph.IN_MS * (1.0 - Math.cbrt(1.0 - v)))
+        fun outAt(v: Double) = Math.round(HoldMorph.OUT_MS * (1.0 - Math.cbrt(v)))
+        val ins = ArrayList<Bitmap>(); val outs = ArrayList<Bitmap>()
+        val mIn = ArrayList<Float>(); val mOut = ArrayList<Float>()
+        for (pc in listOf(0, 25, 50, 75, 100)) { to(s0 + inAt(pc / 100.0)); ins += draw(); mIn += HoldCast.takeover.morphAt(8, 0, SystemClock.elapsedRealtime()) }
+        // let go (nothing new for the game: the fire was at the fill); the 0.6 s cast ends: back
+        buttons.invoke(cast, 0); HoldCast.padIn(0, false, false, false, false, SystemClock.uptimeMillis())
+        val e = s0 + 600
+        for (pc in listOf(100, 75, 50, 25, 0)) { to(e + (if (pc == 0) HoldCast.EASE_MS else outAt(pc / 100.0))); outs += draw(); mOut += HoldCast.takeover.morphAt(8, 0, SystemClock.elapsedRealtime()) }
+        HoldCast.watch.reset(); HoldCast.watch.map = emptySet(); HoldCast.takeover.clear()
+        // the frames: cropped round the A (where anything changed), each saved, and the sheet (x2)
+        val box = android.graphics.Rect()
+        for (b in ins + outs) diffBox(ready, b)?.let { box.union(it) }
+        val pad = android.graphics.Rect(box.left - 24, box.top - 24, box.right + 24, box.bottom + 24)
+        listOf(0, 25, 50, 75, 100).forEachIndexed { i, pc -> save(crop(ins[i], pad), "app_morph_in_%03d".format(pc)) }
+        listOf(100, 75, 50, 25, 0).forEachIndexed { i, pc -> save(crop(outs[i], pad), "app_morph_out_%03d".format(pc)) }
+        out?.let { _ ->
+            val tiles = (ins + outs).map { crop(it, pad) }
+            val tw = tiles[0].width * 2; val th = tiles[0].height * 2
+            val sheet = Bitmap.createBitmap(tw * 5 + 8 * 6, th * 2 + 8 * 3, Bitmap.Config.ARGB_8888)
+            val c = Canvas(sheet); c.drawColor(Theme.ink)
+            val pnt = android.graphics.Paint().apply { isFilterBitmap = true }
+            tiles.forEachIndexed { i, t ->
+                val x = 8f + (i % 5) * (tw + 8f); val y = 8f + (i / 5) * (th + 8f)
+                c.drawBitmap(t, null, RectF(x, y, x + tw, y + th), pnt)
+            }
+            save(sheet, "app_morph_sheet")
+        }
+        // the checks (after the frames are saved)
+        assertFalse("0 %: the very picture before the fire - no jump at the start", differs(ready, ins[0]))
+        assertFalse("back home: the very picture before the fire - no jump at the end", differs(ready, outs[4]))
+        assertFalse("the full morph: the same picture both ways", differs(ins[4], outs[0]))
+        // the frames are the morph's own 0 / 25 / 50 / 75 / 100 % (its clock is the takeover's: the band drew them at those values)
+        listOf(0f, 0.25f, 0.5f, 0.75f, 1f).forEachIndexed { i, v -> assertEquals("in $v", v, mIn[i], 0.02f) }
+        listOf(1f, 0.75f, 0.5f, 0.25f, 0f).forEachIndexed { i, v -> assertEquals("back $v", v, mOut[i], 0.02f) }
+        for (i in 1..3) assertTrue("in: each step its own picture ($i)", differs(ins[i - 1], ins[i]) && differs(ins[i], ins[4]))
+        for (i in 1..3) assertTrue("back: each step its own picture ($i)", differs(outs[i - 1], outs[i]) && differs(outs[i], outs[4]))
+        assertTrue("the full morph: the gold checked ring round the big face", ringGold(ready, ins[4]) > 150)
+        assertTrue("25 %: no checked ring yet (the moving badge, the tap shrinking)", ringGold(ready, ins[1]) < ringGold(ready, ins[4]))
+    }
 }

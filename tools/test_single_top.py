@@ -169,7 +169,7 @@ def part_b():
     print("\n-- B our top cast bar for every cast (ActionBar nbar25)")
     import test_top_castbar as ttc
     ab = src("WowCompanion", "ActionBar.lua")
-    chk("B0. ActionBar nbar26 (the 1533 merge) and nbar25's note", 'local NB = { V = "nbar30"' in ab and "nbar25 SINGLE SCREEN MODE" in ab)
+    chk("B0. ActionBar nbar26 (the 1533 merge) and nbar25's note", 'local NB = { V = "nbar31"' in ab and "nbar25 SINGLE SCREEN MODE" in ab)
     L = ttc.boot()
     G = L.globals()
     L.execute('''

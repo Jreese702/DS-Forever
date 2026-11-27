@@ -773,30 +773,56 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val heldHere = w.layerOf(pos) == li
         val ch = if (heldHere) w.charge(pos, up) else -1f
         val charged = ch >= 0f && w.charged(pos, up)
-        val tk = HoldCast.takeover.let { if (it.pos == pos && it.showsOn(li)) it.alpha(now) else 0f }     // (ruling A: a trigger let go)
+        // feat/hold-morph (the user, 2026-11-27: "I want the button hold to transition that small circle into the big one and then back
+        // after the cast is complete or canceled"): the takeover's morph here (ruling A: a trigger let go keeps it; a ghost going home)
+        val tm = HoldCast.takeover.morphAt(pos, li, now)
         val half = (if (circle) 38f else 40f) * k / 2f
         val iconHalf = half - 3f * k
         var next = if (heldHere) 16L else Long.MAX_VALUE                 // held: the ring may appear / fill on the next frames
         val (ox, oy) = HoldArt.outer(drawn)
-        val bx = ox * (if (circle) 0.703f else 0.662f) * iconHalf
-        val by = oy * (if (circle) 0.581f else 0.727f) * iconHalf
-        val r = (if (circle) 0.486f else 0.468f) * iconHalf
+        val cbx = ox * (if (circle) 0.703f else 0.662f) * iconHalf
+        val cby = oy * (if (circle) 0.581f else 0.727f) * iconHalf
+        val cr = (if (circle) 0.486f else 0.468f) * iconHalf
+        // the MOVING CIRCLE: from the badge's corner into the big face's middle, growing to its size (its glowing ring with it)
+        val bx = cbx * (1f - tm)
+        val by = cby * (1f - tm)
+        val r = cr + (iconHalf - cr) * tm
         // round 1533 (the user on test 1532: "When using hold to cast it will show the button glyph as red if the original spell was not
         // usable, I want that to also shift with the ability that its showing casting so its not confusing"): always the HOLD spell on its
-        // badge, in its own shade - while the takeover has the face the badge FADES OUT (1 - the face's alpha) and comes back as it eases
-        // out; the tap spell is never on it (m195's swap retired; the top screen's nbar25 does the same)
-        val ba = 1f - tk
+        // badge, in its own shade; the tap spell is never on it (m195's swap retired; the top screen's nbar25 does the same).
+        // feat/hold-morph: the badge IS the moving circle - it hands its look over to the checked big face ([drawTakeover], drawn under
+        // it at the same place and size) as it grows, and takes it back on the way home
+        val ba = 1f - HoldMorph.faceShare(tm)
         val icon = Icons.get(ref.icon)
         val hst = ref.stateId?.let { fightStates[it] }
         val sw = holdCdLeft(key, now)
         if (ba > 0.004f) {
             val bs = if (ba < 1f) c.saveLayerAlpha(bx - 2f * r, by - 2f * r, bx + 2f * r, by + 2f * r, (255 * ba).toInt()) else -1
             HoldArt.badge(c, bx, by, r, icon, sw, lit = ch >= 0f, filter = hst?.let { HoldArt.stateFilter(it.u, it.m, it.r) })
+            // its glowing ring rides with it, fading as it grows (the checked face's gold ring takes over)
+            val ra = HoldMorph.ringAlpha(tm)
+            if (ch >= 0f && ra > 0.004f) {
+                val rs = if (ra < 1f) c.saveLayerAlpha(bx - 2f * r, by - 2f * r, bx + 2f * r, by + 2f * r, (255 * ra).toInt()) else -1
+                HoldArt.chargeRing(c, bx, by, r, ch, charged)
+                if (rs >= 0) c.restoreToCount(rs)
+            }
             if (bs >= 0) c.restoreToCount(bs)
         }
-        HoldArt.chargeRing(c, bx, by, r, ch, charged)
         if (sw > 0f) next = min(next, 33L)
+        if (tm > 0f || HoldCast.takeover.morphing(now)) next = min(next, HoldCast.takeover.morphNextMs(now))
         return next
+    }
+
+    /** feat/hold-morph: the morph over the tap's slot at [src] on layer [li] now (0 = none: the tap as ever) - only where a takeover's
+     *  face is really drawn (the same gates and fired spell as [drawTakeover]) */
+    private fun tapMorph(src: Int, li: Int, now: Long): Float {
+        if (li !in 0 until STATE_LAYERS || drawCollapsed || quietPresses) return 0f
+        val t = HoldCast.takeover
+        val ghost = t.ghostAt(src + 1, li)
+        val m = t.morphAt(src + 1, li, now)
+        if (m <= 0f) return 0f
+        val key = (if (ghost) t.ghostLayer else t.layer) * 8 + src
+        return if (takeRefOf(if (ghost) t.ghostStarted else t.startedAt, key) != null) m else 0f
     }
 
     /** the 1532 audit: the takeover's fired spell, taken at its first frame ([drawTakeover]) */
@@ -830,26 +856,41 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         val t = HoldCast.takeover
         // RULING A (the user's pick 2026-11-25, "Stay until it ends"): on its fired layer, and on a layer that only lacks its triggers -
         // LT + X's hold stays on the bare layer's main circle after LT is let go (HoldCast.Takeover.showsOn)
-        if (t.pos != src + 1 || !t.showsOn(li)) return Long.MAX_VALUE
-        if (!gcdStartS.isNaN() && !gcdDurS.isNaN()) t.gcd((gcdStartS * 1000.0).toLong(), (gcdDurS * 1000.0).toLong())
-        val a = t.alpha(now)
+        // feat/hold-morph: or the GHOST - a takeover a newer one on another button replaced, morphing home to its badge
+        val ghost = t.ghostAt(src + 1, li)
+        if (!ghost && (t.pos != src + 1 || !t.showsOn(li))) return Long.MAX_VALUE
+        if (!ghost && !gcdStartS.isNaN() && !gcdDurS.isNaN()) t.gcd((gcdStartS * 1000.0).toLong(), (gcdDurS * 1000.0).toLong())
+        val a = if (ghost) 1f else t.alpha(now)                             // (its clock: the takeover lets go at the end of its ease)
         if (a <= 0f) return Long.MAX_VALUE
-        val key = t.layer * 8 + src                                         // the FIRED layer's hold spell, not the shown layer's
+        val m = t.morphAt(src + 1, li, now)
+        if (m <= 0f) return if (ghost || t.pos < 0) Long.MAX_VALUE else t.morphNextMs(now)
+        val key = (if (ghost) t.ghostLayer else t.layer) * 8 + src          // the FIRED layer's hold spell, not the shown layer's
         // the 1532 audit: the spell that FIRED, kept by the takeover's start - a fight the hold's own cast starts hands the band In combat's
         // hold refs (another spell, or none, on that place) while the takeover still runs
-        if (takeRefAt != t.startedAt || takeRefKey != key) { takeRefAt = t.startedAt; takeRefKey = key; takeRef = holdRefs?.get(key) }
-        val ref = takeRef ?: return Long.MAX_VALUE
+        val ref = takeRefOf(if (ghost) t.ghostStarted else t.startedAt, key) ?: return Long.MAX_VALUE
         val tb = takeoverBtn(key, src, ref)
-        val gl = if (gcdDurS.isNaN()) -1f else t.gcdLeft(now, (gcdDurS * 1000.0).toLong())
+        val gl = if (ghost || gcdDurS.isNaN()) -1f else t.gcdLeft(now, (gcdDurS * 1000.0).toLong())
         val sweep = maxOf(gl, holdCdLeft(key, now))
         val half = (if (circle) 38f else 40f) * k / 2f
         val iconHalf = half - 3f * k
         // round 1533: the hold spell's own state, CHECKED (the game's gold ring); its read of "checked" goes to the takeover - only a
         // state document that came after the takeover started (an older one's chk says nothing of this queue)
         val hst = ref.stateId?.let { fightStates[it] }
-        if (hst != null && fightStatesAt >= t.startedAt) t.chk(hst.chk, now)
+        if (!ghost && hst != null && fightStatesAt >= t.startedAt) t.chk(hst.chk, now)
         takeSt.copyFrom(hst); takeSt.chk = 1
-        val layerSave = if (a < 1f) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * a).toInt()) else c.save()
+        // feat/hold-morph: the checked face rides the MOVING CIRCLE ([drawHold]'s: from the badge's corner and size into the middle at
+        // full size) - its gold ring and glow with it - and takes the circle's look over from the badge as it grows ([HoldMorph.faceShare])
+        val fa = HoldMorph.faceShare(m)
+        if (fa <= 0.004f) return t.morphNextMs(now)
+        val (ox, oy) = HoldArt.outer(pos)
+        val cr = (if (circle) 0.486f else 0.468f) * iconHalf
+        val ms = (cr + (iconHalf - cr) * m) / iconHalf
+        val layerSave = c.save()
+        if (m < 1f) {
+            c.translate(ox * (if (circle) 0.703f else 0.662f) * iconHalf * (1f - m), oy * (if (circle) 0.581f else 0.727f) * iconHalf * (1f - m))
+            c.scale(ms, ms)
+        }
+        if (fa < 1f) c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * fa).toInt())
         drawSlot(c, pos, 0f, 0f, circle, tb, takeSt, -1, now, false, 0f, null, sweep)
         // its masked picture is built off the UI thread on first use: until it lands, the icon straight from the cache (never a dark face)
         if (tb.shader == null) {
@@ -859,8 +900,20 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             drawGlyphBadge(c, 11.5f * k, -(if (circle) 8.5f else 11.5f) * k, pos, null, takeSt.r == 0, false)
         }
         c.restoreToCount(layerSave)
-        return 33L
+        return t.morphNextMs(now)
     }
+    /** feat/hold-morph: the fired spell of the takeover that started at [startedAt] (the current one's, or the ghost's) - kept from its
+     *  first frame (the 1532 audit: a fight's In combat tab may change the hold refs while it runs); two kept, newest first */
+    private fun takeRefOf(startedAt: Long, key: Int): PadMapModel.Ref? {
+        if (takeRefAt == startedAt && takeRefKey == key) return takeRef
+        if (ghostRefAt == startedAt && ghostRefKey == key) return ghostRef
+        ghostRef = takeRef; ghostRefAt = takeRefAt; ghostRefKey = takeRefKey
+        takeRefAt = startedAt; takeRefKey = key; takeRef = holdRefs?.get(key)
+        return takeRef
+    }
+    private var ghostRef: PadMapModel.Ref? = null
+    private var ghostRefAt = Long.MIN_VALUE
+    private var ghostRefKey = -1
     /** round 1533: the takeover's copy of the hold spell's state (drawn checked) */
     private val takeSt = St()
     /** round 1533: the tap slot's state under a takeover (no halo, no count, the hold spell's range for its glyph); a hold that is no
@@ -879,8 +932,7 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
         if (!gcdStartS.isNaN() && !gcdDurS.isNaN()) t.gcd((gcdStartS * 1000.0).toLong(), (gcdDurS * 1000.0).toLong())
         if (t.alpha(now) <= 0f) return null
         val key = t.layer * 8 + src
-        if (takeRefAt != t.startedAt || takeRefKey != key) { takeRefAt = t.startedAt; takeRefKey = key; takeRef = holdRefs?.get(key) }
-        val ref = takeRef ?: return null
+        val ref = takeRefOf(t.startedAt, key) ?: return null
         return ref.stateId?.let { fightStates[it] } ?: neutralSt.also { it.reset() }
     }
     /** the game's checked ring round the slot at the canvas's centre (drawSlot's own, for the cache's face drawn over it) */
@@ -3615,9 +3667,18 @@ class CastView(context: Context, private val onCast: (String) -> Unit) : View(co
             // face drawn over it has the rest: the hold spell's icon, shade and glyph)
             val over = takeoverStateOver(src, li, now)
             val stDraw = if (over != null) tapUnder.also { it.copyFrom(st); it.gl = 0; it.r = over.r; it.countText = null } else st
+            // feat/hold-morph: the TAP spell's art shrinks and fades as the hold spell's grows into the big face, and comes back with it
+            val tm = tapMorph(src, li, now)
+            val tapSave = if (tm > 0.001f) c.save() else -1
+            if (tm > 0.001f) {
+                val ts = HoldMorph.tapScale(tm); c.scale(ts, ts)
+                if (tm >= 0.999f) c.clipRect(0f, 0f, 0f, 0f)                                       // all gone: drawn into nothing
+                else c.saveLayerAlpha(-60f * k, -60f * k, 60f * k, 60f * k, (255 * HoldMorph.tapAlpha(tm)).toInt())
+            }
             next = min(next, drawSlot(c, pos, 0f, 0f, circle, b, stDraw,
                 if (li < STATE_LAYERS) li * 8 + src else -1, now, pressed, flash, null,
                 if (fb != null && fb.k == "spell" && !isTrigFight(fb)) fightCdLeft(src, now) else -1f))
+            if (tapSave >= 0) c.restoreToCount(tapSave)
             next = min(next, drawTakeover(c, pos, src, li, circle, now))     // m195: a fired hold has the big face until its GCD ends
             next = min(next, drawHold(c, pos, src, li, circle, b, now))         // m190 / m195: the hold spell's badge, its charge ring
             c.restoreToCount(slotSave)

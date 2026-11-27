@@ -246,7 +246,7 @@ class HoldCastTest {
         assertEquals("a fail: back at once (no layer keeps it)", 0f, t.alpha(7_100 + HoldCast.EASE_MS), 0f)
         // the band draws it there: CastView asks showsOn for the layer it shows, and the hold refs of the FIRED layer
         val cast = src("companion/app/src/main/java/com/jrees/wowcompanion/CastView.kt")
-        assertTrue(cast.contains("if (t.pos != src + 1 || !t.showsOn(li)) return Long.MAX_VALUE"))
+        assertTrue(cast.contains("if (!ghost && (t.pos != src + 1 || !t.showsOn(li))) return Long.MAX_VALUE"))      // (feat/hold-morph: or its ghost going home)
         assertTrue("the fired layer's hold spell, not the shown layer's", cast.contains("val key = t.layer * 8 + src"))
     }
 
@@ -397,7 +397,7 @@ class HoldCastTest {
         assertEquals(0f, HoldCast.takeover.alpha(now), 0f)
         // the drawing passes the doc's chk only from a document read after the takeover started
         val cast = src("companion/app/src/main/java/com/jrees/wowcompanion/CastView.kt")
-        assertTrue(cast.contains("if (hst != null && fightStatesAt >= t.startedAt) t.chk(hst.chk, now)"))
+        assertTrue(cast.contains("if (!ghost && hst != null && fightStatesAt >= t.startedAt) t.chk(hst.chk, now)"))
         HoldCast.takeover.clear(); HoldCast.bandClock = { android.os.SystemClock.elapsedRealtime() }
     }
 

@@ -2,6 +2,15 @@
 -- nbar1 (issue #195 "Adaptative layout for action bars port to main screen", the user 2026-11-12: a "Nintendo" choice next to On / Off /
 -- Dynamic for the top screen's action bar, DS Forever's Nintendo-layout bar REPLACING the stock one in the same spot, the live layer
 -- only, cooldown + charge sweeps by the duration-object route with a dim fallback): WC.nbar / WC.nbarSet, at "THE NINTENDO BAR" below.
+-- nbar31 THE HOLD MORPH (feat/hold-morph, 2026-11-27; the user: "I want there to be a slick transition on a button hold, I want the
+-- button hold to transition that small circle into the big one and then back after the cast is complete or canceled"): when a hold's
+-- takeover starts (the fill, or the release) the small hold badge GROWS and MOVES from its corner into the big face (NB.HOLD_MORPH_IN
+-- s, an ease-out), its glowing ring with it and its rim turning gold, while the tap spell's art shrinks and fades; near the end the
+-- game's gold checked face (b.hflash / b.hsel) takes the look over; when the takeover ends (its cast and GCD over, a fail, a cancel, a
+-- none) it all runs back (NB.HOLD_MORPH_OUT s, landing as the takeover lets go). A turn mid-way starts from the picture shown (no jump:
+-- a new press retargets). Every frame (NB.morphFrame, before the bar's 0.05 s poll) while a takeover runs; only alpha / scale / points
+-- of OUR plain frames and textures (the badge, its ring, the face, the tap's icon) - never a secure frame, never an attribute, legal in
+-- fights. The cast's timing is the router's and the app's (PadMap / HoldRelease): the morph only draws after it.
 -- nbar30 THE WINGS AT REST LOWER (test 1536, 2026-11-26; the user: "the controller bars are too high up out of combat"): REST_UP
 -- 84 -> 42 (half the lift), so the resting Wings sit just over the app's room row (REST_FLOOR still keeps their feet over it);
 -- the glide into and out of fights unchanged. AND THE CASTING LOOK AT THE FILL (the user on 1536: "Visually it looks awful like I hold the
@@ -2626,7 +2635,7 @@ end
 -- nbar7: the fight form "Wings" (NB.TOP / NB.top, after WC.nbarSet), the halves placed by NB.hx / NB.hy (the joined bar: -DX / DX)
 -- nbar11: B the square (D-pad) slot, BC the round (face) slot - the band's 40 / 38 units x 1.15; INSET the icon inside its ring; GLYPH the
 -- badge at the ring's top-right (GLYPH_AT: its centre from the slot's, circles lower as drawSlot's), FOCUS the glow past the slot
-local NB = { V = "nbar30", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
+local NB = { V = "nbar31", on = false, built = false, B = 46, BC = 44, INSET = 3.5, GLYPH_AT = { 13.2, 13.2, 9.8 }, FOCUS = 30,
              -- nbar13: the game's controller events after which NB.idx (the held layer's button numbers) is looked up again
              PAD_EV = { "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "GAME_PAD_ACTIVE_CHANGED", "GAME_PAD_CONFIGS_CHANGED" },
              PAD_SET = { GAME_PAD_CONNECTED = true, GAME_PAD_DISCONNECTED = true, GAME_PAD_ACTIVE_CHANGED = true, GAME_PAD_CONFIGS_CHANGED = true },
@@ -2676,6 +2685,11 @@ NB.HOLD_GOLD, NB.HOLD_FULL, NB.HOLD_GLOW = { 0.965, 0.84, 0.22 }, { 1, 0.93, 0.5
 -- nbar28: the glow's three discs beyond the ring's track (units added to its size) and their share of the glow's alpha
 NB.HOLD_GLOW_ADD, NB.HOLD_GLOW_A = { 3, 6, 10 }, { 1, 0.55, 0.25 }
 NB.HOLD_OUT = { [0] = { -1, -1 }, [1] = { -1, 1 }, [2] = { 1, 1 } }          -- by the drawn spot: up, left / down, right (y down)
+-- nbar31 THE HOLD MORPH: in / back (s; Home's HoldMorph.IN_MS / OUT_MS), the morph from which the checked face takes the look over,
+-- the tap's art this much smaller at the full morph
+NB.HOLD_MORPH_IN, NB.HOLD_MORPH_OUT, NB.HOLD_MORPH_FACE, NB.HOLD_TAP_SHRINK = 0.18, 0.2, 0.6, 0.4
+NB.HOLD_BROWN = { 110 / 255, 89 / 255, 66 / 255 }
+NB.HOLD_RING_TO = 0.7                                                   -- nbar31: the charge ring gone by this morph (Home's RING_TO)
 function NB.holdSpot(b, lay)
     local a = (lay == "swap" and NB.AT_SWAP[b.p]) or NB.AT[b.p]
     local k = (a[2] == 1 and 0) or (a[1] == 1 and 2) or 1                  -- top / up; right; left / bottom / down
@@ -2760,8 +2774,13 @@ function NB.holdBadge(b)
     hb.ring = rg
     -- the takeover: the hold spell over the big face
     b.hflash = b.top:CreateTexture(nil, "OVERLAY", nil, 0)
-    b.hflash:SetAllPoints(b.icon)
-    if b.mask then pcall(b.hflash.AddMaskTexture, b.hflash, b.mask) end
+    -- nbar31: the button's own icon box (not the tap's icon: it shrinks in the morph) and a mask of its own
+    b.hflash:SetPoint("TOPLEFT", b, "TOPLEFT", NB.INSET, -NB.INSET)
+    b.hflash:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -NB.INSET, NB.INSET)
+    b.hmask = NB.maskFor(b.top, b.hflash, b.circle)
+    if b.hmask then pcall(b.hflash.AddMaskTexture, b.hflash, b.hmask)
+    elseif b.mask then pcall(b.hflash.AddMaskTexture, b.hflash, b.mask)
+    else pcall(b.hflash.SetTexCoord, b.hflash, 0.08, 0.92, 0.08, 0.92) end
     b.hflash:Hide()
     -- nbar25 THE GOLDEN RING (the user: "When the ability is casting it should show the ability with a golden ring, a great example of
     -- this is raptor strikes normal behavior"): the game's own CHECKED ring (actionbarbutton.lua's CheckedTexture on its gamepad bar) over
@@ -2819,8 +2838,8 @@ function NB.holdShow(b, set, page)
     if not e then if b.hb then b.hb:Hide() end b.hold = nil return end
     local hb = NB.holdBadge(b)
     local x, y = NB.holdSpot(b, NB.layout())
-    pcall(hb.ClearAllPoints, hb)
-    hb:SetPoint("CENTER", b, "CENTER", x, y)
+    b.hbx, b.hby, b.hbAt = x, y, nil                                    -- nbar31: its corner; the morph places it (NB.hbPlace)
+    NB.hbPlace(b, b.hmV or 0)
     b.hold = e
     -- nbar25 (the user on test 1532: "... so its not confusing"): always the hold spell on its badge - while its takeover has the face the
     -- badge FADES OUT (NB.holdOver: 1 - the face's alpha), never the tap spell on it (nbar21's swap retired)
@@ -2854,7 +2873,8 @@ function NB.holdLook(b, e)
     hb.icon:SetVertexColor(sh[1], sh[2], sh[3])
     b.hlook = look
     b.hrange = r ~= 0
-    pcall(hb.disc.SetColorTexture, hb.disc, 110 / 255, 89 / 255, 66 / 255, 1)
+    local dc = NB.discCol(b.hmV or 0)                                    -- nbar31: brown at rest, gold as it grows into the face
+    pcall(hb.disc.SetColorTexture, hb.disc, dc[1], dc[2], dc[3], 1)
 end
 -- the router ran a hold spell at game position [pos] (PadMap's post-click on the kept press's release): THE TAKEOVER starts
 -- nbar22 (the 1531 audit): [lay] = the layer the press took (PadMap's "bare" / "lt" / "rt" / "ltrt"): the takeover is THAT layer's hold
@@ -2887,10 +2907,12 @@ WC.holdFired = function(pos, lay, opt)
     local now = SN(GetTime) or 0
     b.hto = { t = now, last = now, e = e, set = set, pic = NB.paint(b.hflash, NB.holdIcon(e)), opt = opt or nil }
     local here = NB.holdHere(b)                                         -- nbar24 (ruling A): its layer, or one lacking only its triggers
-    NB.holdFace(b, b.hto.pic and here, 1)                               -- nbar25: in the game's gold checked ring
-    -- nbar25: at once - the glyph's red, b.range, the count and the face's shade the hold spell's; its badge out (the face has it)
+    -- nbar31 THE MORPH: from the picture shown now (the badge; or mid-way back: a new press retargets), heading into the big face - the
+    -- game's gold checked ring (nbar25) takes the look over at its end
+    NB.morphTo(b, 1, now)
+    NB.morphApply(b, (b.hto.pic and here) and NB.morphVal(b.hm, now) or 0)
+    -- nbar25: at once - the glyph's red, b.range, the count and the face's shade the hold spell's
     pcall(NB.faceLook, b)
-    if b.hb then pcall(b.hb.SetAlpha, b.hb, (b.hto.pic and here) and 0 or 1) end
     if not opt then pcall(NB.holdCharge, b, now, 1) end                -- the charge ring goes with the release (nbar30: not at the fill)
 end
 -- nbar22: the takeover at [b] drawn on the layer the bar shows now. nbar24 RULING A (the user's pick 2026-11-25, "Stay until it ends"):
@@ -2957,25 +2979,122 @@ function NB.holdEnd(o)
 end
 function NB.holdOver(b, now)
     local o = b.hto
-    if not o then return end
+    if not o then
+        if b.hm then b.hm = nil; NB.morphApply(b, 0) end                -- nbar31: a morph left over: home
+        return
+    end
     local a = 1
     local e = NB.holdEnd(o)
-    if now >= e then a = 1 - (now - e) / NB.HOLD_EASE end
+    -- nbar31: back from the end (its cast and GCD over, a fail, a none), or in again at once if a late word moved the end on
+    if now >= e then a = 1 - (now - e) / NB.HOLD_EASE; NB.morphTo(b, -1, math.max(e, o.t)) else NB.morphTo(b, 1, now) end
     if a <= 0 then
         b.hto = nil
+        b.hm = nil
+        NB.morphApply(b, 0)                                             -- nbar31: the badge home, the tap back in full
         NB.holdFace(b, false)
         if b.hb and b.hold then NB.paint(b.hb.icon, NB.holdIcon(b.hold)) end      -- the badge: the hold spell
-        if b.hb then pcall(b.hb.SetAlpha, b.hb, 1) end                  -- nbar25: back in full
         pcall(NB.faceLook, b)                                           -- nbar25: the tap's glyph / count again at once
         return
     end
     if not (o.pic and NB.holdHere(b)) then                              -- nbar22 / nbar24: a layer with a trigger the press lacked
-        NB.holdFace(b, false)
-        if b.hb then pcall(b.hb.SetAlpha, b.hb, 1) end
+        NB.morphApply(b, 0)
         return
     end
-    NB.holdFace(b, true, a)                                             -- nbar25: the face and its golden ring ease together
-    if b.hb then pcall(b.hb.SetAlpha, b.hb, 1 - a) end                  -- nbar25: the badge out while the face has it, back as it eases
+    NB.morphApply(b, NB.morphVal(b.hm, now))                            -- nbar31: the badge grows into the face, the face takes over
+end
+-- nbar31 THE HOLD MORPH's clock (Home's HoldMorph): hm = { from, at, dir } - dir 1 in (the badge into the big face), -1 back; an
+-- ease-out cubic over the part of the way left of NB.HOLD_MORPH_IN / OUT, from the value shown at the turn (never a jump)
+function NB.morphVal(hm, now)
+    if not hm then return 0 end
+    local d = (hm.dir == 1) and NB.HOLD_MORPH_IN * (1 - hm.from) or NB.HOLD_MORPH_OUT * hm.from
+    local x = math.max(0, math.min(1, (now - hm.at) / math.max(0.001, d)))
+    local e = 1 - (1 - x) ^ 3
+    if hm.dir == 1 then return hm.from + (1 - hm.from) * e end
+    return hm.from * (1 - e)
+end
+function NB.morphMoving(hm, now)
+    if not hm then return false end
+    local d = (hm.dir == 1) and NB.HOLD_MORPH_IN * (1 - hm.from) or NB.HOLD_MORPH_OUT * hm.from
+    return (now - hm.at) < d
+end
+-- head in (1) or back (-1) from [t]; already heading that way: nothing changes
+function NB.morphTo(b, dir, t)
+    local hm = b.hm
+    if hm and hm.dir == dir then return end
+    local v = hm and NB.morphVal(hm, t) or 0
+    if dir == -1 and v <= 0 then return end
+    b.hm = { from = v, at = t, dir = dir }
+    NB.morphs = true                                                    -- every frame now (NB.morphFrame)
+end
+function NB.smooth(x)
+    x = math.max(0, math.min(1, x))
+    return x * x * (3 - 2 * x)
+end
+-- the badge's disc: brown at rest, the checked gold at the full morph
+function NB.discCol(m)
+    local c0, c1 = NB.HOLD_BROWN, NB.HOLD_GOLD
+    return { c0[1] + (c1[1] - c0[1]) * m, c0[2] + (c1[2] - c0[2]) * m, c0[3] + (c1[3] - c0[3]) * m }
+end
+-- the badge (and its glowing ring, anchored to it) at morph [m]: from its corner (b.hbx / b.hby) into the middle, scaled from its own
+-- size to the face's icon (SetScale on OUR plain frames; the point's offset is in the scaled frame's own units)
+function NB.hbPlace(b, m)
+    local hb = b.hb
+    if not hb then return end
+    local s = 1 + ((b.sz - 2 * NB.INSET) / NB.HOLD_R - 1) * m
+    if b.hbS ~= s then
+        b.hbS = s
+        pcall(hb.SetScale, hb, s)
+        if hb.ring then pcall(hb.ring.SetScale, hb.ring, s) end
+    end
+    if b.hbAt == m then return end
+    b.hbAt = m
+    pcall(hb.ClearAllPoints, hb)
+    hb:SetPoint("CENTER", b, "CENTER", (b.hbx or 0) * (1 - m) / s, (b.hby or 0) * (1 - m) / s)
+end
+-- the tap's icon at morph [m]: smaller (its box inset) and fading out; its cooldown sweeps follow it (anchored to it)
+function NB.iconAlpha(b) return (b.ia or 1) * (b.tapK or 1) end
+function NB.tapMorph(b, m)
+    local inset = math.floor((NB.INSET + m * NB.HOLD_TAP_SHRINK * (b.sz / 2 - NB.INSET)) * 20 + 0.5) / 20
+    if (b.tapIn or NB.INSET) ~= inset then
+        b.tapIn = inset
+        pcall(b.icon.ClearAllPoints, b.icon)
+        b.icon:SetPoint("TOPLEFT", b, "TOPLEFT", inset, -inset)
+        b.icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -inset, inset)
+    end
+    local k = 1 - m
+    if (b.tapK or 1) ~= k then b.tapK = k; pcall(b.icon.SetAlpha, b.icon, NB.iconAlpha(b)) end
+end
+-- the whole picture at morph [m] (0 the badge in its corner and the tap on the face .. 1 the hold spell's checked face)
+function NB.morphApply(b, m)
+    m = math.max(0, math.min(1, m or 0))
+    b.hmV = m
+    local fa = (m <= NB.HOLD_MORPH_FACE) and 0 or NB.smooth((m - NB.HOLD_MORPH_FACE) / (1 - NB.HOLD_MORPH_FACE))
+    if fa > 0 then NB.holdFace(b, true, fa) else NB.holdFace(b, false) end
+    local hb = b.hb
+    if hb then
+        pcall(hb.SetAlpha, hb, 1 - fa)                                  -- the badge hands its look to the face as it lands
+        -- its glowing ring rides with it, fading as it grows (the checked face's gold ring takes over)
+        if hb.ring then pcall(hb.ring.SetAlpha, hb.ring, (1 - fa) * (1 - NB.smooth(m / NB.HOLD_RING_TO))) end
+        NB.hbPlace(b, m)
+        local dc = NB.discCol(m)
+        pcall(hb.disc.SetColorTexture, hb.disc, dc[1], dc[2], dc[3], 1)
+    end
+    NB.tapMorph(b, m)
+end
+-- every frame while a takeover runs or a morph moves (NB.tick, before its 0.05 s poll): the morph at the frame's time
+function NB.morphFrame()
+    local f = NB.f
+    if not (f and f.btn) then NB.morphs = nil return end
+    local now = SN(GetTime) or 0
+    local any = false
+    for p = 1, 8 do
+        local b = f.btn[p]
+        if b and (b.hto or b.hm) then
+            pcall(NB.holdOver, b, now)
+            if b.hto or (b.hm and NB.morphMoving(b.hm, now)) then any = true end
+        end
+    end
+    NB.morphs = any or nil
 end
 -- nbar25: the fired hold's spell is CURRENT now (queued for the next swing, waiting for its target / cursor: the game's checked look),
 -- the bar's own read (plain, in-game truth, legal in fights); nil when it has no spell id or the read is refused
@@ -3810,7 +3929,7 @@ function NB.refresh()
         -- nbar12: an arrow's turn (up / down from the forward arrow) and the dimmed moves; set only on a change
         local rot, ia = (pic and pic.rot) or 0, (pic and pic.alpha) or 1
         if b.rot ~= rot then b.rot = rot; pcall(b.icon.SetRotation, b.icon, rot) end
-        if b.ia ~= ia then b.ia = ia; pcall(b.icon.SetAlpha, b.icon, ia) end
+        if b.ia ~= ia then b.ia = ia; pcall(b.icon.SetAlpha, b.icon, NB.iconAlpha(b)) end      -- nbar31: x the morph's
         b.tapSt = st                                                                 -- nbar25: the tap's own (the face's after a takeover)
         NB.tint(b, st)
         -- nbar21: while the hold spell has the face, its own cooldown / GCD sweep is the face's
@@ -3850,6 +3969,7 @@ end
 function NB.tick(el)
     if not (NB.on or NB.top.shown or NB.top.edit) then return end
     NB.acc, NB.accS = NB.acc + (el or 0), NB.accS + (el or 0)
+    if NB.morphs then pcall(NB.morphFrame) end                          -- nbar31: the hold morph, every frame
     if NB.acc < NB.POLL_S then return end
     NB.acc = 0
     local bu = barsUsable()
@@ -5368,7 +5488,7 @@ function NB.topHide()
             -- nbar12: out of the Wings no Party layer: the arrows' turn, alpha and the missing badge back to the bar's own
             if b.noBadge then b.noBadge = false; b.gkey = nil end
             if b.rot and b.rot ~= 0 then b.rot = 0; pcall(b.icon.SetRotation, b.icon, 0) end
-            if b.ia and b.ia ~= 1 then b.ia = 1; pcall(b.icon.SetAlpha, b.icon, 1) end
+            if b.ia and b.ia ~= 1 then b.ia = 1; pcall(b.icon.SetAlpha, b.icon, NB.iconAlpha(b)) end
             NB.anchor(b, lay)
         end
     end

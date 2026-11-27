@@ -326,8 +326,19 @@ object HoldCast {
         /** [castFrom] the earliest the hold's cast can have started (the fix pass: the rel word's start passes the physical release it
          *  answers; the fire and a sure release start before the game's cast: [now]) */
         fun start(pos: Int, layer: Int, now: Long, castFrom: Long = now) {
+            // feat/hold-morph: the morph goes on from the picture shown now - the same button's (a new press mid-morph, mid-way back),
+            // or another one's ghost handed back; a takeover still shown on ANOTHER button goes back to its badge as a ghost
+            if (this.pos != pos) {
+                val fromGhost = if (pos >= 0 && ghostPos == pos) ghost.value(now) else -1f
+                val v = if (this.pos >= 0) morph(now) else 0f
+                if (v > 0f) { ghostPos = this.pos; ghostLayer = this.layer; ghostStarted = t; ghost.start(v, false, now) }
+                else if (fromGhost >= 0f) { ghost.clear(); ghostPos = -1 }
+                this.morph.clear()
+                if (fromGhost > 0f) this.morph.start(fromGhost, true, now)
+            }
             this.pos = pos; this.layer = layer; t = now; last = now; this.castFrom = minOf(castFrom, now)
             castEnd = -1L; gcdEnd = -1L; okAt = -1L; failAt = -1L; noneAt = -1L; chk0 = -1L; qEnd = -1L; queued = false
+            this.morph.toward(true, now)
         }
         /** the hold's cast began: [leftMs] of it to run */
         fun cast(leftMs: Long, now: Long) { if (pos < 0) return; last = now; castEnd = now + leftMs.coerceAtLeast(0L); queued = false }
@@ -351,7 +362,57 @@ object HoldCast {
             if (chk0 < 0L) chk0 = now else if (now - chk0 > CHK_LOST_MS) { queued = false; failAt = now }
         }
         /** nothing on any face (tests; a new session) */
-        fun clear() { pos = -1; layer = -1; queued = false }
+        fun clear() { pos = -1; layer = -1; queued = false; morph.clear(); ghost.clear(); ghostPos = -1 }
+
+        // ------------------------------------------------------------------ feat/hold-morph: THE MORPH (the badge <-> the big face)
+        /** the user (2026-11-27): "I want the button hold to transition that small circle into the big one and then back after the cast
+         *  is complete or canceled" - the takeover's own morph: in from its start, back from its end ([endAt]: the cast and GCD over, a
+         *  fail, a cancel, a none), over [EASE_MS] (so it lands as [alpha] lets go) */
+        private val morph = HoldMorph()
+        /** the takeover a newer one on ANOTHER button replaced while it was still shown: it goes back to its badge on its own */
+        private val ghost = HoldMorph()
+        var ghostPos = -1
+            private set
+        var ghostLayer = -1
+            private set
+        /** the ghost's [startedAt] (CastView keeps the spell it showed by it) */
+        var ghostStarted = Long.MIN_VALUE
+            private set
+
+        /** the current takeover's morph at [now] (0 the badge .. 1 the big face): in from the start, back from [endAt] - turned at
+         *  the moment the end passed (or back in at once when a late word moved the end on) */
+        fun morph(now: Long): Float {
+            if (pos < 0) return 0f
+            val e = endAt()
+            if (now >= e) { if (morph.dir > 0) morph.toward(false, maxOf(e, t)) } else if (morph.dir <= 0) morph.toward(true, now)
+            return morph.value(now)
+        }
+        /** the ghost's morph at [now] (0 and forgotten when it is home) */
+        fun ghostMorph(now: Long): Float {
+            if (ghostPos < 0) return 0f
+            val v = ghost.value(now)
+            if (v <= 0f && !ghost.moving(now)) { ghostPos = -1; ghost.clear() }
+            return v
+        }
+        /** RULING A for the ghost: shown on its fired layer and on one that only lacks some of its triggers ([showsOn]'s rule) */
+        fun ghostShowsOn(li: Int): Boolean = ghostPos >= 0 && ghostLayer in 0..3 && li in 0..3 && (li and ghostLayer.inv()) == 0
+        /** the morph drawn at game position [pos] on layer [li] now: the current takeover's, else the ghost's, else 0 */
+        fun morphAt(pos: Int, li: Int, now: Long): Float = when {
+            this.pos == pos && showsOn(li) -> morph(now)
+            ghostPos == pos && ghostShowsOn(li) -> ghostMorph(now)
+            else -> 0f
+        }
+        /** the drawing at [pos] / [li] is the ghost's (not the current takeover's) */
+        fun ghostAt(pos: Int, li: Int): Boolean = !(this.pos == pos && showsOn(li)) && ghostPos == pos && ghostShowsOn(li)
+        /** a morph (the current one's or the ghost's) is on its way at [now]: the band draws every frame */
+        fun morphing(now: Long): Boolean = (pos >= 0 && morph.moving(now)) || (ghostPos >= 0 && ghost.moving(now))
+        /** the next moment the band should look again for the morph: its next frame while moving, else the end (its way back starts) */
+        fun morphNextMs(now: Long): Long {
+            if (morphing(now)) return 16L
+            if (pos < 0) return Long.MAX_VALUE
+            val e = endAt()
+            return if (e > now) (e - now).coerceIn(1L, 33L) else 16L
+        }
         /**
          * RULING A (the user's pick 2026-11-25, "Stay until it ends (Recommended)": a trigger-layer hold - LT + X - keeps its takeover on
          * the main circle after the trigger is let go, until its cast and GCD end or it fails): the band showing layer [li] (0 none,

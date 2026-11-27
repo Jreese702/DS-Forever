@@ -98,7 +98,7 @@ def boot(pre=""):
 
 def main():
     ab = open(tnb.AB, encoding="utf-8").read()
-    chk("0. ActionBar nbar25 and its note (nbar21, nbar18 kept)", 'local NB = { V = "nbar30"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab
+    chk("0. ActionBar nbar25 and its note (nbar21, nbar18 kept)", 'local NB = { V = "nbar31"' in ab and "nbar25 HOLD TO CAST'S VISUALS, ROUND 1533" in ab
         and "nbar21 THE HOLD SPELL ON THE TOP SCREEN" in ab and "nbar18 HOLD TO CAST" in ab)
     chk("0. no beads any more", "HOLD_BEADS" not in ab and "hb.beads" not in ab)
     L, G = boot()
@@ -224,7 +224,7 @@ def main():
 
     # ------------------------------------------------------------------------------------------------ (3) the takeover
     tap_icon = b[2].tapIcon
-    L.execute('WC = WowCompanion; WC.gcdRun = nil; WC.holdFired(2)')
+    L.execute('WC = WowCompanion; WC.gcdRun = nil; WC.holdFired(2); TICK(0.2)')     # (nbar31: the morph in, 0.18 s)
     # nbar25 (the user on test 1532: "... so its not confusing"): the badge FADES OUT while the face has the hold spell - never the tap
     # spell on it (nbar21's swap retired)
     chk("3. the hold fired: the hold spell takes the big face; the badge faded out (its own hold spell, never the tap spell)",
@@ -238,7 +238,7 @@ def main():
     chk("3. the face's sweep is the hold spell's own (its cooldown object)", (b[2].cd.dur or {}).get("id") == 403 if b[2].cd.dur else True)
     L.execute('WC.holdCast(2, "cast", 1.8); WC.gcdRun = { s = NOW, d = 1.5 }; TICK(1.5)')
     chk("3. a 1.8 s cast: still on the face after 1.5 s (the GCD is shorter)", b[2].hto is not None and b[2].hflash.alpha == 1)
-    L.execute('TICK(0.4)')
+    L.execute('TICK(0.3); TICK(0.02, 0.01)')                            # (nbar31: the face hands back early in the morph)
     chk("3. the cast ended: easing back (0 < alpha < 1)", b[2].hto is not None and 0 < b[2].hflash.alpha < 1, b[2].hflash.alpha)
     chk("3. ... its golden ring eases with it", b[2].hsel.shown and b[2].hsel.alpha == b[2].hflash.alpha, (b[2].hsel.alpha, b[2].hflash.alpha))
     L.execute('TICK(0.25)')
@@ -345,7 +345,7 @@ WC.gcdRun = nil; LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
     L.execute('RT = nil; TICK(2.3)')
     chk("3. ... and it ends on time (no word: 2 s)", b[5].hto is None and not b[5].hflash.shown)
     # the badge while the takeover has the bare layer's face: the bare X's TAP spell on it (the face's own picture is under the takeover)
-    L.execute('WC.holdFired(5, "lt"); TICK(0.1)')
+    L.execute('WC.holdFired(5, "lt"); TICK(0.2)')
     chk("3. LT + X fired, the bare layer on the bar: the bare badge faded out (nbar25: never the tap spell on it)",
         b[5].hb.alpha == 0 and b[5].hb.icon.tex == 135825, (b[5].hb.icon.tex, b[5].hb.alpha))
     L.execute('TICK(2.5)')
@@ -394,9 +394,13 @@ WC.gcdRun = nil; LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
         (list(G.BADTPL.values()), list(G.SPY.values())))
 
     face_follows_the_hold()
+    the_morph()
+    the_morph_in_combat()
 
     if "--shots" in sys.argv:
         shots(sys.argv[sys.argv.index("--shots") + 1])
+    if "--morph-shots" in sys.argv:
+        morph_shots(sys.argv[sys.argv.index("--morph-shots") + 1])
 
     print("\n%d failure(s)" % len(FAILS))
     return 1 if FAILS else 0
@@ -430,9 +434,11 @@ def face_follows_the_hold():
     chk("5. the tap (Flame Shock) out of range, no takeover: the glyph red", b6.range is False and gvc(b6) == red, (b6.range, gvc(b6)))
     L.execute('WC.holdFired(6)')
     chk("5. the hold fired (Lightning Bolt in range): the glyph white AT ONCE - the hold spell's range (b.range true)",
-        b6.hto is not None and b6.hflash.shown and b6.range is True and gvc(b6) == white, (b6.range, gvc(b6)))
-    chk("5. ... the badge FADES OUT (alpha 0) and keeps the hold spell's own icon (never the tap spell)",
-        b6.hb.alpha == 0 and b6.hb.icon.tex == 136048, (b6.hb.alpha, b6.hb.icon.tex))
+        b6.hto is not None and b6.range is True and gvc(b6) == white, (b6.range, gvc(b6)))
+    chk("5. ... nbar31: the badge starts the morph from its corner in full (no jump), the hold spell's own icon (never the tap spell)",
+        b6.hb.alpha == 1 and b6.hmV == 0 and b6.hb.icon.tex == 136048, (b6.hb.alpha, b6.hmV, b6.hb.icon.tex))
+    L.execute('TICK(0.2)')
+    chk("5. ... the morph in: the badge FADES OUT into the face (alpha 0)", b6.hb.alpha == 0 and b6.hflash.shown, (b6.hb.alpha, b6.hflash.shown))
     L.execute('TICK(0.3)')
     chk("5. ... after the bar's own redraws: still the hold's (white), the badge still out", b6.range is True and gvc(b6) == white
         and b6.hb.alpha == 0 and b6.hb.icon.tex == 136048, (b6.range, gvc(b6), b6.hb.alpha, b6.hb.icon.tex))
@@ -466,7 +472,7 @@ def face_follows_the_hold():
     chk("5. ... red through the takeover, white again after it", mid == red and b6.hto is None and gvc(b6) == white and b6.range is True,
         (mid, gvc(b6)))
     # easing back: the badge comes back as the face goes (1 - the face's alpha)
-    L.execute('WC.holdFired(6); TICK(2.1)')
+    L.execute('WC.holdFired(6); TICK(2.0); TICK(0.02, 0.01)')
     ea = (float(b6.hflash.alpha), float(b6.hb.alpha)) if b6.hto is not None else None
     chk("5. easing back: the badge fades in as the face fades out (alpha 1 - the face's)", ea is not None and 0 < ea[0] < 1
         and abs(ea[1] - (1 - ea[0])) < 1e-9, ea)
@@ -475,7 +481,7 @@ def face_follows_the_hold():
     L.execute('''HOLDS2 = { [5] = { n = "Chain Lightning", id = 421, i = 136015 } }
 local pm = WowCompanion.padMap
 pm.holdAt = function(page, set, pos, tab) if set == 1 then return HOLDS[pos] elseif set == 2 then return HOLDS2[pos] end end
-LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
+LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.2)''')
     b5 = NB.f.btn[5]
     out5 = b5.hb.alpha
     L.execute('RT = true; TICK(0.1)')
@@ -484,6 +490,219 @@ LT = nil; TICK(0.1); WC.holdFired(5, "lt"); TICK(0.1)''')
     chk("5. LT + X's takeover on the bare layer: the bare badge out; RT's layer (no takeover there): its badge in", out5 == 0 and in5 == 1,
         (out5, in5))
     chk("5. nothing secure, nothing bound or set", list(G.BADTPL.values()) == [] and list(G.SPY.values()) == [])
+
+
+# nbar31 THE HOLD MORPH: the frames' own record of where our frames go (only ours: the stub's frames), at 60 fps
+MORPH_PRE = r"""
+local FM = getmetatable(UIParent)
+MOVED = {}
+local sp, ss = FM.SetPoint, FM.SetScale
+FM.SetPoint = function(self, ...) MOVED[#MOVED + 1] = self; return sp(self, ...) end
+FM.SetScale = function(self, k) MOVED[#MOVED + 1] = self; return ss(self, k) end
+"""
+FPS = 1 / 60.0
+
+
+def the_morph():
+    """(6) nbar31 THE HOLD MORPH (the user, 2026-11-27: "I want the button hold to transition that small circle into the big one and then
+    back after the cast is complete or canceled"): at the takeover the badge grows and moves from its corner into the big face, every
+    frame (not the bar's 0.05 s poll), its rim turning gold, while the tap's art shrinks and fades; the checked face takes over at its
+    end; back when it ends (the cast over, a fail); a turn mid-way never jumps; a new press mid-way back retargets"""
+    L, G = boot(MORPH_PRE)
+    NB = G.WowCompanion.nbar
+    L.execute('WC = WowCompanion; WC.gcdRun = nil')
+    b = NB.f.btn[8]
+    x0, y0 = float(b.hbx), float(b.hby)
+    big = (float(b.sz) - 2 * float(NB.INSET)) / float(NB.HOLD_R)
+
+    def st():
+        pt = b.hb.pts[1]
+        sc = float(b.hb.scale or 1)
+        return {"m": float(b.hmV or 0), "x": float(pt[4]) * sc, "y": float(pt[5]) * sc, "s": sc, "a": float(b.hb.alpha),
+                "fa": float(b.hflash.alpha) if b.hflash.shown else 0.0, "ti": float(b.tapIn or NB.INSET), "ta": float(b.icon.alpha),
+                "ring_s": float(b.hb.ring.scale or 1), "disc": [round(float(v), 3) for v in list(b.hb.disc.color.values())[:3]]}
+
+    chk("6. at rest: the badge in its corner at its own size, brown; the tap in full", b.hmV in (None, 0) and float(b.hb.scale or 1) == 1
+        and b.hb.alpha == 1 and float(b.icon.alpha) == 1, (b.hmV, b.hb.scale, b.hb.alpha))
+    chk("6. the timings: in 0.18 s, back 0.2 s (the takeover's own ease), the face from 0.6", float(NB.HOLD_MORPH_IN) == 0.18
+        and float(NB.HOLD_MORPH_OUT) == 0.2 == float(NB.HOLD_EASE) and float(NB.HOLD_MORPH_FACE) == 0.6)
+    L.execute('WC.holdFired(8); WC.holdCast(8, "cast", 2.0)')
+    s0 = st()
+    chk("6. the fire: no jump - the badge still in its corner, its size, in full; the face not shown yet", s0["m"] == 0 and abs(s0["x"] - x0) < 1e-6
+        and abs(s0["y"] - y0) < 1e-6 and s0["s"] == 1 and s0["a"] == 1 and s0["fa"] == 0 and s0["ta"] == 1, s0)
+    seq = [s0]
+    for _ in range(14):
+        L.execute('TICK(%r, %r)' % (FPS, FPS))
+        seq.append(st())
+    ms = [q["m"] for q in seq]
+    chk("6. every frame (60 fps), not the bar's 0.05 s poll: the morph moves on each of the first frames", all(ms[i + 1] > ms[i] for i in range(8)), ms[:9])
+    chk("6. smooth: no frame-to-frame step over 0.3 (the ease-out's own first frame)", max(ms[i + 1] - ms[i] for i in range(len(ms) - 1)) < 0.3,
+        [round(v, 3) for v in ms])
+    mid = min(seq, key=lambda q: abs(q["m"] - 0.5))
+    chk("6. half way: the badge half way to the middle, half way to the face's size", abs(mid["x"] - x0 * (1 - mid["m"])) < 1e-6
+        and abs(mid["s"] - (1 + (big - 1) * mid["m"])) < 1e-6 and abs(mid["ring_s"] - mid["s"]) < 1e-9, mid)
+    chk("6. ... its glowing ring scales with it (the gold follows the moving circle); its rim turning gold", mid["ring_s"] > 1
+        and mid["disc"] != [round(110 / 255, 3), round(89 / 255, 3), round(66 / 255, 3)], mid)
+    chk("6. ... the tap's art smaller and fading", mid["ti"] > float(NB.INSET) and mid["ta"] < 1, mid)
+    chk("6. ... the face not yet (below 0.6), then taking over", mid["fa"] == 0 and any(0 < q["fa"] < 1 for q in seq), [q["fa"] for q in seq])
+    L.execute('TICK(0.1)')
+    s1 = st()
+    chk("6. in by 0.18 s: the hold's checked face in full, the badge out (at the middle, the face's size), the tap gone",
+        s1["m"] == 1 and s1["fa"] == 1 and s1["a"] == 0 and abs(s1["x"]) < 1e-9 and abs(s1["s"] - big) < 1e-9 and s1["ta"] == 0
+        and abs(s1["ti"] - (float(NB.INSET) + float(NB.HOLD_TAP_SHRINK) * (float(b.sz) / 2 - float(NB.INSET)))) < 0.05, s1)
+    chk("6. ... the gold checked ring with the face", b.hsel.shown and float(b.hsel.alpha) == 1)
+    # the cast's end (2.0 s): back
+    L.execute('TICK(1.2)')
+    chk("6. mid cast: still the big face", st()["m"] == 1)
+    L.execute('TICK(0.47, %r); TICK(%r, %r)' % (FPS, FPS, FPS))
+    back = []
+    for _ in range(16):
+        back.append(st())
+        L.execute('TICK(%r, %r)' % (FPS, FPS))
+    bm = [q["m"] for q in back]
+    chk("6. the cast over: back - monotonic down, no jump", all(bm[i + 1] <= bm[i] for i in range(len(bm) - 1)) and bm[0] > 0.5
+        and max(bm[i] - bm[i + 1] for i in range(len(bm) - 1)) < 0.3, [round(v, 3) for v in bm])
+    L.execute('TICK(0.1)')
+    s2 = st()
+    chk("6. home: the takeover over, the badge in its corner at its size, brown, in full; the tap back in full", b.hto is None and s2["m"] == 0
+        and abs(s2["x"] - x0) < 1e-6 and s2["s"] == 1 and s2["a"] == 1 and s2["ta"] == 1 and s2["ti"] == float(NB.INSET) and s2["fa"] == 0
+        and s2["disc"] == [round(110 / 255, 3), round(89 / 255, 3), round(66 / 255, 3)], s2)
+    # a cancel mid-way in: back from where it is (no jump)
+    L.execute('WC.holdFired(8); TICK(%r, %r); TICK(%r, %r); TICK(%r, %r)' % (FPS, FPS, FPS, FPS, FPS, FPS))
+    v = st()["m"]
+    L.execute('WC.holdCast(8, "fail"); TICK(%r, %r)' % (FPS, FPS))
+    v2 = st()["m"]
+    chk("6. refused mid-way in: back from where it is - no jump, then down", 0.3 < v < 1 and v2 < v and v - v2 < 0.25, (v, v2))
+    L.execute('TICK(0.25)')
+    chk("6. ... home", b.hto is None and st()["m"] == 0 and st()["ta"] == 1)
+    # a new press mid-way back: retargets in from where it is
+    L.execute('WC.holdFired(8); TICK(0.2); WC.holdCast(8, "none"); TICK(%r, %r); TICK(%r, %r); TICK(%r, %r)' % (FPS, FPS, FPS, FPS, FPS, FPS))
+    v = st()["m"]
+    L.execute('WC.holdFired(8)')
+    v1 = st()["m"]
+    L.execute('TICK(%r, %r)' % (FPS, FPS))
+    v2 = st()["m"]
+    chk("6. a new press mid-way back: retargets in from the picture shown (no jump), then up", 0 < v < 1 and abs(v1 - v) < 1e-9 and v2 > v1,
+        (v, v1, v2))
+    L.execute('TICK(0.2)')
+    chk("6. ... in again", st()["m"] == 1)
+    L.execute('WC.holdCast(8, "fail"); TICK(0.3)')
+    # a tap that ran (the fill's look, opt): it eases out through the morph too
+    L.execute('WC.holdFired(8, nil, true); TICK(0.2); WC.holdTapped(8); TICK(%r, %r); TICK(%r, %r)' % (FPS, FPS, FPS, FPS))
+    v = st()["m"]
+    L.execute('TICK(0.3)')
+    chk("6. the fill's casting look, the tap ran: back through the morph", 0 < v < 1 and b.hto is None and st()["m"] == 0, v)
+    # the source: the morph's functions call nothing protected
+    import re
+    src = open(tnb.AB, encoding="utf-8").read()
+    bad = []
+    for name in ("NB.morphVal", "NB.morphMoving", "NB.morphTo", "NB.smooth", "NB.discCol", "NB.hbPlace", "NB.iconAlpha", "NB.tapMorph",
+                 "NB.morphApply", "NB.morphFrame", "NB.holdOver"):
+        m = re.search(r"\nfunction " + name.replace(".", r"\.") + r"\(.*?\nend", src.replace("\r\n", "\n"), re.S)
+        if not m:
+            bad.append(name + " missing")
+            continue
+        for word in ("SetBinding", "SetCVar", "CreateMacro", "EditMacro", "SetAttribute", ":Click", "RegisterStateDriver", "SecureHandler",
+                     "PickupAction", "PlaceAction", "SetOverride", "InCombatLockdown", "RegisterAttributeDriver"):
+            if word in m.group(0):
+                bad.append(name + ": " + word)
+    chk("6. the morph's functions call nothing protected (no attribute / binding / CVar / macro / click / state driver)", not bad, bad)
+    chk("6. ... and the tick drives it every frame, before the 0.05 s poll", "    if NB.morphs then pcall(NB.morphFrame) end" in src
+        and src.index("    if NB.morphs then pcall(NB.morphFrame) end") < src.index("    if NB.acc < NB.POLL_S then return end"))
+
+
+def the_morph_in_combat():
+    """(7) nbar31 IN A FIGHT: the whole morph (in, a cast, back; a cancel; another button) with the lockdown on - only OUR frames move
+    (no Secure template among them, no Blizzard frame touched), no attribute / binding / CVar / macro call, nothing raised"""
+    L, G = boot(MORPH_PRE)
+    L.execute('COMBAT = true; TICK(0.3); MOVED = {}; WC = WowCompanion; WC.gcdRun = nil')
+    bliz0 = len(list(G.BLIZ.values()))
+    L.execute('WC.holdFired(8); WC.holdCast(8, "cast", 1.0); TICK(1.6, %r)' % FPS)
+    L.execute('WC.holdFired(6); TICK(0.1, %r); WC.holdFired(2); TICK(0.05, %r); WC.holdCast(2, "fail"); TICK(0.4, %r)' % (FPS, FPS, FPS))
+    L.execute('WC.holdFired(5); TICK(2.5)')
+    moved = list(G.MOVED.values())
+    bad = [str(m.tpl) for m in moved if m.tpl is not None and "Secure" in str(m.tpl)]
+    L.execute('local set = {}; for _, o in ipairs(OURS) do set[o] = true end; NOTOURS = 0; '
+              'for _, m in ipairs(MOVED) do if not set[m] then NOTOURS = NOTOURS + 1 end end')
+    chk("7. in a fight: the morph moved frames (it ran)", len(moved) > 20, len(moved))
+    chk("7. ... every frame it moved or scaled is OUR plain frame or texture (none with a Secure template)", not bad
+        and G.NOTOURS == 0, (bad, G.NOTOURS))
+    chk("7. ... no Blizzard frame touched, nothing secure made, nothing bound / set, nothing raised",
+        len(list(G.BLIZ.values())) == bliz0 and list(G.BADTPL.values()) == [] and list(G.SPY.values()) == [] and G.RAISED == 0,
+        (list(G.BLIZ.values())[bliz0:], list(G.BADTPL.values()), list(G.SPY.values()), G.RAISED))
+    f = G.WowCompanion.nbar.f
+    chk("7. ... and every button home after it (no takeover, the tap in full)", all(f.btn[p].hto is None and float(f.btn[p].hmV or 0) == 0
+        and float(f.btn[p].icon.alpha) == 1 for p in (2, 5, 6, 8)), [(f.btn[p].hmV, f.btn[p].icon.alpha) for p in (2, 5, 6, 8)])
+
+
+def morph_shots(out):
+    """nbar31: the morph's frames on the top screen (0 / 25 / 50 / 75 / 100 % in, then back 75 / 50 / 25 / 0 %), the real art, x4"""
+    from PIL import Image, ImageDraw
+    os.makedirs(out, exist_ok=True)
+    r = renderer(out)
+    L, G = boot()
+    NB = G.WowCompanion.nbar
+    bt = NB.f.btn
+    L.execute('WC = WowCompanion; WC.gcdRun = nil; SPELLS[370].nomana = nil; KEPT[8] = true; HELD.PAD1 = true; TICK(0.05)')
+    while bt[8].hm is None:
+        L.execute('TICK(0.05)')
+    names = []
+    # the fill (nbar30's casting look): the takeover starts with the ring full, still held - the frames at the morph's own values
+    t0 = float(bt[8].hm.at)
+
+    def at_in(v):
+        return float(NB.HOLD_MORPH_IN) * (1 - (1 - v) ** (1 / 3.0))
+
+    for pc in (0, 25, 50, 75, 100):
+        dt = at_in(pc / 100.0) if pc < 100 else 0.25
+        L.execute('NOW = %r; WowCompanion.nbar.tick(0.001)' % (t0 + dt))
+        n = "top_morph_in_%03d" % pc
+        r["frame"](n, [(bt[8], 8, "in %d%% (m %.2f)" % (pc, float(bt[8].hmV or 0)))], 1)
+        names.append(n)
+    # let go, the cast (0.5 s) runs, then it ends: back
+    L.execute('HELD.PAD1 = nil; KEPT[8] = nil; NOW = %r; WC.holdCast(8, "cast", 0.5); TICK(0.1)' % (t0 + 0.3))
+    te = t0 + 0.8
+
+    def at_out(v):
+        return float(NB.HOLD_MORPH_OUT) * (1 - v ** (1 / 3.0))
+
+    for pc in (100, 75, 50, 25, 0):
+        dt = at_out(pc / 100.0) if pc > 0 else 0.25
+        L.execute('NOW = %r; WowCompanion.nbar.tick(0.001)' % (te + dt))
+        n = "top_morph_out_%03d" % pc
+        r["frame"](n, [(bt[8], 8, "back %d%% (m %.2f)" % (pc, float(bt[8].hmV or 0)))], 1)
+        names.append(n)
+    ims = [Image.open(os.path.join(out, n + ".png")) for n in names]
+    w0, h0 = ims[0].width, ims[0].height
+    sheet = Image.new("RGBA", (w0 * 5, h0 * 2), (18, 22, 30, 255))
+    for i, im in enumerate(ims):
+        sheet.paste(im, ((i % 5) * w0, (i // 5) * h0))
+    sheet.save(os.path.join(out, "top_morph_sheet.png"))
+    # sheet.png: Home's frames (HoldCastShotsTest.theHoldMorphFrames' app_morph_sheet.png, when it is in [out]) over the top screen's
+    app = os.path.join(out, "app_morph_sheet.png")
+    if os.path.exists(app):
+        from PIL import ImageFont
+        try:
+            fnt = ImageFont.truetype("arial.ttf", 26)
+        except Exception:
+            fnt = ImageFont.load_default()
+        W = 1400
+        parts = []
+        for title, im in (("Home (bottom screen): in 0 / 25 / 50 / 75 / 100 %, then back 100 / 75 / 50 / 25 / 0 %", Image.open(app)),
+                          ("Top screen (the Wings): the same", sheet)):
+            im = im.convert("RGBA")
+            im = im.resize((W, int(im.height * W / im.width)), Image.LANCZOS)
+            parts.append((title, im))
+        H = sum(44 + im.height for _, im in parts)
+        out_im = Image.new("RGBA", (W, H), (18, 22, 30, 255))
+        y = 0
+        d = ImageDraw.Draw(out_im)
+        for title, im in parts:
+            d.text((12, y + 8), title, fill=(236, 224, 196, 255), font=fnt)
+            out_im.paste(im, (0, y + 44))
+            y += 44 + im.height
+        out_im.save(os.path.join(out, "sheet.png"))
+    print("morph shots in", out)
 
 
 # ==================================================================================================== the renders (real art)
@@ -508,9 +727,10 @@ class Pak:
         return Image.open(io.BytesIO(self.data[self.base + self.offs[i]:self.base + self.offs[i + 1]])).convert("RGBA")
 
 
-def shots(out):
+def renderer(out):
+    """the bar's frames drawn with the real art (nbar31: the badge's scale and offset, its ring's alpha, the tap's inset and alpha, the
+    face's alpha over the tap)"""
     from PIL import Image, ImageDraw, ImageFont
-    os.makedirs(out, exist_ok=True)
     pak = Pak(os.path.join(ART, "icons.pak"))
     ui = os.path.join(ART, "ui", "cast")
     SC = {"S": 4.0}                                   # px per bar unit (round 1533: 1:1 and x3 for the badge states)
@@ -544,19 +764,20 @@ def shots(out):
     def button(img, cx, cy, bt, p, title=None):
         d = int(46 * SC["S"])
         ring = Image.open(os.path.join(ui, "frame_circle_normal.png")).convert("RGBA").resize((d, d), Image.LANCZOS)
-        icon_id = bt.hflash.tex if (bt.hto is not None and bt.hflash.shown) else bt.icon.tex
-        ic = pak.get(int(icon_id)) if icon_id else None
+        icd = int(38 * SC["S"])
+        # nbar31: the TAP's icon at its own inset (it shrinks in the morph) and alpha, then the hold's face over it at the face's alpha
+        tp = pak.get(int(bt.icon.tex)) if bt.icon.tex else None
+        ta = 1.0 if bt.icon.alpha is None else float(bt.icon.alpha)
+        if tp is not None and ta > 0:
+            tin = float(bt.tapIn) if bt.tapIn is not None else 3.5
+            tdd = max(2, int(icd * (float(bt.sz) - 2 * tin) / (float(bt.sz) - 7)))
+            ti = tint(circ(tp, tdd), [float(v) for v in bt.icon.vc.values()] if bt.icon.vc else None, bt.icon.desat is True, ta)
+            img.alpha_composite(ti, (int(cx - tdd / 2), int(cy - tdd / 2)))
+        face = bt.hto is not None and bt.hflash.shown
+        ic = pak.get(int(bt.hflash.tex)) if face and bt.hflash.tex else None
         if ic is not None:
-            icd = int(38 * SC["S"])
-            base = circ(ic, icd)
-            face = bt.hto is not None and bt.hflash.shown
-            fx = bt.hflash if face else bt.icon                                     # nbar25: the face's own shade (the hold's in a takeover)
-            base = tint(base, [float(v) for v in fx.vc.values()] if fx.vc else None, fx.desat is True)
-            if bt.hto is not None and bt.hflash.shown and bt.hflash.alpha < 1:      # easing: the tap under the hold
-                tp = pak.get(int(bt.icon.tex))
-                if tp is not None:
-                    img.alpha_composite(circ(tp, icd), (int(cx - icd / 2), int(cy - icd / 2)))
-                base = tint(base, None, False, float(bt.hflash.alpha))
+            base = tint(circ(ic, icd), [float(v) for v in bt.hflash.vc.values()] if bt.hflash.vc else None, bt.hflash.desat is True,
+                        float(bt.hflash.alpha))                                 # nbar25: the face's own shade (the hold's in a takeover)
             img.alpha_composite(base, (int(cx - icd / 2), int(cy - icd / 2)))
         img.alpha_composite(ring, (int(cx - d / 2), int(cy - d / 2)))
         if bt.hto is not None and bt.hsel is not None and bt.hsel.shown:            # nbar25: the game's checked ring (its atlas art)
@@ -575,20 +796,22 @@ def shots(out):
         if hb is not None and hb.shown and hba > 0:
             under = img.copy()
             pt = hb.pts[1]
-            bx, by = cx + float(pt[4]) * SC["S"], cy - float(pt[5]) * SC["S"]
-            R = 17 * SC["S"] / 2
+            hs = float(hb.scale or 1)                                               # nbar31: the morph's scale (the offset in its units)
+            bx, by = cx + float(pt[4]) * hs * SC["S"], cy - float(pt[5]) * hs * SC["S"]
+            R = 17 * hs * SC["S"] / 2
             dr = ImageDraw.Draw(img)
             rg = hb.ring
             if rg is not None and rg.shown:                                         # nbar25: the glowing ring (glow, track, gold, full)
                 from PIL import ImageFilter
-                rr = (17 + 7) / 2 * SC["S"]
+                before_ring = img.copy()                                            # nbar31: the ring's own alpha (it fades as it grows)
+                rr = (17 + 7) / 2 * hs * SC["S"]
                 frac = 1.0 if bt.hcharge == "charged" else float(bt.hcharge or 0)
                 # nbar28: the glow's three gold discs of the circle mask beyond the track, under it (hard-edged textures, stacked)
                 gl = Image.new("RGBA", img.size, (0, 0, 0, 0))
                 gd = ImageDraw.Draw(gl)
                 for gi in (3, 2, 1):
                     g = rg.glows[gi]
-                    gr = float(g.w) / 2 * SC["S"]
+                    gr = float(g.w) / 2 * hs * SC["S"]
                     gd.ellipse((bx - gr, by - gr, bx + gr, by + gr), fill=(246, 214, 56, int(255 * float(g.alpha))))
                     img.alpha_composite(gl); gl = Image.new("RGBA", img.size, (0, 0, 0, 0)); gd = ImageDraw.Draw(gl)
                 ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -602,13 +825,16 @@ def shots(out):
                 elif frac > 0:
                     od.pieslice((bx - rr, by - rr, bx + rr, by + rr), -90, -90 + 360 * frac, fill=(246, 214, 56, 242))
                 img.alpha_composite(ov)
+                rga = 1.0 if rg.alpha is None else float(rg.alpha)
+                if rga < 1:
+                    img.paste(Image.blend(before_ring, img, max(0.0, rga)))
                 dr = ImageDraw.Draw(img)
             col = tuple(int(float(v) * 255) for v in list(hb.disc.color.values())[:3])
             dr.ellipse((bx - R, by - R, bx + R, by + R), fill=col + (255,))
             hid = hb.icon.tex
             hi = pak.get(int(hid)) if hid else None
             if hi is not None:
-                ii = circ(hi, int(2 * (R - 1.5 * SC["S"])))
+                ii = circ(hi, int(2 * (R - 1.5 * hs * SC["S"])))
                 ii = tint(ii, [float(v) for v in hb.icon.vc.values()] if hb.icon.vc else None, hb.icon.desat is True)
                 img.alpha_composite(ii, (int(bx - ii.width / 2), int(by - ii.height / 2)))
             if hba < 1:
@@ -628,6 +854,14 @@ def shots(out):
             button(img, int((i + 0.5) * 70 * SC["S"]), int(45 * SC["S"]), bt, p, title)
         img.save(os.path.join(out, name + ".png"))
 
+    return {"frame": frame, "set_scale": set_scale, "Image": Image}
+
+
+def shots(out):
+    from PIL import Image
+    os.makedirs(out, exist_ok=True)
+    r = renderer(out)
+    frame, set_scale = r["frame"], r["set_scale"]
     L, G = boot()
     f = G.WowCompanion.nbar.f
     bt = {p: f.btn[p] for p in range(1, 9)}
