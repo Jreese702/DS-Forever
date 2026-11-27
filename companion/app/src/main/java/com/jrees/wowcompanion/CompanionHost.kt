@@ -409,7 +409,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val REPORT_TIMEOUT_MS = 45_000L
 
     private fun sendReport(words: String) {
-        if (!::reportNotice.isInitialized) return
+        if (!::reportNotice.isInitialized) { if (ReportFlow.description.isBlank()) ReportFlow.description = words; return }   // (issue 605: kept)
         val gen = ++reportGen
         if (LauncherHooks.gameUp() && room != Room.HOME) show(Room.HOME)
         noticeShow(ReportNotice.State.Compiling)
@@ -448,6 +448,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                         }
                     }
                 }.onFailure { e ->
+                    // issue 605: nothing was saved, so the words go back as the draft (unless the player has written a new one since)
+                    if (ReportFlow.description.isBlank()) ReportFlow.description = words
                     noticeShow(ReportNotice.State.Failed(e.message ?: e.javaClass.simpleName))
                     DiagLog.event("report", "send: failed (${e.message})")
                 }
@@ -456,6 +458,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ui.postDelayed({
             if (gen == reportGen && (reportNotice.state == ReportNotice.State.Compiling || reportNotice.state == ReportNotice.State.Sending)) {
                 reportGen++
+                if (ReportFlow.description.isBlank()) ReportFlow.description = words      // issue 605: the words kept for a new try
                 noticeShow(ReportNotice.State.Failed("it took more than ${REPORT_TIMEOUT_MS / 1000} s; try again, or send the files in Documents/DS Forever/logs"))
                 DiagLog.event("report", "send: timed out")
             }
