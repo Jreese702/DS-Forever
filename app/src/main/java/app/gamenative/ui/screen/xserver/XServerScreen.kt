@@ -1538,6 +1538,12 @@ fun XServerScreen(
             // Group Finder, Professions, Social) owns L / R - they step its tab row from DS Forever's own copy (PadFeed, above) - so the
             // game never gets the bumper press too (LB is its emulated Ctrl, RB its targeting / bar paging). A release always passes
             true
+        } else if (isGamepad && com.jrees.wowcompanion.PopupHold.holdsKey(false, it.event.keyCode, it.event.action == KeyEvent.ACTION_DOWN,
+                trigger = com.jrees.wowcompanion.SetupBridge.roomTriggers)) {
+            // DS FOREVER (the 1536 DS menu, the user: "HOLD THEM BACK from the game while a room is open, so they only switch rooms"): a
+            // room on single screen mode's menu stage owns ZL / ZR (the next / previous room from DS Forever's own copy, PadFeed); their
+            // digital keys never reach the game meanwhile (the analog pull: WinHandler.holdOut). A release always passes
+            true
         } else if (isGamepad && com.jrees.wowcompanion.LaunchLoad.holdsPad() && it.event.action == KeyEvent.ACTION_DOWN) {
             // DS FOREVER (the launch screen, 2026-11-24): until the game's first picture nothing of the game shows, so a press never
             // reaches it (a stray A at its login screen); a release always passes, so nothing sticks down. The abort chord and DS

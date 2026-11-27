@@ -84,6 +84,24 @@ class SingleMenuShotsTest {
             .put("items", a).put("ctl", ctl)
             .put("pad", JSONObject().put("rows", JSONObject().put("bmvq", 27).put("bag0", 30).put("bmv", 29).put("bagsort", 28)))
     }
+    private fun rep(id: Int, n: String, cur: Int, max: Int, st: String, col: String) = JSONObject().put("id", id).put("n", n)
+        .put("bar", JSONObject().put("cur", cur).put("max", max).put("st", st).put("p", "$cur / $max").put("col", col).put("kind", "rep"))
+    /** an Elemental line of 16 spells (two pages: the 16:9 layout shows the second beside the first) */
+    private fun book(): SpellbookView = SpellbookView(app, { }).also { v ->
+        val names = listOf("Lightning Bolt" to 136048, "Healing Wave" to 136052, "Earth Shock" to 136026, "Rockbiter Weapon" to 136086,
+            "Lightning Shield" to 136051, "Flame Shock" to 135813, "Frost Shock" to 135849, "Purge" to 136075, "Searing Totem" to 135825,
+            "Stoneskin Totem" to 136098, "Earthbind Totem" to 136102, "Chain Lightning" to 136015, "Ghost Wolf" to 136095,
+            "Lesser Healing Wave" to 136043, "Grounding Totem" to 136039, "Water Breathing" to 136148)
+        val items = JSONArray()
+        for ((i, n) in names.withIndex()) items.put(JSONObject().put("n", n.first).put("t", 1).put("id", 9000 + i).put("a", 9000 + i)
+            .put("sl", i + 1).put("ln", 2).put("i", n.second))
+        val doc = JSONObject().put("type", "spells").put("v", "s9").put("s", JSONObject()
+            .put("lines", JSONArray().put(JSONObject().put("k", 1).put("n", "General").put("i", 136048))
+                .put(JSONObject().put("k", 2).put("n", "Elemental").put("i", 136048)))
+            .put("items", items).put("win", JSONObject().put("croom", 5).put("open", 0).put("close", 1).put("bfon", 12).put("bfoff", 13)))
+        v.update(SpellsModel.parse(doc)!!)
+        v.shoulder(true)
+    }
     private fun character(): CharacterView = CharacterView(app).also { v ->
         v.update(JSONObject().put("type", "character").put("combat", false).put("c", JSONObject()
             .put("who", JSONObject().put("name", "Tharn").put("lvl", 24).put("line", "Level 24 Dwarf Hunter").put("cls", "Hunter")
@@ -92,6 +110,10 @@ class SingleMenuShotsTest {
                 .put(JSONObject().put("k", "str").put("l", "Strength").put("v", "41"))
                 .put(JSONObject().put("k", "agi").put("l", "Agility").put("v", "77"))
                 .put(JSONObject().put("k", "sta").put("l", "Stamina").put("v", "58")))))
+            .put("rep", JSONArray()
+                .put(rep(1, "Stormwind", 1300, 6000, "Friendly", "5")).put(rep(2, "Ironforge", 2100, 12000, "Honored", "6"))
+                .put(rep(3, "Gnomeregan", 4600, 6000, "Friendly", "5")).put(rep(4, "Darnassus", 1650, 3000, "Neutral", "4"))
+                .put(rep(5, "Booty Bay", 300, 3000, "Neutral", "4")).put(rep(6, "Defias Brotherhood", 900, 3000, "Hostile", "1")))
             .put("win", JSONObject().put("open", false).put("ctl", true))))
     }
 
@@ -106,6 +128,7 @@ class SingleMenuShotsTest {
         val menu = SingleMenuView(act)
         val bags = BagsView(app)
         val char = character()
+        val book = book()
         var place: SingleMenu.Place? = null
         var fight = false
         var cursor: Room? = Room.HOME
@@ -114,7 +137,7 @@ class SingleMenuShotsTest {
         init {
             bags.update(JSONObject(bagsDoc().toString()).put("ctl", JSONObject().put("on", false)), true)
             bags.update(bagsDoc(), true)
-            for (v in listOf<View>(bags, char)) { content.addView(v, FrameLayout.LayoutParams(-1, -1)); v.visibility = View.GONE }
+            for (v in listOf<View>(bags, char, book)) { content.addView(v, FrameLayout.LayoutParams(-1, -1)); v.visibility = View.GONE }
             column.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
             column.addView(strip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Strip.HEIGHT).apply { topMargin = -Strip.RISE - Strip.TRACKS })
             strip.showOrder(RoomBar.shown(HomeSettings.layout), 0L)
@@ -136,8 +159,11 @@ class SingleMenuShotsTest {
 
         /** CompanionHost.menuColumn: the column laid at its place's size, cut at the room's foot; Bags' 16:9 layout */
         fun show(r: Room?) {
-            for (v in listOf<View>(bags, char)) v.visibility = View.GONE
-            when (r) { Room.BAGS -> bags.visibility = View.VISIBLE; Room.CHARACTER -> char.visibility = View.VISIBLE; else -> {} }
+            for (v in listOf<View>(bags, char, book)) v.visibility = View.GONE
+            when (r) {
+                Room.BAGS -> bags.visibility = View.VISIBLE; Room.CHARACTER -> char.visibility = View.VISIBLE
+                Room.SPELLBOOK -> book.visibility = View.VISIBLE; else -> {}
+            }
             column.visibility = if (r == null) View.GONE else View.VISIBLE
             val p = r?.let { SingleMenu.place(it) }
             place = p
@@ -145,6 +171,8 @@ class SingleMenuShotsTest {
                 column.layoutParams = FrameLayout.LayoutParams(p.colW, p.colH)
                 column.clipBounds = android.graphics.Rect(0, 0, p.colW, SingleMenu.ROOM_H)
                 bags.wideLeft = if (p.wide && r == Room.BAGS) SingleMenu.PANEL_W else 0
+                char.wideRight = if (p.wide && r == Room.CHARACTER) SingleMenu.PANEL_W else 0
+                book.wideRight = if (p.wide && r == Room.SPELLBOOK) SingleMenu.PANEL_W else 0
                 page(p.drawn, 1f)
             }
             lay(root, TW, TH)
@@ -233,6 +261,27 @@ class SingleMenuShotsTest {
         assertTrue("two screens: beside the cursor", t2.first < 400f)
     }
 
+    @Test fun characterAndTheSpellbookUseTheWidthBesideTheirPage() {
+        val s = Stage()
+        for (r in listOf(Room.CHARACTER, Room.SPELLBOOK)) {
+            s.show(r); idle(300); s.show(r)
+            val p = SingleMenu.place(r)
+            assertTrue("$r laid wide", p.wide)
+            val v: View = if (r == Room.CHARACTER) s.char else s.book
+            assertEquals(p.colW, v.width)
+            val b = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
+            v.draw(Canvas(b))
+            // the width beside the page is drawn (the next page), not the room's empty ground
+            val seen = HashSet<Int>()
+            for (y in 200 until v.height - 40 step 23) for (x in SingleMenu.PANEL_W + 60 until v.width - 60 step 29) seen += b.getPixel(x, y)
+            assertTrue("$r: a page beside its own (${seen.size} colours)", seen.size > 40)
+            // the bottom screen's page itself as before: the 16:9 layout off, nothing drawn past 1240
+            if (r == Room.CHARACTER) s.char.wideRight = 0 else s.book.wideRight = 0
+            lay(v, SingleMenu.PANEL_W, SingleMenu.ROOM_H)
+            assertEquals(SingleMenu.PANEL_W, v.width)
+        }
+    }
+
     @Test fun theMenuInMotionAndAtRest() {
         out?.let { d -> File(d, "titles.txt").delete() }
         val s = Stage()
@@ -260,7 +309,7 @@ class SingleMenuShotsTest {
         m.play(Move.SLIDE, Phase.ROOM, Room.CHARACTER, pic, src); m.seek(100L)
         s.shot("06_zl_slide_100ms", "ZL: Bags slides out, Character (the room before it) slides in (100 ms of 220)")
         m.seek(SingleMenu.SLIDE_MS)
-        s.shot("07_character_fallback", "Character at the fallback size until its pass (the same scale as Bags)")
+        s.shot("07_character_16x9", "Character's 16:9 layout (pass 2): its page, and its Reputation beside it")
         val (pic2, src2) = s.record()
         s.show(null); s.cursor = Room.CHARACTER
         s.swirl(false, Phase.ROW); m.play(Move.FOLD, Phase.ROW, null, pic2, src2); m.seek(80L)
@@ -283,5 +332,14 @@ class SingleMenuShotsTest {
         s.shot("13_fight_b_to_game_080ms", "In a fight: B goes straight to the game - the room folds, the row drops (80 ms of 220)", dimK = 0.45f)
         m.settle()
         assertEquals(Phase.CLOSED, m.phase)
+        // ---- pass 2: the Spellbook's 16:9 layout; Character in a fight
+        s.fight = false; s.cursor = null
+        s.show(Room.SPELLBOOK)
+        s.swirl(false, Phase.ROOM); m.play(Move.RISE_UNFOLD, Phase.ROOM, Room.SPELLBOOK); m.seek(SingleMenu.UNFOLD_MS)
+        s.shot("14_spellbook_16x9", "The Spellbook's 16:9 layout (pass 2): the open book, and the line's next page beside it")
+        s.fight = true
+        s.show(Room.CHARACTER)
+        s.swirl(true, Phase.ROOM); m.play(Move.SLIDE, Phase.ROOM, Room.CHARACTER); m.seek(SingleMenu.SLIDE_MS)
+        s.shot("15_fight_character_16x9", "In a fight: Character 16:9 in full; ZL / ZR held back from the game, they only switch rooms")
     }
 }

@@ -47,11 +47,30 @@ class SingleMenuPinsTest {
         val un = fn(host, "private fun padUnclaimed(")
         assertTrue(un.contains("if (down && (k == DirectPadKeys.LT || k == DirectPadKeys.RT)) menuTrigger(k == DirectPadKeys.RT)"))
         val t = fn(menu, "private fun menuTrigger(")
-        assertTrue(t.contains("val held = capHolder.isNotEmpty() || padOwner.roomMode()"))
-        assertTrue(t.contains("SingleMenu.triggersStep(room, held,"))
-        assertTrue("nothing of ours over the room", t.contains("interactView.visibility == View.VISIBLE") && t.contains("barSelect.open) return"))
+        assertTrue("the ONE decision: the reader acts exactly while the launcher holds them back", t.contains("if (!SetupBridge.roomTriggers) return"))
         assertTrue("the room change is the usual route (its own leave / take)", t.contains("pickRoom(next)"))
         assertFalse("never a tap of its own", t.contains("TapBridge") || t.contains("guestTap"))
+        val sync = fn(menu, "private fun menuTriggersSync()")
+        assertTrue(sync.contains("held = capHolder.isNotEmpty() || padOwner.roomMode()"))
+        assertTrue(sync.contains("SingleMenu.triggersHeld(menuMachine.phase, room,"))
+        assertTrue("nothing of ours over the room", sync.contains("interactView.visibility == View.VISIBLE") && sync.contains("barSelect.open)"))
+        assertTrue(sync.contains("SetupBridge.roomTriggers = live"))
+    }
+
+    @Test fun zlZrAreHeldBackFromTheGameWhileARoomOwnsThemAndGivenBackAtOnce() {
+        // set at every look of the menu (the poll's too) and the moment the room closes (its look), cleared when the host goes
+        val look = fn(menu, "private fun singleMenuLook(")
+        assertTrue(look.contains("finally { menuTriggersSync() }"))
+        assertTrue(fn(host, "private fun singlePlayEnd()").contains("SetupBridge.roomTriggers = false"))
+        // the launcher: the digital keys held (a release always passes), the analog pull masked where player 1's state is written
+        val root = listOf("..", ".").map { java.io.File(it) }.first { java.io.File(it, "app/src/main/java").isDirectory }
+        val xs = java.io.File(root, "app/src/main/java/app/gamenative/ui/screen/xserver/XServerScreen.kt").readText()
+        assertTrue(xs.contains("trigger = com.jrees.wowcompanion.SetupBridge.roomTriggers)) {"))
+        val wh = java.io.File(root, "app/src/main/java/com/winlator/winhandler/WinHandler.java").readText()
+        val out = wh.substringAfter("private static GamepadState holdOut(GamepadState s) {").substringBefore("\n    }\n")
+        assertTrue(out.contains("trig = com.jrees.wowcompanion.SetupBridge.INSTANCE.getRoomTriggers();"))
+        assertTrue(out.contains("o.triggerL = 0f; o.triggerR = 0f;") && out.contains("IDX_BUTTON_L2, false") && out.contains("IDX_BUTTON_R2, false"))
+        assertTrue("the game's own state object is never changed (a copy)", out.indexOf("o.copy(s);") < out.indexOf("o.triggerL = 0f"))
     }
 
     @Test fun bFoldsOutOfAFightTheDimGoesToTheGame() {

@@ -857,7 +857,9 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             if (pending.isNotEmpty()) postInvalidateOnAnimation()
         }
         hits.clear(); drags.clear(); focusables.clear(); tabCursors.clear()
-        val w = width.toFloat(); val h0 = height.toFloat()
+        // the 16:9 layout (single screen mode's DS menu): the page as on the bottom screen in the left [wideRight] px, the next page beside it
+        val full = width.toFloat()
+        val w = if (wideRight > 0) minOf(wideRight.toFloat(), full) else full; val h0 = height.toFloat()
         c.drawColor(Theme.ink)
         val tab = model.tab
         header(c, w, tab)
@@ -902,6 +904,7 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
             if (railFor != null || moreFor != null || kitFor != null) post { closeMore() }
         drawnTab = model.tab; drawnSide = model.side
         c.restore()
+        if (full - w > WIDE_MIN) beside(c, RectF(w + 18f, 10f, full - 18f, h0 - 8f))
         // the row was drawn before the cursor came to rest (startFocus, on this frame's targets): a cursor that is on / off a tab now is
         // lit on the next frame
         restKey = if (active) current()?.key else null
@@ -909,6 +912,58 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         if (rowCursor() != tabRow.cursorDrawn) postInvalidateOnAnimation()
     }
     private val tabRow = RoomTabRow(this)
+
+    /**
+     * THE 16:9 LAYOUT (single screen mode's DS menu, the 1536 pass 2: SingleMenu.WIDE; the user: "I want it to be its own experience that
+     * feels like it was made for the top screen"; their order "Character, then the Spellbook"): laid across the top screen's stage, the
+     * room keeps its bottom-screen page on the LEFT ([wideRight] px wide: its tabs, its panes, its cursor, every touch as before) and the
+     * width beyond it shows the NEXT PAGE beside it, to read: the Reputation beside the Character tab (the study's mockup), the
+     * character's stats beside every other tab. Read only (no touch, no cursor: the controller's cursor stays on the page). 0 = the
+     * bottom screen's page alone
+     */
+    var wideRight: Int = 0
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** the page beside ([r]): its title, then the Reputation's factions (name, standing bar) or the stats' sections */
+    private fun beside(c: Canvas, r: RectF) {
+        UiKit.pane(c, r, right = true, light = 0.8f)
+        val inner = RectF(r.left + 28f, r.top + 18f, r.right - 28f, r.bottom - 18f)
+        val rep = model.tab == CharTab.CHARACTER
+        val title = if (rep) model.word(TAB_WORD[CharTab.REPUTATION.ordinal], TAB_FALLBACK[CharTab.REPUTATION.ordinal])
+            else model.word("CHARACTER", "Character")
+        val tp = UiKit.titlePaint(38f, Theme.gold)
+        c.drawText(Tr.t(title), inner.left, inner.top + 40f, tp)
+        UiKit.paneRule(c, inner.left, inner.top + 62f, inner.right)
+        val top = inner.top + 84f
+        c.save(); c.clipRect(inner.left - 4f, top, inner.right + 4f, inner.bottom)
+        if (rep) {
+            val list = model.reputation.entries.filter { !it.header && it.bar != null }
+            if (list.isEmpty()) {
+                centred(c, inner.centerX(), top + 60f, Tr.t("Open the Reputation tab once to see it here"), 25f, Theme.dim)
+            } else {
+                var y = top
+                for (e in list) {
+                    if (y > inner.bottom) break
+                    name(c, e.name, inner.left, y + 22f, inner.width() * 0.62f, Color.WHITE)
+                    bar(c, RectF(inner.left, y + 46f, inner.right, y + 82f), e, Kind.REP, 22f)
+                    y += 100f
+                }
+            }
+        } else {
+            var y = top
+            for (sec in withXp(model.stats)) {
+                if (y > inner.bottom) break
+                UiKit.sectionTitle(c, RectF(inner.left, y, inner.right, y + 58f), sec.title)
+                y += 62f
+                for ((i, row) in sec.rows.withIndex()) {
+                    UiKit.statLine(c, RectF(inner.left, y, inner.right, y + 44f), label(row.label), row.value, row.colour, i % 2 == 0, null)
+                    y += 44f
+                }
+                y += 8f
+            }
+        }
+        c.restore()
+    }
     /** where the cursor really was at the end of the last frame ([current]: its key, or its start place when the key is unset or gone) */
     private var restKey: String? = null
     /** [focusKey] when [restKey] was taken: while it is unchanged, [restKey] is where the cursor is */
@@ -1636,6 +1691,9 @@ class CharacterView(context: Context) : View(context), BLeadsHome {
         if (key != null) dragged(c, r, key, sl.height.toFloat())
         return r.top + min(sl.height.toFloat(), r.height())
     }
+
+    /** the least width beside the page worth a page of its own (the 16:9 layout) */
+    private val WIDE_MIN = 400f
 
     private fun layout(t: String, p: Paint, width: Int, spacing: Float): StaticLayout =
         StaticLayout.Builder.obtain(Tr.span(t), 0, Tr.span(t).length, TextPaint(p), max(1, width))

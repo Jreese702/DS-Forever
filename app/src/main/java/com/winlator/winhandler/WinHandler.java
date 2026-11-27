@@ -123,15 +123,24 @@ public class WinHandler {
     // for the game to its fire point (HoldRelease.cancelUp), same bits as the forced mask
     private static GamepadState holdOut(GamepadState s) {
         int m, k;
+        boolean trig;
         try {
             m = com.jrees.wowcompanion.HoldCast.forcedMask();
             k = com.jrees.wowcompanion.HoldCast.keptMask();
+            // DS Forever, the 1536 DS menu: a room on single screen mode's menu stage owns ZL / ZR - their pull is not the game's
+            trig = com.jrees.wowcompanion.SetupBridge.INSTANCE.getRoomTriggers();
         } catch (Throwable t) {
             return s;
         }
-        if ((m == 0 && k == 0) || s == null) return s;
+        if ((m == 0 && k == 0 && !trig) || s == null) return s;
         GamepadState o = new GamepadState();
         o.copy(s);
+        if (trig) {
+            o.triggerL = 0f; o.triggerR = 0f;
+            o.setPressed(com.winlator.inputcontrols.ExternalController.IDX_BUTTON_L2, false);
+            o.setPressed(com.winlator.inputcontrols.ExternalController.IDX_BUTTON_R2, false);
+            if (m == 0 && k == 0) return o;
+        }
         o.buttons = (short) ((s.buttons | (k & 0x0D)) & ~(m & 0x0D));
         for (int i = 0; i < 4; i++) {
             if ((k & (1 << (4 + i))) != 0) o.dpad[i] = true;

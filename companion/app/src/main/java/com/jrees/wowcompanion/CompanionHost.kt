@@ -2621,6 +2621,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** the host goes (onDestroy): nothing of the docks left running or held */
     private fun singlePlayEnd() {
         ui.removeCallbacks(playTick); ui.removeCallbacks(ssAgain)
+        if (menu != null) SetupBridge.roomTriggers = false                 // the host goes: ZL / ZR the game's again (the 1536 DS menu)
         if (castOpen) castSet(false, "the host goes")
         rowReclaim()
         docks?.close(); docks = null
@@ -2738,6 +2739,10 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private fun singleMenuLook(look: SingleLook.Look) {
         val m = menu ?: return
         val s = single ?: return
+        try { singleMenuLookNow(m, s, look) } finally { menuTriggersSync() }
+    }
+
+    private fun singleMenuLookNow(m: SingleMenuView, s: SingleShell, look: SingleLook.Look) {
         m.order = SingleMenu.order(strip.order)
         val shown: Room? = if (!look.menu) null else when (look.root) {
             SingleLook.Root.ROOM -> room
@@ -2861,13 +2866,29 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
      *  not while a Spellbook page holds the shoulders, only while the controller is ours; nothing of ours over the room) */
     private fun menuTrigger(right: Boolean) {
         if (menu == null || single == null || menuMachine.phase != SingleMenu.Phase.ROOM || room == Room.HOME) return
-        val held = capHolder.isNotEmpty() || padOwner.roomMode()
-        if (!SingleMenu.triggersStep(room, held, room == Room.SPELLBOOK && !spellbookView.shouldersFree())) return
-        if ((::interactView.isInitialized && interactView.visibility == View.VISIBLE) || dialogView.covers() || radialView.isOpen ||
-            (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || spellsOverlay.visibility == View.VISIBLE || barSelect.open) return
+        // the ONE decision (SetupBridge.roomTriggers): the launcher held this press back from the game exactly while it is set
+        menuTriggersSync()
+        if (!SetupBridge.roomTriggers) return
         val next = SingleMenu.step(SingleMenu.order(strip.order), room, if (right) 1 else -1) ?: return
         Log.i("WCHOME", "one screen: ${if (right) "ZR" else "ZL"} in ${room.name} -> ${next.name}")
         pickRoom(next)
+    }
+
+    /**
+     * MENU: ZL / ZR HELD BACK FROM THE GAME while a room on the stage owns them (the user's pick, pass 2: "HOLD THEM BACK from the game while
+     * a room is open, so they only switch rooms, the way L / R only switch tabs ... Give them back the moment the room closes"):
+     * SingleMenu.triggersHeld - not in the Controller room, not while a Spellbook page holds the shoulders, only while the controller is
+     * ours, nothing of ours over the room. Set at every look (the poll too, every 100 ms) and the moment the room closes
+     */
+    private fun menuTriggersSync() {
+        val live = menu != null && single != null && !shell.hostGone() && room != Room.HOME && SingleMenu.triggersHeld(menuMachine.phase, room,
+            held = capHolder.isNotEmpty() || padOwner.roomMode(),
+            bookHoldsTriggers = room == Room.SPELLBOOK && !spellbookView.shouldersFree(),
+            covered = (::interactView.isInitialized && interactView.visibility == View.VISIBLE) || dialogView.covers() || radialView.isOpen ||
+                (::pauseView.isInitialized && pauseView.isOpen) || tradOpen() || spellsOverlay.visibility == View.VISIBLE || barSelect.open)
+        if (SetupBridge.roomTriggers == live) return
+        SetupBridge.roomTriggers = live
+        Log.i("WCHOME", "one screen: ZL / ZR ${if (live) "held back from the game for ${room.name}" else "the game's again"}")
     }
 
     /** MENU: the room's page now ([box] on the screen, its [alpha]): the rooms column drawn there (one transform, no layout) */
@@ -2894,7 +2915,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             col.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 .apply { setMargins(mg[0], mg[1], mg[2], mg[3]) }
             col.scaleX = 1f; col.scaleY = 1f; col.translationX = 0f; col.translationY = 0f; col.alpha = 1f; col.clipBounds = null
-            if (::bagsView.isInitialized) bagsView.wideLeft = 0
+            menuWide(null)
             return
         }
         if (place != menuPlace) {
@@ -2903,7 +2924,16 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
             col.clipBounds = android.graphics.Rect(0, 0, place.colW, SingleMenu.ROOM_H)
             menuPage(place.drawn, col.alpha)
         }
-        if (::bagsView.isInitialized) bagsView.wideLeft = if (place.wide && room == Room.BAGS) SingleMenu.PANEL_W else 0
+        menuWide(if (place.wide) room else null)
+    }
+
+    /** MENU: the rooms with a 16:9 layout of their own laid wide ([r] the one on the stage, null = none): each keeps the bottom screen's
+     *  page on the left (SingleMenu.PANEL_W) and uses the rest */
+    private fun menuWide(r: Room?) {
+        val w = SingleMenu.PANEL_W
+        if (::bagsView.isInitialized) bagsView.wideLeft = if (r == Room.BAGS) w else 0
+        if (::characterView.isInitialized) characterView.wideRight = if (r == Room.CHARACTER) w else 0
+        if (::spellbookView.isInitialized) spellbookView.wideRight = if (r == Room.SPELLBOOK) w else 0
     }
 
     /** MENU: the rooms column's bar hidden while the menu shows (its row is the menu's), shown again after (Home's layers keep it hidden) */

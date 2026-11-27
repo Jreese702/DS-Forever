@@ -283,9 +283,22 @@ class SpellbookView(
         if (UiKit.bookGlowLive) { UiKit.bookGlowLive = false; if (isShown) postInvalidateDelayed(50L) }
     }
 
+    /**
+     * THE 16:9 LAYOUT (single screen mode's DS menu, the 1536 pass 2: SingleMenu.WIDE; the user's order "Character, then the Spellbook"):
+     * laid across the top screen's stage, the open book stays as on the bottom screen in the left [wideRight] px (its tabs, its pages,
+     * Bind, every touch and the controller's glow as before) and a THIRD PAGE opens beside it: the line's next page of spells (the page
+     * before on the last one), to read - so a line of twenty spells shows whole. 0 = the bottom screen's book alone
+     */
+    var wideRight: Int = 0
+        set(v) { if (field != v) { field = v; invalidate() } }
+
+    /** the book's own width: the page width on the bottom screen, the left [wideRight] px in the 16:9 layout */
+    private fun bookW(): Float = width.toFloat().let { if (wideRight > 0) minOf(wideRight.toFloat(), it) else it }
+
     private fun drawRoom(c: Canvas) {
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = bookW(); val h = height.toFloat()
         c.drawColor(Theme.ink)
+        if (width - w > WIDE_MIN) thirdPage(c, RectF(w, 158f, width - 8f, h - 4f), h)
         UiKit.header(c, w, "Spellbook")
         if (SystemClock.uptimeMillis() < busyUntil) {
             val pb = UiKit.bodyPaint(24f, Theme.dim).apply { textAlign = Paint.Align.RIGHT }
@@ -339,6 +352,32 @@ class SpellbookView(
             ?: tab.entries.firstNotNullOfOrNull { t -> SpellsModel.ranksOf(b, t).firstOrNull { idOf(it) == chosenId } }   // b23: a lower rank
             ?: onPage.getOrNull(SpellsModel.firstKnown(b, onPage)) ?: return
         drawChosen(c, b, e, w, h)
+    }
+
+    /** the third page ([r], the 16:9 layout): the open line's next page of spells (the one before on its last page), to read */
+    private fun thirdPage(c: Canvas, r: RectF, h: Float) {
+        UiKit.bookPage(c, r, right = true)
+        val b = book ?: return
+        if (tabOpen) return
+        val tab = SpellsModel.tabs(b).firstOrNull { it.key == tabKey } ?: return
+        val pages = pagesOf(tab)
+        val other = when { page < pages -> page + 1; page > 1 -> page - 1; else -> null }
+        val left = r.left + 40f
+        if (other == null) {
+            UiKit.bookHeading(c, left, 208f, r.width() - 80f, tab.name)
+            val p = UiKit.inkPaint(26f).apply { color = Theme.parchmentInkDim }
+            c.drawText(Tr.t("Every spell of the line is on the page beside"), left + 8f, 290f, p)
+            return
+        }
+        UiKit.bookHeading(c, left, 208f, r.width() - 80f, Tr.t("Page") + " $other / $pages")
+        val list = SpellsModel.pageOf(tab, other, PER_PAGE)
+        val cw = (r.width() - 72f) / 2f
+        for ((i, e) in list.withIndex()) {
+            val x = r.left + 26f + (i % 2) * cw; val y = Y0 + (i / 2) * rh(h)
+            UiKit.bookEntry(c, RectF(x, y, x + cw - 8f, y + rh(h)), Icons.get(e.icon), e.name, SpellsModel.sub(b, e),
+                kitState(SpellsModel.status(b, e)), onBar = SpellsModel.onBar(b, e), chosen = false, passive = e.passive,
+                autoCast = SpellsModel.autoCast(e), noMana = NoMana.has(e.spellId), rank = rankOf(e))
+        }
     }
 
     /** the right page while the cursor is on a tab: the line's picture and name, what it holds, and what is not on a button yet (the
@@ -569,7 +608,7 @@ class SpellbookView(
     private var padDown = false                 // a touch that began on the Controller tab's pages
 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
-        val w = width.toFloat(); val h = height.toFloat()
+        val w = bookW(); val h = height.toFloat()
         if (ev.actionMasked == MotionEvent.ACTION_UP) fingerSinceCtl = true
         // the Controller tab's pages are its own; the tab row stays the book's
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) padDown = tabOpen && ev.y > 173f
@@ -700,6 +739,8 @@ class SpellbookView(
         private const val BUSY_MS = 5000L
         const val PER_PAGE = 10
         private const val SPLIT = 740f
+        /** the least width beside the book worth a third page (the 16:9 layout) */
+        private const val WIDE_MIN = 400f
         /** the book's tab row: the first tab's left (the L glyph's room before it) and the tabs' pitch */
         private const val TAB_X0 = 16f + UiKit.TAB_END_W
         private const val TAB_PITCH = 116f

@@ -113,6 +113,14 @@ object SetupBridge {
         return live
     }
 
+    /**
+     * THE DS MENU'S ZL / ZR (single screen mode, the 1536 pass 2): a room on the menu's stage owns the triggers now (they step room to
+     * room from the app's own reader), so both are held back from the game - their keys (PopupHold.holdsKey's [trigger]) and their pull
+     * (WinHandler.holdOut). ONE decision: the companion's host sets it at every look (CompanionHost.menuTriggersSync) and its reader acts
+     * on a trigger only while it is set; false the moment the room closes. Read from the launcher's key and pad threads
+     */
+    @Volatile var roomTriggers: Boolean = false
+
     /** the report's notice on Home asks for a press (Open issue / OK): the game's A is held back meanwhile (board f-problem-report) */
     @Volatile var noticeAsking = false
 

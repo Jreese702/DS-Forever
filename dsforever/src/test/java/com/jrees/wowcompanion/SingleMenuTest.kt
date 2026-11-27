@@ -59,9 +59,10 @@ class SingleMenuTest {
     @Test fun aWideRoomIsLaidAcrossTheStageAndTheFallbackIsItsPageCentredAtTheSameSize() {
         val body = SingleMenu.body()
         val wide = SingleMenu.place(Room.BAGS)
-        val fall = SingleMenu.place(Room.CHARACTER)
+        val fall = SingleMenu.place(Room.SOCIAL)
         assertTrue("Bags has its 16:9 layout (pass 1)", wide.wide)
-        assertFalse("Character waits for its pass: the fallback", fall.wide)
+        assertFalse("Social waits for its pass: the fallback", fall.wide)
+        assertTrue("pass 2: Character and the Spellbook laid wide", SingleMenu.place(Room.CHARACTER).wide && SingleMenu.place(Room.SPELLBOOK).wide)
         assertEquals("one size for every room's words", wide.k, fall.k, 0.0001f)
         assertEquals("the page's height is the body's", body.h, SingleMenu.ROOM_H * wide.k, 0.5f)
         assertTrue("k between the study's 0.72 and 0.8 (${wide.k})", wide.k in 0.72f..0.8001f)
@@ -145,6 +146,28 @@ class SingleMenuTest {
         assertTrue(SingleMenu.triggersStep(Room.SPELLBOOK, true, false))
         assertFalse("never while the controller is the game's", SingleMenu.triggersStep(Room.BAGS, false, false))
         assertFalse(SingleMenu.triggersStep(Room.HOME, true, false))
+    }
+
+    @Test fun zlZrAreHeldBackExactlyWhileARoomOnTheStageOwnsThem() {
+        assertTrue(SingleMenu.triggersHeld(Phase.ROOM, Room.BAGS, held = true, bookHoldsTriggers = false, covered = false))
+        assertFalse("the row alone: the triggers are the game's", SingleMenu.triggersHeld(Phase.ROW, Room.HOME, true, false, false))
+        assertFalse("closed: the game's", SingleMenu.triggersHeld(Phase.CLOSED, Room.BAGS, true, false, false))
+        assertFalse("the Controller room reads them held", SingleMenu.triggersHeld(Phase.ROOM, Room.CONTROLLER, true, false, false))
+        assertFalse("a Spellbook page that holds them", SingleMenu.triggersHeld(Phase.ROOM, Room.SPELLBOOK, true, true, false))
+        assertTrue(SingleMenu.triggersHeld(Phase.ROOM, Room.SPELLBOOK, true, false, false))
+        assertFalse("the controller not ours (the room's take not answered)", SingleMenu.triggersHeld(Phase.ROOM, Room.BAGS, false, false, false))
+        assertFalse("a game window / a wheel over the room", SingleMenu.triggersHeld(Phase.ROOM, Room.BAGS, true, false, true))
+        assertFalse("Home's stage", SingleMenu.triggersHeld(Phase.ROOM, Room.HOME, true, false, false))
+        // the launcher's side: only presses of ZL / ZR, only while held; a release always passes; the pull masked
+        val l2 = android.view.KeyEvent.KEYCODE_BUTTON_L2; val r2 = android.view.KeyEvent.KEYCODE_BUTTON_R2
+        assertTrue(PopupHold.holdsKey(false, l2, down = true, trigger = true))
+        assertTrue(PopupHold.holdsKey(false, r2, down = true, trigger = true))
+        assertFalse("a release passes (nothing sticks down)", PopupHold.holdsKey(false, l2, down = false, trigger = true))
+        assertFalse("given back: not held", PopupHold.holdsKey(false, l2, down = true, trigger = false))
+        assertFalse("only the triggers", PopupHold.holdsKey(false, android.view.KeyEvent.KEYCODE_BUTTON_A, down = true, trigger = true))
+        assertFalse(PopupHold.holdsKey(false, android.view.KeyEvent.KEYCODE_BUTTON_L1, down = true, trigger = true))
+        assertEquals(0f to 0f, PopupHold.maskTriggers(true, 0.8f, 1f))
+        assertEquals(0.8f to 1f, PopupHold.maskTriggers(false, 0.8f, 1f))
     }
 
     @Test fun inAFightTheSwirlIsRedWithBAndTheEdgesFlash() {

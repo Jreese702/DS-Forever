@@ -29,8 +29,20 @@ object PopupHold {
     /** a key press the game must not get now ([holding] = [holds]); releases always pass. [wheel]: one of the context wheel's pop-ups
      *  is up ([Wheel]): every face button, the D-pad, the shoulders, Start and Select are held ([WHEEL_KEYS]). [room]: a tabbed room
      *  owns L / R ([ROOM_KEYS]: its tab row, the app's own reader; SetupBridge.roomShoulders) */
-    fun holdsKey(holding: Boolean, keyCode: Int, down: Boolean, wheel: Boolean = false, room: Boolean = false): Boolean =
-        down && ((holding && keyCode in HELD_KEYS) || (wheel && keyCode in WHEEL_KEYS) || (room && keyCode in ROOM_KEYS))
+    fun holdsKey(holding: Boolean, keyCode: Int, down: Boolean, wheel: Boolean = false, room: Boolean = false, trigger: Boolean = false): Boolean =
+        down && ((holding && keyCode in HELD_KEYS) || (wheel && keyCode in WHEEL_KEYS) || (room && keyCode in ROOM_KEYS) ||
+            (trigger && keyCode in TRIGGER_KEYS))
+
+    /**
+     * THE DS MENU'S ZL / ZR (single screen mode, the 1536 pass 2; the user's pick: "HOLD THEM BACK from the game while a room is open, so
+     * they only switch rooms, the way L / R only switch tabs"): the triggers' digital keys a room on the menu's stage owns
+     * (SetupBridge.roomTriggers). Only presses: a release always passes. Their analog pull is masked where player 1's state is written
+     * (WinHandler.holdOut: [maskTriggers])
+     */
+    val TRIGGER_KEYS = setOf(KeyEvent.KEYCODE_BUTTON_L2, KeyEvent.KEYCODE_BUTTON_R2)
+
+    /** the triggers' pull the game is given ([l], [r] 0..1): none while a menu room owns them ([held]); the same values otherwise */
+    fun maskTriggers(held: Boolean, l: Float, r: Float): Pair<Float, Float> = if (held) 0f to 0f else l to r
 
     /**
      * THE ROOMS' TABS ON TOP (the user, 2026-11-25: "...make them so that L and R shift the tabs left and right"): the bumpers a tabbed

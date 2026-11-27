@@ -53,10 +53,12 @@ object SingleMenu {
     const val PANEL_W = 1240
 
     /**
-     * THE ROOMS WITH A 16:9 LAYOUT OF THEIR OWN (pass 1: Bags - the grid on the left, the tooltip and its compare on the right, never over
-     * the grid). Every other room stands in the stage at the fallback size until its pass.
+     * THE ROOMS WITH A 16:9 LAYOUT OF THEIR OWN. Pass 1: Bags - the grid on the left, the tooltip and its compare on the right, never
+     * over the grid. Pass 2 (the user's order: "Character, then the Spellbook"): Character - its page, and beside it the next page (its
+     * Reputation on the Character tab, the character's stats beside the others); the Spellbook - the open book, and a third page beside it
+     * (the line's next page of spells). Every other room stands in the stage at the fallback size until its pass.
      */
-    val WIDE: Set<Room> = setOf(Room.BAGS)
+    val WIDE: Set<Room> = setOf(Room.BAGS, Room.CHARACTER, Room.SPELLBOOK)
     fun wide(r: Room): Boolean = r in WIDE
 
     /** the screen [w] x [h] as the base sees it */
@@ -253,6 +255,15 @@ object SingleMenu {
      */
     fun triggersStep(r: Room, held: Boolean, bookHoldsTriggers: Boolean): Boolean =
         held && r != Room.HOME && r != Room.CONTROLLER && !(r == Room.SPELLBOOK && bookHoldsTriggers)
+
+    /**
+     * ZL / ZR HELD BACK FROM THE GAME (the 1536 pass 2, the user: "HOLD THEM BACK from the game while a room is open, so they only switch
+     * rooms, the way L / R only switch tabs ... Give them back the moment the room closes"): a room on the stage ([phase] ROOM) whose
+     * triggers step rooms ([triggersStep]) with nothing of ours over it ([covered]: a game window, a wheel, the pause wheel). The ONE
+     * decision: the launcher holds the triggers back exactly while it is true, and the room's reader steps rooms exactly then
+     */
+    fun triggersHeld(phase: Phase, r: Room, held: Boolean, bookHoldsTriggers: Boolean, covered: Boolean): Boolean =
+        phase == Phase.ROOM && !covered && triggersStep(r, held, bookHoldsTriggers)
 
     /** the swirl's look: true = red with B (a fight: B goes straight back to the game), false = its blue at rest (a room open out of a
      *  fight: B folds into the row), null = the bar cursor's own rule (the row out of a fight: as on the bottom screen) */
