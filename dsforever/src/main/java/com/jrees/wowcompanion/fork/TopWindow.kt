@@ -66,6 +66,19 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
     private var fadingOut = false
     /** the 1535 merge: the return from a park ([unpark]) shows the window whole at once (int/1534's straight back), no fade */
     private var snapIn = false
+    /** the tidy pass (SingleShell.zoom): the dock box the next show grows from / the next hide shrinks into, and the zoom running */
+    private var zoomBox: IntArray? = null
+    private var zoomAnim: android.animation.ValueAnimator? = null
+    private var zoomOpening = false
+    private val zoomCut = RectF()
+    private val zoomOutline = object : android.view.ViewOutlineProvider() {
+        override fun getOutline(v: View, o: android.graphics.Outline) {
+            val c = zoomCut
+            if (c.isEmpty) o.setRect(0, 0, v.width, v.height)
+            else o.setRoundRect(c.left.toInt(), c.top.toInt(), c.right.toInt(), c.bottom.toInt(),
+                com.jrees.wowcompanion.SingleType.R * (screenH / 1080f) / v.scaleX.coerceAtLeast(0.05f))
+        }
+    }
 
     /** the activity's window size now (the host lays its views by the size made with: [stale] when it is no more this) */
     private fun liveSize(): IntArray =
@@ -241,6 +254,7 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         host = null
         up = false
         fade?.cancel(); fade = null; dimFade?.cancel(); dimFade = null
+        zoomStop()
         if (::ghostView.isInitialized) ghostView.pic = null
         ghostNext = null
         main.removeCallbacksAndMessages(null)
@@ -283,6 +297,11 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
      *  STRAIGHT back, BottomSync), a fade running dropped */
     private fun showDecor(want: Boolean) {
         val d = window?.decorView ?: return
+        val zb = zoomBox
+        zoomBox = null
+        // a zoom on its way to what is asked goes on (a look's dim or touch changing meanwhile); the other way, or a park: cut short
+        if (zoomAnim != null && want == zoomOpening && !parkedNow) return
+        zoomStop()
         if (parkedNow) {
             fade?.cancel(); fade = null; dimFade?.cancel(); dimFade = null
             fadingOut = false; ghostNext = null; ghostView.pic = null
@@ -301,6 +320,8 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         val fx = com.jrees.wowcompanion.SingleFade
         // not on screen yet (the first look comes inside Dialog.show): as it is, no fade
         if (!d.isAttachedToWindow) { d.visibility = if (on) View.VISIBLE else View.GONE; return }
+        if (on && zb != null && d.visibility != View.VISIBLE) { zoomIn(d, zb); return }
+        if (!on && zb != null && d.visibility == View.VISIBLE && !fadingOut) { zoomOut(d, zb); return }
         if (on) {
             ghostNext = null
             val wasOut = fadingOut
@@ -333,6 +354,108 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         }
     }
 
+    override fun zoom(box: IntArray?) { zoomBox = box?.takeIf { it.size == 4 && it[2] > it[0] && it[3] > it[1] } }
+
+    private fun panelF() = floatArrayOf(box[0].toFloat(), box[1].toFloat(), box[2].toFloat(), box[3].toFloat())
+
+    /** [v] drawn at the zoom's [g] between [dock] and the panel (SingleFade.zoomFit), cut to the gliding box */
+    private fun zoomAt(v: View, dock: FloatArray, g: Float) {
+        val z = com.jrees.wowcompanion.SingleFade.zoomFit(dock, panelF(), g)
+        v.pivotX = 0f; v.pivotY = 0f
+        v.scaleX = z[0]; v.scaleY = z[0]
+        v.translationX = z[1]; v.translationY = z[2]
+        zoomCut.set(z[3], z[4], z[5], z[6])
+        v.invalidateOutline()
+    }
+
+    private fun zoomClear(v: View) {
+        v.scaleX = 1f; v.scaleY = 1f; v.translationX = 0f; v.translationY = 0f
+        v.clipToOutline = false; v.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        v.alpha = 1f
+    }
+
+    /** a zoom cut short (another look, a park, the end): every view it moved whole again */
+    private fun zoomStop() {
+        val a = zoomAnim ?: return
+        zoomAnim = null
+        a.cancel()
+        zoomCut.setEmpty()
+        if (::hostSlot.isInitialized) zoomClear(hostSlot)
+        if (::ghostView.isInitialized) zoomClear(ghostView)
+    }
+
+    /** THE OPEN: the panel grows out of the dock (its content in from the first frames: the bottom screen's FADE), the dim easing in */
+    private fun zoomIn(d: View, zb: IntArray) {
+        val fx = com.jrees.wowcompanion.SingleFade
+        fade?.cancel(); fade = null; fadingOut = false; ghostView.pic = null; ghostNext = null
+        d.visibility = View.VISIBLE
+        frame.alpha = 1f
+        val dock = floatArrayOf(zb[0].toFloat(), zb[1].toFloat(), zb[2].toFloat(), zb[3].toFloat())
+        hostSlot.outlineProvider = zoomOutline; hostSlot.clipToOutline = true
+        hostSlot.alpha = 0f
+        zoomOpening = true
+        zoomAt(hostSlot, dock, 0f)
+        val ms = fx.ZOOM_IN_MS
+        zoomAnim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = ms
+            interpolator = com.jrees.wowcompanion.Motion.curve()
+            addUpdateListener { a ->
+                zoomAt(hostSlot, dock, a.animatedValue as Float)
+                hostSlot.alpha = (a.animatedFraction * ms / fx.ZOOM_FADE_MS).coerceIn(0f, 1f)
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    if (zoomAnim !== a) return
+                    zoomAnim = null; zoomCut.setEmpty(); zoomClear(hostSlot)
+                }
+            })
+            start()
+        }
+    }
+
+    /** THE CLOSE: the window's last picture shrinks back onto the dock (which stands again under it), leaving over the last FADE ms */
+    private fun zoomOut(d: View, zb: IntArray) {
+        val fx = com.jrees.wowcompanion.SingleFade
+        fade?.cancel(); fade = null; dimFade?.cancel(); dimFade = null
+        ghostView.pic = ghostNext
+        ghostNext = null
+        fadingOut = true
+        touchFlag(false)
+        hostSlot.translationY = 0f
+        hostSlot.alpha = 0f                                           // (the host shows the next state: the ghost is what closes)
+        val dock = floatArrayOf(zb[0].toFloat(), zb[1].toFloat(), zb[2].toFloat(), zb[3].toFloat())
+        ghostView.outlineProvider = zoomOutline; ghostView.clipToOutline = true
+        zoomOpening = false
+        zoomAt(ghostView, dock, 1f)
+        val dim0 = dim.alpha
+        val ms = fx.ZOOM_OUT_MS
+        zoomAnim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = ms
+            interpolator = com.jrees.wowcompanion.Motion.curve()
+            addUpdateListener { a ->
+                val k = a.animatedValue as Float
+                zoomAt(ghostView, dock, 1f - k)
+                val t = a.animatedFraction * ms
+                ghostView.alpha = 1f - ((t - (ms - fx.ZOOM_FADE_MS)) / fx.ZOOM_FADE_MS).coerceIn(0f, 1f)
+                dim.alpha = dim0 * (1f - k)
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    if (zoomAnim !== a) return
+                    zoomAnim = null; zoomCut.setEmpty()
+                    zoomClear(ghostView); zoomClear(hostSlot)
+                    fadingOut = false
+                    d.visibility = View.GONE
+                    frame.alpha = 1f
+                    ghostView.pic = null
+                    lookNow?.let { dim.alpha = it.dim }
+                    touchFlag(touchNow)
+                }
+            })
+            start()
+        }
+    }
+
     /** the window's touch flag as asked ([on]), set only on a change */
     private var touchSet = true
     private fun touchFlag(on: Boolean) {
@@ -357,6 +480,7 @@ internal class TopWindow(private val activity: Activity, private val screen: DsF
         val full = l.frame == SingleLook.Frame.FULL
         // the browser page and a typing field keep the window up whatever the look says
         showDecor(full || pageSlot.up || typer.typing)
+        zoomBox = null                                            // (used by this show / hide, or by none: never a later one)
         // the dim eases to the look's (a fade-out keeps it: the window's own alpha takes it away)
         if (::dim.isInitialized && !fadingOut && dim.alpha != l.dim) {
             dimFade?.cancel()

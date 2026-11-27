@@ -2796,6 +2796,9 @@ object UiKit {
     const val CARD_LINE = 31f
     const val CARD_DISC = 46f
     const val CARD_HOME_SCALE = 1.25f
+    /** the card in single screen mode's quest dock (the map dock's size). The tidy pass (SingleType): its objectives at the one body
+     *  size (26 px), its title at the title size (30 px) - was 0.85 (23 / 19.6 px, smaller than every other dock's text) */
+    const val CARD_DOCK_SCALE = SingleType.CARD_SCALE
 
     /** [questCard]'s height for [q] at [scale] (one title line + one line per objective; the empty card has two lines) */
     fun questCardHeight(q: QuestCard?, scale: Float = 1f, collapsed: Boolean = false): Float {
@@ -6144,7 +6147,7 @@ object UiKit {
      */
     fun singleHint(c: Canvas, r: RectF, text: String) {
         val k = r.width() / SINGLE_HINT_W
-        val rad = 14f * k
+        val rad = SingleType.R * k                                   // the tidy pass: every plate's corner (was 14)
         pFlat.style = Paint.Style.FILL; pFlat.color = Color.argb(232, 13, 12, 14)
         c.drawRoundRect(r, rad, rad, pFlat)
         pFlat.style = Paint.Style.STROKE; pFlat.strokeWidth = 3f * k; pFlat.color = Theme.bronze
@@ -6174,11 +6177,12 @@ object UiKit {
     fun singleHintFit(text: String, k: Float): Pair<List<String>, Float> {
         val words = Tr.t(text)
         val maxW = (SINGLE_HINT_W - 40f) * k
-        val tp = bodyPaint(30f * k, Color.WHITE)
-        while (tp.measureText(words) > maxW && tp.textSize > 22f * k) tp.textSize -= 1f
+        // the tidy pass (SingleType): one line at the body size (was 30) down to the small one, two lines from the small size down
+        val tp = bodyPaint(SingleType.BODY * k, Color.WHITE)
+        while (tp.measureText(words) > maxW && tp.textSize > SingleType.SMALL * k) tp.textSize -= 1f
         if (tp.measureText(words) <= maxW) return listOf(words) to tp.textSize
         val gaps = words.indices.filter { words[it] == ' ' }
-        tp.textSize = 28f * k
+        tp.textSize = SingleType.SMALL * k
         if (gaps.isEmpty()) {
             while (tp.measureText(words) > maxW && tp.textSize > 14f * k) tp.textSize -= 1f
             return listOf(words) to tp.textSize

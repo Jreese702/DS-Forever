@@ -2608,14 +2608,46 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         if (look.frame == SingleLook.Frame.FULL) singleGhostNote()
         if (look == singleLookNow) { singleMenuLook(look); return }
         if (singleLookNow?.frame == SingleLook.Frame.FULL && look.frame == SingleLook.Frame.HIDDEN) s.ghost(singleGhost())
+        val was = singleLookNow
+        // the tidy pass (the dock zoom): a dock's full view opening from the play docks grows out of that dock's box (taken before the
+        // docks go); back to play, it shrinks into the same dock's box (the docks laid again first)
+        val zoomOpen = if (was?.docks == true && was.frame == SingleLook.Frame.HIDDEN && look.frame == SingleLook.Frame.FULL)
+            singleZoomPiece()?.let { p -> docks?.boxNow(p)?.let { p to it } } else null
         singleLookNow = look
         singlePlayLook(look)
+        if (zoomOpen != null) {
+            zoomFrom = zoomOpen.first
+            val b = zoomOpen.second
+            s.zoom(intArrayOf(b.l, b.t, b.r, b.b))
+            Log.i("WCHOME", "one screen: ${zoomOpen.first.name.lowercase()} zooms out of its dock")
+        } else if (was?.frame == SingleLook.Frame.FULL && look.frame == SingleLook.Frame.HIDDEN && look.docks) {
+            val b = zoomFrom?.let { p -> docks?.boxNow(p) }
+            if (b != null) {
+                s.zoom(intArrayOf(b.l, b.t, b.r, b.b))
+                Log.i("WCHOME", "one screen: ${zoomFrom!!.name.lowercase()} zooms back into its dock")
+            }
+            zoomFrom = null
+        } else if (look.frame == SingleLook.Frame.HIDDEN) zoomFrom = null
         roomsRoot?.let { r -> val v = if (look.root == SingleLook.Root.GONE) View.GONE else View.VISIBLE; if (r.visibility != v) r.visibility = v }
         s.look(look)
         singleNpcLook(look)
         singleMenuLook(look)
         Log.i("WCHOME", "one screen: ${look.frame.name.lowercase()}" + (if (look.frame == SingleLook.Frame.FULL) " dim ${look.dim}" else "") +
             ", ${look.root.name.lowercase()}" + (if (look.docks) ", docks" else "") + (look.strip?.let { ", strip $it" } ?: "") + " ($why)")
+    }
+
+    /** the dock the open full view grew out of (the tidy pass's zoom): it shrinks back there */
+    private var zoomFrom: SinglePlayLayout.Piece? = null
+
+    /** the dock whose full view is opening now: the Chat room = the chat's, Home's map module = the map's, the Quests room = the quest
+     *  card's, a party plate's menu = the party list's; anything else = none (the plain fade) */
+    private fun singleZoomPiece(): SinglePlayLayout.Piece? = when {
+        room == Room.CHAT -> SinglePlayLayout.Piece.CHAT
+        room == Room.QUESTS -> SinglePlayLayout.Piece.QUEST
+        room == Room.HOME && homeView.fullModuleNow() == HomeModule.MAP -> SinglePlayLayout.Piece.MAP
+        room == Room.HOME && homeView.fullModuleNow() == HomeModule.CHAT -> SinglePlayLayout.Piece.CHAT
+        room == Room.HOME && homeView.partyMenu.visibility == View.VISIBLE -> SinglePlayLayout.Piece.PARTY
+        else -> null
     }
 
     /** the host's content root (the top window's) */

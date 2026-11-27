@@ -151,7 +151,7 @@ class StartView(context: Context) : View(context) {
         if (card != null) drawCard(c, panel, card)
         else if (under != null) drawHint(c, panel, under)
         else {
-            val words = UiKit.bodyPaint(LINE_SIZE)
+            val words = UiKit.bodyPaint(if (bare) SingleType.TITLE else LINE_SIZE)     // the tidy pass: single mode's title size
             while (words.measureText(line) > panel.width() - LINE_PAD * 2 && words.textSize > LINE_MIN) words.textSize -= 1f
             UiKit.outlined(c, line, cx, panel.centerY() - (words.ascent() + words.descent()) / 2f, words.textSize, Theme.text)
         }
@@ -170,7 +170,7 @@ class StartView(context: Context) : View(context) {
         // bare: just under the panel, or under the sign-in row / the How
         region?.let { n ->
             val text = n.line { Tr.t(it) }
-            var size = REGION_SIZE
+            var size = if (bare) SingleType.BODY else REGION_SIZE
             val p = UiKit.bodyPaint(size)
             while (p.measureText(Tr.t(text)) > width - SIDE_M * 2 && size > LINE_MIN) { size -= 1f; p.textSize = size }
             val cy = if (bare) (if (row || how) top else sideTop) + BUTTON_H + REGION_GAP + size / 2f

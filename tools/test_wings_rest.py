@@ -86,7 +86,7 @@ def kt_const(name):
 # ------------------------------------------------------------------------------------------------------------------------ A the tags
 def part_a(G):
     src = open(AB, encoding="utf-8").read()
-    chk("A. ActionBar nbar28 and its note", 'local NB = { V = "nbar29"' in src and "nbar28 THE SINGLE SCREEN POLISH" in src)
+    chk("A. ActionBar nbar28 and its note", 'local NB = { V = "nbar30"' in src and "nbar28 THE SINGLE SCREEN POLISH" in src)
     TT = G.WowCompanion.nbar.TOP
     for lua, kt in (("REST_K", "WINGS_REST_K"), ("REST_IN", "WINGS_REST_IN"), ("REST_UP", "WINGS_REST_UP")):
         chk("A. NB.TOP.%s = SinglePlayLayout.%s" % (lua, kt), abs(float(TT[lua]) - (kt_const(kt) or -1)) < 1e-6, (TT[lua], kt_const(kt)))
@@ -125,7 +125,7 @@ def part_b():
     bx = boxes_of(G, pl)
     feet = max(b[1] + b[3] for b in bx)
     chk("B. the feet over the room row (1080 - REST_FLOOR)", feet <= 1080 - 114 + 0.01, feet)
-    K3 = (290, 760, 1630, 966)
+    K3 = (290, 776, 1630, 966)
     inside = all(b[0] >= K3[0] and b[1] >= K3[1] - 0.01 and b[0] + b[2] <= K3[2] and b[1] + b[3] <= K3[3] + 0.01 for b in bx)
     chk("B. inside the app's K3 (the docks keep clear of it)", inside, [tuple(round(v) for v in b) for b in bx])
     return L, G, tick

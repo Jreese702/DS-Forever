@@ -22,6 +22,10 @@ interface SingleShell {
     fun sub(id: String): SingleSub
     /** the 1535 polish (SingleFade): the picture the window's next fade-out shows - what it showed as it closes (null = the dim alone) */
     fun ghost(p: android.graphics.Picture?) {}
+    /** the tidy pass (SingleFade.zoomFit): the window's NEXT show grows out of [box] (screen px: l, t, r, b - the dock that opened it)
+     *  into the panel, and its next hide shrinks its picture back into it, as the bottom screen's chat / map zoom - instead of the fade;
+     *  null = the plain fade. Used once (the next show or hide), dropped by any other look */
+    fun zoom(box: IntArray?) {}
     /** the plate at the top screen's top centre (not touchable): [text] (Tr'd here), null = off; [ms] 0 = until cleared */
     fun hint(text: String?, ms: Long = 0L)
 }
