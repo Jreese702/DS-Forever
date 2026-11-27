@@ -172,7 +172,7 @@ def press(L, *keys):
 
 # ================================================================ a. versions, no trace in the code
 check('local CBV = "cb16"' in BLOCK and "cb14 THE IN-COMBAT LAYER" in AB, "a. ActionBar cb16 (cb14's in-combat layer note kept)")
-check('local CV = "p64"' in SRC["padtabctl"] and "p55 CONTROLLER | TAP TO CAST" in SRC["padtabctl"], "a. PadTabCtl p56 (p55's note kept)")
+check('local CV = "p65"' in SRC["padtabctl"] and "p55 CONTROLLER | TAP TO CAST" in SRC["padtabctl"], "a. PadTabCtl p56 (p55's note kept)")
 check('local BV = "b90"' in SRC["book"] and "b70 CONTROLLER | TAP TO CAST" in SRC["book"], "a. Book b71 (b70's note kept)")
 code = "\n".join(l.split("--", 1)[0] for l in BLOCK.splitlines())
 check(not re.search(r'(?<![\w.:])SetBinding\s*\(', code) and 'SaveBindings' not in code and 'CreateMacro' not in code
