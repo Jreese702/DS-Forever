@@ -147,7 +147,8 @@ class ReportPage(c: Context) : FrameLayout(c) {
     fun open(sendNow: Boolean = false) {
         ReportFlow.init(context)
         isOpen = true; visibility = View.VISIBLE
-        words = ReportFlow.description.ifEmpty { words }
+        // the kept draft alone (issue 605: falling back to the page's own words brought back a report already sent)
+        words = ReportFlow.description
         caret = words.length
         status = ""; focus = Model.Target.WORDS
         preview.visibility = View.GONE
@@ -289,6 +290,10 @@ class ReportPage(c: Context) : FrameLayout(c) {
         if (!ReportFlow.canSend(words)) { status = "Say what happened first."; openKeyboard(); return }
         DiagLog.stopRecording()
         val w = words.trim()
+        // issue 605: a sent report leaves the box empty (close() then keeps no draft); a send that fails puts the words back as the
+        // draft (CompanionHost.sendReport)
+        words = ""; caret = 0
+        ReportFlow.description = ""
         close()
         onSend(w)
     }

@@ -409,7 +409,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     private val REPORT_TIMEOUT_MS = 45_000L
 
     private fun sendReport(words: String) {
-        if (!::reportNotice.isInitialized) return
+        if (!::reportNotice.isInitialized) { if (ReportFlow.description.isBlank()) ReportFlow.description = words; return }   // (issue 605: kept)
         val gen = ++reportGen
         if (LauncherHooks.gameUp() && room != Room.HOME) show(Room.HOME)
         noticeShow(ReportNotice.State.Compiling)
@@ -448,6 +448,8 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                         }
                     }
                 }.onFailure { e ->
+                    // issue 605: nothing was saved, so the words go back as the draft (unless the player has written a new one since)
+                    if (ReportFlow.description.isBlank()) ReportFlow.description = words
                     noticeShow(ReportNotice.State.Failed(e.message ?: e.javaClass.simpleName))
                     DiagLog.event("report", "send: failed (${e.message})")
                 }
@@ -456,6 +458,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         ui.postDelayed({
             if (gen == reportGen && (reportNotice.state == ReportNotice.State.Compiling || reportNotice.state == ReportNotice.State.Sending)) {
                 reportGen++
+                if (ReportFlow.description.isBlank()) ReportFlow.description = words      // issue 605: the words kept for a new try
                 noticeShow(ReportNotice.State.Failed("it took more than ${REPORT_TIMEOUT_MS / 1000} s; try again, or send the files in Documents/DS Forever/logs"))
                 DiagLog.event("report", "send: timed out")
             }
@@ -4601,11 +4604,14 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                 val cur = msg.optInt("cur", 0)
                 if (cur != 0) { TaxiNet.onTaxiNet(cur, reach); Log.i("WCMAP", "taxinet: at $cur, ${reach.size} reachable") }
             }
-            "bye" -> if (current) {
-                QuestWatchKeep.cleanEnd(); byeShow(); PartyModel.live.newSession()      // a logout: the game writes its state (the watch list)
-                GameLife.worldLeft()                        // the world closed: no calm until the next hello (the world map beside the game)
-                // the triage (2026-11-14): no hello within 30 s with the game still running = silence (the game's Disable + ReloadUI)
-                silence.bye(System.currentTimeMillis())
+            "bye" -> {
+                chatView.loggedOut(); homeView.chatLoggedOut()   // issue 622: the next session's chat is the next character's
+                if (current) {
+                    QuestWatchKeep.cleanEnd(); byeShow(); PartyModel.live.newSession()      // a logout: the game writes its state (the watch list)
+                    GameLife.worldLeft()                        // the world closed: no calm until the next hello (the world map beside the game)
+                    // the triage (2026-11-14): no hello within 30 s with the game still running = silence (the game's Disable + ReloadUI)
+                    silence.bye(System.currentTimeMillis())
+                }
             }
             "chat" -> msg.optJSONObject("chat")?.let { chatView.update(it); homeView.onChat(it); PreviewStage.feedChat(it) }
             // the game's world notice (Chat chat21: the shard transfer's countdown) over Home's chat: current only (a replayed one is old)
@@ -5111,6 +5117,9 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
                     if (current && named) QuestWatchKeep.character(ck)
                     if (ck != null || (current && named)) TaxiNet.character(ck)
                     if (current && named) GameUi.character = ck     // hub13: HUD mode per character
+                    // issue 622: the Chat room's and Home's chat lines are the character's own (another character's never show)
+                    // (every padmap in its order, a replayed one too: the chat documents around it are that character's)
+                    if (named) { chatView.character(ck); homeView.chatCharacter(ck) }
                     // the chat's message-type checklist, per character (the user, 2026-11-16: "mix and match my preferences"); hold to talk's last used chat too (TalkKeep)
                     if (current && named) ui.post { ChatFilter.character(ck); TalkKeep.character(ck) }
                     lastDpad = d; settings.homeSection.dpadChanged()
@@ -5468,12 +5477,15 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
         // (DocMemory: a truncated log - the client restarted - keeps nothing of the old client's documents; the reader thread, first)
         val onStatus: (String) -> Unit = { s -> if (!streaming) DocMemory.readerSaid(s); ui.post {
             status.text = s.take(110)
+            if (s == LogTail.RESTARTED) { chatView.loggedOut(); homeView.chatLoggedOut() }   // issue 622: a new client, its own character's chat
             // the other game started: is IT set up for the companion?
             // (not inside the launcher: there the second candidate is the same game's private log, never another game)
             if (s.startsWith("following the game's log") && LauncherHooks.pkg == null) ui.postDelayed({ setupCheck() }, 3_000L)
         } }
         tail = PlayModes.pick(PlayModes.current, PlayModes.bridgeLog, onMessage, onStatus) {
-            LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow, resume = resumeAt.also { resumeAt = null })
+            // issue 612: with the game closed a fresh reader reads only the old log's last part (the start screen replayed it all)
+            LogTail(follow.first(), onMessage = onMessage, onStatus = onStatus, follow = follow, resume = resumeAt.also { resumeAt = null },
+                capBacklog = { !(LauncherHooks.gameUp() || BottomSync.relaunchPending(android.os.SystemClock.elapsedRealtime())) })
         }.also { it.start() }
         // m129: the combat log is no longer read (no health on the bottom); the files our older add-ons made still go
         if (!streaming) java.io.File(log).parentFile?.let { dir ->
@@ -6455,7 +6467,7 @@ class CompanionHost(base: Context, private val shell: HostShell) : ContextWrappe
     /** p35: the bare D-pad Down opens Home's room bar: the DS WoW toolbar is on, or the Home Bar command (DSHOME) is on that button;
      *  wk-dpad (the user 2026-11-16: "using the down ability in combat on the D-pad is flashing the home button again"): never while the
      *  fight switch gives Down its In-combat entry (HomeFightFace.downIsHomeBar, the router's own m44 rule) */
-    private fun downIsHomeBar(): Boolean = HomeFightFace.downIsHomeBar(lastPadMap, lastDpad?.want == true, homeView.dpadFight())
+    private fun downIsHomeBar(): Boolean = HomeFightFace.downIsHomeBar(lastPadMap, lastDpad?.want == true, homeView.dpadFight(), lastDpad?.aside)
 
     // ---------------------------------------------------------------- f-new-spell-prompt: learned spells, one prompt at a time on Home
     /** the user (1.0.9): "After learning new spells when I return home they should have a prompt 1 at a time a to bind or b to dismiss" */

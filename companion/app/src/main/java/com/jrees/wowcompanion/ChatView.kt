@@ -213,7 +213,9 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
     var cursorOnShow = true
         set(v) { field = v; if (!v) { pad.focus = null; adapter.notifyDataSetChanged(); invalidate() } }
 
-    private val history = ArrayList<Line>()
+    /** issue 622: each character's own log ([ChatByCharacter]); [history] is the shown character's */
+    private val book = ChatByCharacter<Line>()
+    private val history get() = book.lines
     private val shown = ArrayList<Line>()
     private var selected: Line? = null
     /** the checklist's boxes (ChatFilter keys) where something for the player arrived unseen: a whisper or group chat */
@@ -527,9 +529,9 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
             val n = chat.optInt("n", -1)
             if (n == legacyN) return
             legacyN = n
-            history.clear()
+            book.clear()
             select(null)
-            for (k in 0 until lines.length()) lines.optJSONObject(k)?.let { history.add(Line(it)) }
+            for (k in 0 until lines.length()) lines.optJSONObject(k)?.let { book.add(0L, Line(it)) }
             lastS = 0L; lastI = 0
         } else {
             for (k in 0 until lines.length()) {
@@ -538,14 +540,14 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
                 if (s == lastS && i <= lastI) continue      // the ring again: already have it
                 lastS = s; lastI = i
                 val l = Line(o)
-                history.add(l)
+                book.add(s, l)
                 fresh.add(l)
             }
             if (fresh.isEmpty()) return
         }
 
         while (history.size > KEEP) {
-            val gone = history.removeAt(0)
+            val gone = book.removeAt(0)
             if (gone === selected) select(null)
         }
 
@@ -564,6 +566,27 @@ class ChatView(c: Context, @Suppress("UNUSED_PARAMETER") onSend: (String) -> Uni
         refill()
         showTyped()                             // the header may name what changed (Reply's person, a channel's name)
     }
+
+    /**
+     * Issue 622: the character now (the host's CharKey, from each padmap; null = named with no key yet). Another character's chat
+     * never shows: its own log comes back (or none yet), with its own Reply person; the selection, the unread dots and a whisper to
+     * someone of the other character's go.
+     */
+    fun character(key: String?) {
+        if (!book.character(key)) return
+        select(null)
+        unread.clear()
+        replyTo = history.lastOrNull { it.ch == "whisper" && !it.me && !it.out && it.who.isNotEmpty() }?.who ?: ""
+        whisperName = ""
+        if (type == "WHISPER") { type = "SAY"; stream.setType(type) }
+        if (kinds().none { it.key == type }) { type = "SAY"; stream.setType(type) }
+        head.invalidate()
+        refill()
+        showTyped()
+    }
+
+    /** the game's logout ("bye"): what comes next is the next character's chat ([ChatByCharacter.loggedOut]) */
+    fun loggedOut() = book.loggedOut()
 
     private fun refill() {
         shown.clear()

@@ -96,8 +96,12 @@ object HomeFightFace {
      * is the bar while the DS WoW toolbar is on ([toolbar]) or the Home Bar command is on the bare button (p35). p35 gated only the
      * toolbar; p36 gave In combat's D-pad back its fight spells with the toolbar on, so a fight's Down lit the bar and the game never
      * confirmed it (EARLY_MS later it closed).
+     * Issue 614 (1.0.41, the transmog window): [aside] is the padmap's dpad `aside`. While the router stands aside for a GAME WINDOW
+     * ("managed" or the window's name; not "room", a room's or the bar's own hold) the D-pad is the game's, its Down walks that window
+     * and is never the bar (the early bar came up under it and closed again on every press).
      */
-    fun downIsHomeBar(map: PadMapModel.Map?, toolbar: Boolean, fight: Boolean): Boolean {
+    fun downIsHomeBar(map: PadMapModel.Map?, toolbar: Boolean, fight: Boolean, aside: String? = null): Boolean {
+        if (aside != null && aside != "room") return false
         val f = if (fight && map != null) dpadFight(map, DOWN) else null
         if (f != null) return f.layer == "command" && f.key == PadMapModel.HOME_KEY
         return toolbar || map?.let { PadMapModel.slot(it, BASE_SET, DOWN)?.key == PadMapModel.HOME_KEY } == true

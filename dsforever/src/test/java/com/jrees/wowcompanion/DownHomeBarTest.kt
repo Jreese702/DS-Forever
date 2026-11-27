@@ -88,11 +88,26 @@ class DownHomeBarTest {
         assertFalse(bar(map(downWithFight, combat = true, cc = null), toolbar = true))
     }
 
+    /**
+     * Issue 614 (1.0.41: the transmog window): the router stepped aside for a GAME WINDOW (the padmap's dpad `aside` = "managed" or the
+     * window's name), so the D-pad is the game's - its Down walks that window and is never Home's bar (the early bar flickered open and
+     * closed under it). A room's or the bar's own hold ("room") is still ours.
+     */
+    @Test fun aGameWindowsDpadIsNeverTheBar() {
+        val m = map(downPlain, combat = false)
+        assertFalse(HomeFightFace.downIsHomeBar(m, toolbar = true, fight = false, aside = "managed"))
+        assertFalse(HomeFightFace.downIsHomeBar(m, toolbar = true, fight = false, aside = "TransmogrifyFrame"))
+        val cmd = PadMapModel.Slot(4, 4, Kind.COMMAND, null, "Home Bar", 0, key = PadMapModel.HOME_KEY)
+        assertFalse(HomeFightFace.downIsHomeBar(map(cmd, combat = false), toolbar = false, fight = false, aside = "managed"))
+        assertTrue(HomeFightFace.downIsHomeBar(m, toolbar = true, fight = false, aside = "room"))
+        assertTrue(HomeFightFace.downIsHomeBar(m, toolbar = true, fight = false, aside = null))
+    }
+
     @Test fun theHostsEarlyBarUsesThisRule() {
         val src = listOf("../companion/app/src/main/java/com/jrees/wowcompanion", "companion/app/src/main/java/com/jrees/wowcompanion")
             .map { File(it) }.first { it.isDirectory }
         val h = File(src, "CompanionHost.kt").readText()
-        assertTrue(h.contains("HomeFightFace.downIsHomeBar(lastPadMap, lastDpad?.want == true, homeView.dpadFight())"))
+        assertTrue(h.contains("HomeFightFace.downIsHomeBar(lastPadMap, lastDpad?.want == true, homeView.dpadFight(), lastDpad?.aside)"))
         assertTrue(Regex("k == \"PADDDOWN\"[^\\n]*downIsHomeBar\\(\\)").containsMatchIn(h))
         assertTrue(File(src, "HomeView.kt").readText().contains("fun dpadFight(): Boolean = fightNow"))
     }
