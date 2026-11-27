@@ -172,7 +172,10 @@ class WorldMapBesideTest {
         // the wiring: the bye closes it, the hello opens it (CompanionHost)
         val host = File(src, "CompanionHost.kt").readText()
         fun branch(from: String, to: String): String { val a = host.indexOf(from); assertTrue(from, a >= 0); return host.substring(a, host.indexOf(to, a)) }
-        assertTrue(branch("\"bye\" -> if (current) {", "\"chat\" -> ").contains("GameLife.worldLeft()"))
+        // (issue 622 put the chat's logout before the current check: the world's close is still the current game's only)
+        val bye = branch("\"bye\" -> {", "\"chat\" -> ")
+        val cur = bye.indexOf("if (current) {")
+        assertTrue(bye, cur >= 0 && bye.indexOf("GameLife.worldLeft()") > cur)
         assertTrue(branch("\"hello\" -> {", "\"social\" -> {").contains("if (current) GameLife.worldBack()"))
     }
 
