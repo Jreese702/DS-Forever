@@ -30,7 +30,7 @@ b714c4048d5fd47aec1a857c174cc433  WowCompanion/Media/wings_glow.tga
 a9fe89d8b05c4d32bd12e127ea5e5076  WowCompanion/Safety.lua
 6427d1430ed3f3f0ed77e4acc88932a6  WowCompanion/Sink.lua
 d07cc1cd2d1035f4ca30861e9efd2823  WowCompanion/TapPad.lua
-4c5e6c140831f0a01e11d4446421290b  WowCompanion/Trail.lua
+a612a3b06c05ddad8db6cd22d41c32a7  WowCompanion/Trail.lua
 05d332164cff5d1ac9655f8f217c3d63  WowCompanion/WowCompanion.toc
 59e1503bbc64dc8979541aef55c8c469  WowCompanionCalendar/Calendar.lua
 1658645a6ac969a2c0617d218ac4b4da  WowCompanionCalendar/WowCompanionCalendar.toc

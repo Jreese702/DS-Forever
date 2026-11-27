@@ -373,7 +373,7 @@ def part_d():
     import test_compass as tc
     import test_prd as tp
     src = open(tc.TRAIL, encoding="utf-8").read()
-    chk("D0. Trail prd25 and its note", 'V = "prd25"' in src and "prd25 EDIT HOME'S TOP-SCREEN PREVIEW" in src)
+    chk("D0. Trail prd25 and its note", 'V = "prd26"' in src and "prd25 EDIT HOME'S TOP-SCREEN PREVIEW" in src)
     L = tc.lupa.LuaRuntime()
     L.execute(tc.STUB)
     L.execute(tp.GAMEPLUS)
