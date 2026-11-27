@@ -3932,7 +3932,7 @@ end
 -- prd23 (the user's pick 11-23, "Centre the rows"): with our HUD bars off (P.wanted false: P.tick returns before it reads Party mode,
 -- so P.partyOn kept its last word) P.cxFor reads Party mode live (P.partyModeOn), so P.partyGeo still carries ActionBar nbar15's
 -- shift and Hub's rows and Select tab fade to the centre alone; none of Trail's frames move (P.cx is left as it is).
-WC.prd = { V = "prd25", cx = 0, PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
+WC.prd = { V = "prd26", cx = 0, PET_FADE_S = 0.2, PET_SIDE_GAP = 12, PARTY_GAP = 8, AURA_UP = 22, LIFT_MARGIN = 8, lift = 0, petSide = "under", auraUp = false, partyRoomPx = 0, PICK_S = 0.1, PICK_PAD = 4, PICK_PX = 2, PICK_GOLD = { 1, 0.82, 0 }, PET_W = 0.6, PET_HH = 8, PET_PH = 4, PET_BAR_GAP = 1, PET_GAP = 17, PET_ICON = 36, PET_IGAP = 10,
            PET_DEAD_RGB = { 0.5, 0.5, 0.5 }, petDrop = 0, CPH = 5, CP_GAP = 4, TRAVEL = 14, OUT_S = 0.45, vis = 0, dy = 0, ENERGY_S = 10, RAGE_S = 30, SEL_S = 4, W_DEF = 280, W_MIN = 180, W_MAX = 400, W_STEP = 20,
            S_DEF = 100, S_MIN = 70, S_MAX = 160, S_STEP = 10, sel = "y", FILL_ATLAS = { "UI-HUD-CoolDownManager-Bar-c60", "UI-HUD-CoolDownManager-Bar" }, HEALTH_RGB = { 0.12, 0.86, 0.12 }, LAG_S = 0.3, HEAL_RGB = { 0.47, 1, 0.47, 0.55 }, LAG_RGB = { 1, 0.86, 0.76 }, Y_DEF = -350, Y_MIN = -470, Y_MAX = -170, STEP = 10, W = 280, HH = 15, PH = 9, BAR_GAP = 8, ICON = 26, IGAP = 4,
            ROW_GAP = 20, BG_W = 132, BG_H = 19, Y_SHIFT = -50, BG = { "UI-HUD-CoolDownManager-Bar-BG-c60", "UI-HUD-CoolDownManager-Bar-BG" }, REST = 0.92, BUFF_MAX = 6, DEBUFF_MAX = 4, BUFF_DUR = 300, HOLD_S = 2, FADE_S = 1.5, IN_S = 0.25, FULL = 0.99, POLL_S = 0.1, AURA_S = 0.5,
@@ -4336,9 +4336,12 @@ do
         for _, b in ipairs({ P.heal, P.shield }) do if b then b:SetWidth(u(P.W)) end end
         if P.lag then P.lag:SetAllPoints(P.hp) end
         -- prd20: the container's line follows the bar's width (its host too); a refusal stays at the old width
+        -- prd26: the buffs' and the debuffs' lines split it (P.boxLines); the debuffs' host lies over the buffs' (it follows)
         if P.box then
+            local bl, dl = P.boxLines(P.W)
             pcall(function() P.box.host:SetWidth(u(P.W)) end)
-            pcall(P.box.c.SetFlowLayoutMaximumLineSize, P.box.c, u(P.W))
+            pcall(P.box.c.SetFlowLayoutMaximumLineSize, P.box.c, u(P.dbox and bl or P.W))
+            if P.dbox then pcall(P.dbox.c.SetFlowLayoutMaximumLineSize, P.dbox.c, u(dl)) end
         end
         P.cache = nil
     end
@@ -4775,23 +4778,53 @@ do
         return math.max(0, math.ceil(left)) .. " s"
     end
     P.DEBUFF_ATLAS = { Magic = "magic", Curse = "curse", Disease = "disease", Poison = "poison", Bleed = "bleed", none = "default" }
-    -- prd20 (#558 / #476): the row is ONE aura container on "player" (WC.abox): the buffs (HELPFUL lasting BUFF_DUR or less, at most
-    -- BUFF_MAX), then the debuffs (HARMFUL with a duration, at most DEBUFF_MAX, the game's dispel-type border), flowing from the bar's
-    -- left edge and wrapping at its width; the seconds under each icon (the game's text binding), the swipe, the stacks, the pandemic
-    -- glow. Built with the bars (P.build); nil on a client without the container (the old row then, as before)
+    -- prd20 (#558 / #476): the row is aura containers on "player" (WC.abox): the buffs (HELPFUL lasting BUFF_DUR or less, at most
+    -- BUFF_MAX) and the debuffs (HARMFUL with a duration, at most DEBUFF_MAX, the game's dispel-type border); the seconds under each
+    -- icon (the game's text binding), the swipe, the stacks, the pandemic glow. Built with the bars (P.build); nil on a client without
+    -- the container (the old row then, as before)
+    -- prd26 (the 1.0.38 report: "buffs and debuffs appear on the same side of the resource bar"): prd20's ONE container flowed both
+    -- groups from the left; the debuffs are their own container again ("hdeb", P.dbox), from the bar's RIGHT edge growing left, as the
+    -- old row put them. Nothing can count the auras in a fight (secret), so the two sides split the bar's width once, out of combat:
+    -- the debuffs' line holds DEBUFF_MAX (at most half the bar), the buffs' line the rest less the gap - they wrap downward on their
+    -- own side and never meet. The debuffs' host is a CHILD of the buffs' host laid over it (SetAllPoints), so every show / hide /
+    -- fade / move of P.box.host carries both; only Party mode's flow and the width are set on each
+    function P.boxLines(w)
+        local gap = P.IGAP * 2
+        local d = math.min(P.DEBUFF_MAX * (P.ICON + P.IGAP) - P.IGAP, math.floor((w - gap) / 2))
+        return w - d - gap, d
+    end
     function P.boxMake(parent)
         if type(WC.abox) ~= "table" then return nil end
         local step = u(P.IGAP)
-        return WC.abox.make({
+        local look = { size = u(P.ICON), font = u(13), mask = true, timer = "text", bd = u(4), harmful = true }
+        local bl, dl = P.boxLines(P.W)
+        local box = WC.abox.make({
             key = "hud", parent = parent, unit = "player", w = u(P.W), h = u(2 * (P.ICON + 18)), anchor = "TOPLEFT", grow = "Right",
-            line = u(P.W), look = { size = u(P.ICON), font = u(13), mask = true, timer = "text", bd = u(4), harmful = true },
+            line = u(bl), look = look,
             groups = {
                 { key = "buffs", filter = "HELPFUL", max = P.BUFF_MAX, cand = { maxDuration = P.BUFF_DUR },
                   layout = { elementSpacing = step, lineSpacing = u(18) } },
-                { key = "debuffs", filter = "HARMFUL", max = P.DEBUFF_MAX, cand = { maxDuration = math.huge },
-                  layout = { elementSpacing = step, lineSpacing = u(18), groupSpacing = u(P.IGAP * 2) } },
             },
         })
+        P.dbox = nil
+        if not box then return nil end
+        local dg = { key = "debuffs", filter = "HARMFUL", max = P.DEBUFF_MAX, cand = { maxDuration = math.huge },
+                     layout = { elementSpacing = step, lineSpacing = u(18) } }
+        local db = WC.abox.make({
+            key = "hdeb", parent = box.host, unit = "player", w = u(P.W), h = u(2 * (P.ICON + 18)), anchor = "TOPRIGHT", grow = "Left",
+            line = u(dl), look = look, groups = { dg },
+        })
+        if db then
+            pcall(function() db.host:ClearAllPoints(); db.host:SetAllPoints(box.host) end)
+            P.dbox = db
+        else
+            -- (a refused second container: the debuffs after the buffs in the one container, prd20's way, at the bar's width)
+            pcall(box.c.AddAuraGroup, box.c, dg.key, dg.filter, { maxFrameCount = dg.max, sortMethod = WC.abox.sort("Default"),
+                sortDirection = WC.abox.dirNormal(), candidateFilters = dg.cand,
+                layout = { elementSpacing = step, lineSpacing = u(18), groupSpacing = u(P.IGAP * 2) }, initializeFrame = WC.abox.initFor(look) })
+            pcall(box.c.SetFlowLayoutMaximumLineSize, box.c, u(P.W))
+        end
+        return box
     end
     -- prd20: the container's place (our host frame: allowed in a fight) under the bars, or in Party mode above them (prd15: growing up)
     function P.boxDraw(show)
@@ -4809,9 +4842,11 @@ do
             if P.auraUp then
                 h:SetPoint("BOTTOMLEFT", P.f, "TOPLEFT", 0, y)
                 WC.abox.layout(box, "BOTTOMLEFT", "Right", "Up")
+                if P.dbox then WC.abox.layout(P.dbox, "BOTTOMRIGHT", "Left", "Up") end       -- prd26: the debuffs on the right
             else
                 h:SetPoint("TOPLEFT", P.f, "TOPLEFT", 0, y)
                 WC.abox.layout(box, "TOPLEFT", "Right", "Down")
+                if P.dbox then WC.abox.layout(P.dbox, "TOPRIGHT", "Left", "Down") end
             end
         end
         WC.abox.show(box, show == true)

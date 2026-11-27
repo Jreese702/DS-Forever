@@ -91,7 +91,7 @@ def part_a():
     print("\n-- A the channel (Book / PadMap)")
     src_pm = open(os.path.join(ADDONS, "WowCompanionSpells", "PadMap.lua"), encoding="utf-8").read()
     src_bk = open(os.path.join(ADDONS, "WowCompanionSpells", "Book.lua"), encoding="utf-8").read()
-    chk("A0. PadMap m198, Book b85 and their notes", 'local PV = "m206"' in src_pm and "m198 EDIT HOME'S TOP-SCREEN PREVIEW" in src_pm
+    chk("A0. PadMap m198, Book b85 and their notes", 'local PV = "m208"' in src_pm and "m198 EDIT HOME'S TOP-SCREEN PREVIEW" in src_pm
         and 'local BV = "b90"' in src_bk and "b85 EDIT HOME'S TOP-SCREEN PREVIEW" in src_bk)
     W = tct.boot()
     pm = 'WowCompanion.padMap'
@@ -373,7 +373,7 @@ def part_d():
     import test_compass as tc
     import test_prd as tp
     src = open(tc.TRAIL, encoding="utf-8").read()
-    chk("D0. Trail prd25 and its note", 'V = "prd25"' in src and "prd25 EDIT HOME'S TOP-SCREEN PREVIEW" in src)
+    chk("D0. Trail prd25 and its note", 'V = "prd26"' in src and "prd25 EDIT HOME'S TOP-SCREEN PREVIEW" in src)
     L = tc.lupa.LuaRuntime()
     L.execute(tc.STUB)
     L.execute(tp.GAMEPLUS)

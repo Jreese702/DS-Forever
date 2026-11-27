@@ -273,7 +273,7 @@ for k in ("padmap", "padtabctl", "book"):
     check(e is None, "a. Lua 5.1 compiles %s (200 locals, 60 upvalues)" % os.path.basename(F[k]), e or '')
 # (the Macros room, Spells s10, bumped PadMap to m163 and Book to b63: Smart Range's own notes stay, so any later tag counts)
 _pv = int(re.search(r'local PV = "m(\d+)"', SRC["padmap"]).group(1)); _bv = int(re.search(r'local BV = "b(\d+)"', SRC["book"]).group(1))
-check(_pv >= 162 and 'local CV = "p64"' in SRC["padtabctl"] and _bv >= 62 and "m160b" in SRC["padmap"] and "b61b" in SRC["book"],
+check(_pv >= 162 and 'local CV = "p65"' in SRC["padtabctl"] and _bv >= 62 and "m160b" in SRC["padmap"] and "b61b" in SRC["book"],
       "a. the versions: PadMap m162 or later, PadTabCtl p54, Book b62 or later (m160b / b61b + the 1.0.32 merge)", (_pv, _bv))
 check(all('"Lets scrap the smart ranged attack"' in SRC[k] for k in ("padmap", "padtabctl", "book")),
       "a. each changed file's header note quotes the user")

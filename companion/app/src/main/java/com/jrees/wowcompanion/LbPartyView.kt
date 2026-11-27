@@ -101,20 +101,21 @@ class LbPartyView(context: Context) : View(context) {
         bar(c, rf(boxes.getValue("PAD1")), member("player"), "player", LbMap.keyOf("player") ?: "PAD1", a, now, s)
         for (key in listOf("PADDUP", "PADDLEFT", "PADDRIGHT", "PADDDOWN")) {
             val r = rf(boxes.getValue(key))
-            val unit = LbMap.unitOf(key)
-            bar(c, r, unit?.let { member(it) }, unit, key, a, now, s)
+            val at = LbMap.slot(key)                                   // the member placed here, and whether the game binds the key
+            bar(c, r, at.unit?.let { member(it) }, at.unit, key, a, now, s, at.glyph)
         }
         if (held && t < UiKit.PAUSE_OPEN_MS || !held || pressedAt.values.any { now - it < PRESS_MS }) postInvalidateOnAnimation()
     }
 
     /** one member's bar: the button's glyph at its left, the name in the class colour, the level / dead / offline (m129: no health or
      *  mana on the bottom); lit while its press shows */
-    private fun bar(c: Canvas, r: RectF, m: PartyModel.Member?, unit: String?, key: String, a: Int, now: Long, s: Float) {
+    private fun bar(c: Canvas, r: RectF, m: PartyModel.Member?, unit: String?, key: String, a: Int, now: Long, s: Float, glyph: Boolean = true) {
         val pressed = unit != null && (pressedAt[unit]?.let { now - it < PRESS_MS } ?: false)
         UiKit.pressed(c, r, pressed) {
             UiKit.module(c, r, a)
             val gx = r.left + 52f * s; val cy = r.centerY()
-            UiKit.pad(c, glyphOf(key), gx, cy, 64f * s, if (m != null || unit == "player") a else a / 2)
+            // a player's report (the D-pad by each name, while LB + Up / Down cycles there): the glyph only for a key the game binds
+            if (glyph) UiKit.pad(c, glyphOf(key), gx, cy, 64f * s, if (m != null || unit == "player") a else a / 2)
             val x0 = r.left + 96f * s; val x1 = r.right - 22f * s
             if (m == null) {
                 c.drawText(Tr.t(if (unit == null) "Not bound" else "Empty"), x0, cy + 8f * s, pSmall.apply { alpha = a / 2; textSize = 24f * s })
@@ -172,6 +173,9 @@ class LbPartyView(context: Context) : View(context) {
 /**
  * WHICH LB BUTTON TARGETS WHOM (PadMap m104's "lbmap", read from the game's own bindings; the user: "read it from the game"). Pure.
  * Until the game has said: A = you, and the D-pad clockwise from the top (Up party1, Right party2, Down party3, Left party4).
+ * A player's report (the picture showed a D-pad shortcut by each member while LB + D-pad Up / Down cycles the party on their setup):
+ * once the game HAS said, only what it binds is a shortcut. With no party member bound under LB at all, the members keep the
+ * cross's places ([slot]) without a direction glyph or a press light; you keep A (the game's own LB + A, which the report confirms).
  */
 object LbMap {
     private val DEFAULT = mapOf("player" to "PAD1", "party1" to "PADDUP", "party2" to "PADDRIGHT", "party3" to "PADDDOWN", "party4" to "PADDLEFT")
@@ -180,6 +184,17 @@ object LbMap {
     /** true once the game's own bindings have been read */
     @Volatile var fromGame = false
         private set
+    /** true while a party member's button is known (the defaults before the game has said, or a real binding under LB) */
+    @Volatile var partyBound = true
+        private set
+
+    /** a D-pad place of the picture: the member drawn there, and whether its direction glyph is shown (a real shortcut) */
+    data class Slot(val unit: String?, val glyph: Boolean)
+    fun slot(key: String): Slot {
+        unitOf(key)?.let { return Slot(it, true) }
+        if (!partyBound) return Slot(DEFAULT.entries.firstOrNull { it.value == key && it.key != "player" }?.key, false)
+        return Slot(null, true)                                         // "Not bound" there while others are (as before)
+    }
 
     /** m121: what LB tapped alone does (the game's binding for the modifier button by itself) and the game's name for it */
     @Volatile var tap: String? = null
@@ -197,8 +212,11 @@ object LbMap {
         val m = HashMap<String, String>()
         fun put(field: String, unit: String) = d.optString(field, "").takeIf { it.startsWith("PAD") }?.let { m[unit] = it }
         put("self", "player"); put("p1", "party1"); put("p2", "party2"); put("p3", "party3"); put("p4", "party4")
-        if (m.isEmpty()) return                                        // nothing bound under LB: the defaults stand
-        byUnit = m; fromGame = true
+        // the game has said: what it binds, no made-up D-pad cross (nothing bound for the party = no party shortcut); you keep A
+        partyBound = m.keys.any { it != "player" }
+        fromGame = m.isNotEmpty()
+        if (!m.containsKey("player")) m["player"] = "PAD1"
+        byUnit = m
     }
 
     fun keyOf(unit: String): String? = byUnit[unit]

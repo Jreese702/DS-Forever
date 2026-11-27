@@ -152,23 +152,37 @@ def part1(chk):
     rig = boot()
     G, L, P, UF = rig.G, rig.L, rig.P, rig.UF
     A = G.WowCompanion.abox
-    hud, tdeb, tbuf = G.ACM.byKey("hud"), G.ACM.byKey("tdeb"), G.ACM.byKey("tbuf")
-    chk("creation: three containers from CustomAuraContainerTemplate (the HUD on player, the target bar's debuffs and buffs)",
-        len(G.ACM.made) == 3 and hud is not None and tdeb is not None and tbuf is not None, len(G.ACM.made))
-    if hud is None or tdeb is None or tbuf is None:
+    hud, hdeb, tdeb, tbuf = G.ACM.byKey("hud"), G.ACM.byKey("hdeb"), G.ACM.byKey("tdeb"), G.ACM.byKey("tbuf")
+    chk("creation: four containers from CustomAuraContainerTemplate (the HUD's buffs and debuffs on player, the target bar's debuffs and buffs)",
+        len(G.ACM.made) == 4 and hud is not None and hdeb is not None and tdeb is not None and tbuf is not None, len(G.ACM.made))
+    if hud is None or hdeb is None or tdeb is None or tbuf is None:
         return
-    chk("units: SetUnit ONCE each, player / target / target", (hud.unit, tdeb.unit, tbuf.unit) == ("player", "target", "target")
-        and hud.unitSets == 1 and tdeb.unitSets == 1 and tbuf.unitSets == 1, (hud.unit, tdeb.unit, tbuf.unit))
-    chk("Edit Mode preview off on every container", hud.edit is False and tdeb.edit is False and tbuf.edit is False)
-    hg = lst(hud.groups)
-    chk("HUD: buffs (HELPFUL, at most BUFF_MAX, lasting BUFF_DUR or less) THEN debuffs (HARMFUL with a duration, at most DEBUFF_MAX)",
-        [g.key for g in hg] == ["buffs", "debuffs"] and [g.filter for g in hg] == ["HELPFUL", "HARMFUL"]
-        and hg[0].opts.maxFrameCount == P.BUFF_MAX and hg[1].opts.maxFrameCount == P.DEBUFF_MAX
-        and hg[0].opts.candidateFilters.maxDuration == P.BUFF_DUR and hg[1].opts.candidateFilters.maxDuration == float("inf"),
-        [(g.key, g.filter) for g in hg])
-    chk("HUD: the flow from the bar's left edge, growing right then down, wrapping at the bar's width",
-        hud.fanchor == "TOPLEFT" and hud.fh == 1 and hud.fv == -1 and abs(hud.fline - A.boxes.hud.host.w) < 1e-6,
-        (hud.fanchor, hud.fh, hud.fv, hud.fline))
+    chk("units: SetUnit ONCE each, player / player / target / target", (hud.unit, hdeb.unit, tdeb.unit, tbuf.unit) == ("player", "player", "target", "target")
+        and hud.unitSets == 1 and hdeb.unitSets == 1 and tdeb.unitSets == 1 and tbuf.unitSets == 1, (hud.unit, hdeb.unit, tdeb.unit, tbuf.unit))
+    chk("Edit Mode preview off on every container", hud.edit is False and hdeb.edit is False and tdeb.edit is False and tbuf.edit is False)
+    hg, hdg = lst(hud.groups), lst(hdeb.groups)
+    # prd26 (the 1.0.38 report: buffs and debuffs on one side since prd20): the buffs on the left, the debuffs on the right, as before
+    chk("HUD: the buffs' container (HELPFUL, at most BUFF_MAX, lasting BUFF_DUR or less) and the debuffs' own (HARMFUL with a duration, at most DEBUFF_MAX)",
+        [g.key for g in hg] == ["buffs"] and [g.filter for g in hg] == ["HELPFUL"] and [g.key for g in hdg] == ["debuffs"]
+        and [g.filter for g in hdg] == ["HARMFUL"] and hg[0].opts.maxFrameCount == P.BUFF_MAX and hdg[0].opts.maxFrameCount == P.DEBUFF_MAX
+        and hg[0].opts.candidateFilters.maxDuration == P.BUFF_DUR and hdg[0].opts.candidateFilters.maxDuration == float("inf"),
+        ([(g.key, g.filter) for g in hg], [(g.key, g.filter) for g in hdg]))
+    hw = A.boxes.hud.host.w
+    uk = hw / P.W                                   # Trail's u(): the bar's width in UI units over its width in 1080-line px
+    chk("HUD: the buffs flow from the bar's left edge, growing right then down",
+        hud.fanchor == "TOPLEFT" and hud.fh == 1 and hud.fv == -1, (hud.fanchor, hud.fh, hud.fv))
+    chk("HUD: the debuffs flow from the bar's RIGHT edge, growing left then down (the old row's place)",
+        hdeb.fanchor == "TOPRIGHT" and hdeb.fh == -1 and hdeb.fv == -1, (hdeb.fanchor, hdeb.fh, hdeb.fv))
+    gap = uk * (P.IGAP * 2)
+    chk("HUD: the two sides never meet: buffs' line + debuffs' line + the gap fit the bar's width (%s + %s + %s <= %s)" % (hud.fline, hdeb.fline, gap, hw),
+        hud.fline + hdeb.fline + gap <= hw + 1e-6 and hdeb.fline >= uk * P.ICON and hud.fline >= uk * P.ICON, (hud.fline, hdeb.fline, gap, hw))
+    chk("HUD: the debuffs' line holds all DEBUFF_MAX at the default width (one row, as before)",
+        hdeb.fline + 1e-6 >= uk * (P.DEBUFF_MAX * (P.ICON + P.IGAP) - P.IGAP), (hdeb.fline, P.DEBUFF_MAX))
+    dhost = A.boxes.hdeb.host
+    chk("HUD: the debuffs' host lies over the buffs' host (its child: shown / hidden / faded / moved with it)",
+        L.eval('(function() local d, h = WowCompanion.abox.boxes.hdeb.host, WowCompanion.abox.boxes.hud.host; local a = d.anch or {}; '
+               'return rawequal(d.parent, h) and #a == 2 and rawequal(a[1][2], h) and rawequal(a[2][2], h) '
+               'and a[1][1] == "TOPLEFT" and a[2][1] == "BOTTOMRIGHT" end)()') is True)
     dg = lst(tdeb.groups)
     chk("target: yours first (HARMFUL|PLAYER), then the others (HARMFUL|!PLAYER), both sorted by expiration",
         [g.filter for g in dg] == ["HARMFUL|PLAYER", "HARMFUL|!PLAYER"] and all(g.opts.sortMethod == 4 for g in dg)
@@ -188,9 +202,9 @@ def part1(chk):
                     bad.append("tipCombat")
         return bad
     base_need = ["SetIcon", "SetDurationCooldown", "SetApplicationCount", "AddDispelTypeTexture", "AddPandemicRegion"]
-    bh = wired(hud, base_need + ["SetDurationText"])
+    bh = wired(hud, base_need + ["SetDurationText"]) + wired(hdeb, base_need + ["SetDurationText"])
     chk("HUD buttons: icon, swipe, seconds (text binding), stacks, dispel border, pandemic region, tooltip hidden in combat (%d buttons)"
-        % sum(len(lst(g.buttons)) for g in hg), not bh, sorted(set(bh)))
+        % sum(len(lst(g.buttons)) for g in hg + hdg), not bh, sorted(set(bh)))
     bt = wired(tdeb, base_need) + wired(tbuf, base_need)
     chk("target buttons: icon, swipe (the game's seconds in its corner), stacks, dispel border, pandemic region, tooltip hidden in combat",
         not bt, sorted(set(bt)))
@@ -219,7 +233,7 @@ def part1(chk):
     G.GAME.fight = True
     G.ME.fight = True
     n0 = len(G.ACM.log)
-    u0 = (hud.updates, tdeb.updates, tbuf.updates)
+    u0 = (hud.updates, tdeb.updates, tbuf.updates, hdeb.updates)
     rig.fire("PLAYER_REGEN_DISABLED")
     for _ in range(3):
         rig.fire("UNIT_AURA", "player")
@@ -231,7 +245,7 @@ def part1(chk):
     calls = [G.ACM.log[i].m for i in range(n0 + 1, len(G.ACM.log) + 1)]
     chk("in a fight: the containers get nothing but UpdateAllAuras (%s)" % calls, set(calls) <= {"update"}, calls)
     chk("a target change: UpdateAllAuras once on each target container, never on the HUD's",
-        (hud.updates, tdeb.updates - u0[1], tbuf.updates - u0[2]) == (u0[0], 1, 1), (hud.updates, tdeb.updates, tbuf.updates, u0))
+        (hud.updates, tdeb.updates - u0[1], tbuf.updates - u0[2], hdeb.updates) == (u0[0], 1, 1, u0[3]), (hud.updates, tdeb.updates, tbuf.updates, u0))
     chk("in a fight: the hosts still shown, the old rows still hidden", G.ACM.vis(hh) and G.ACM.vis(dh)
         and not G.ACM.anyOldShown(P.buffs) and not G.ACM.anyOldShown(UF.tb.f.deb))
     r = L.eval('(function() local ok, e = pcall(function() WowCompanion.prd.drawAuras(true) end); return ok and "ok" or tostring(e) end)()')
@@ -239,10 +253,10 @@ def part1(chk):
     # THE SWITCHES: the HUD bar's (npWant.prd) and the target bar's (UF.target) hide the containers with their bars
     G.WowCompanion.npWant.prd = False
     rig.run(0.5)
-    chk("HUD switch off: the HUD's container hidden", not G.ACM.vis(hh))
+    chk("HUD switch off: the HUD's containers hidden (buffs and debuffs)", not G.ACM.vis(hh) and not G.ACM.vis(dhost))
     G.WowCompanion.npWant.prd = True
     rig.run(1.0)
-    chk("HUD switch on: shown again", G.ACM.vis(hh))
+    chk("HUD switch on: shown again (both)", G.ACM.vis(hh) and G.ACM.vis(dhost))
     L.eval('WowCompanion.uf.set("target", false)')
     rig.run(0.3)
     chk("target bar switch off: both target containers hidden", not G.ACM.vis(dh) and not G.ACM.vis(bh2))
@@ -264,9 +278,18 @@ def part1(chk):
     rig.run(1.5)
     chk("Party mode: the HUD's container above the bars, growing up (%s, %s / %s)" % (lst(hh.point), hud.fanchor, hud.fv),
         P.auraUp is True and hh.point[1] == "BOTTOMLEFT" and hh.point[5] > 0 and hud.fanchor == "BOTTOMLEFT" and hud.fv == 1)
+    chk("Party mode: the debuffs above the bars on the right, growing left then up (%s / %s / %s)" % (hdeb.fanchor, hdeb.fh, hdeb.fv),
+        hdeb.fanchor == "BOTTOMRIGHT" and hdeb.fh == -1 and hdeb.fv == 1, (hdeb.fanchor, hdeb.fh, hdeb.fv))
     G.PM.on = False
     rig.run(1.5)
-    chk("Party mode off: back under the bars, growing down", P.auraUp is False and hh.point[1] == "TOPLEFT" and hud.fanchor == "TOPLEFT" and hud.fv == -1)
+    chk("Party mode off: back under the bars, growing down", P.auraUp is False and hh.point[1] == "TOPLEFT" and hud.fanchor == "TOPLEFT" and hud.fv == -1
+        and hdeb.fanchor == "TOPRIGHT" and hdeb.fv == -1)
+    # prd26: a new bar width: both lines follow, the sides still apart
+    L.execute('WowCompanion.prd.wd = 200; WowCompanion.prd.resize()')
+    hw2 = A.boxes.hud.host.w
+    chk("a narrower bar (200): both lines follow and still never meet (%s + %s + %s <= %s)" % (hud.fline, hdeb.fline, gap, hw2),
+        abs(hw2 - uk * 200) < 1e-6 and hud.fline + hdeb.fline + gap <= hw2 + 1e-6 and hdeb.fline >= uk * P.ICON, (hud.fline, hdeb.fline, hw2))
+    L.execute('WowCompanion.prd.wd = 280; WowCompanion.prd.resize()')
     chk("the moves read no aura either (%d)" % G.ACM.reads, G.ACM.reads == 0)
     # OUT OF THE FIGHT: still the containers, still no read (the look never changes)
     G.ACM.throw = False
@@ -275,7 +298,7 @@ def part1(chk):
     rig.fire("PLAYER_REGEN_ENABLED")
     rig.fire("UNIT_AURA", "player")
     rig.run(1.0)
-    chk("out of the fight: the same containers, still no aura read (%d)" % G.ACM.reads, G.ACM.reads == 0 and len(G.ACM.made) == 3)
+    chk("out of the fight: the same containers, still no aura read (%d)" % G.ACM.reads, G.ACM.reads == 0 and len(G.ACM.made) == 4)
     # THE TOOLTIP SHIELD (tt6): over each container's host while tooltips are off, out of a fight and in one
     T = G.WowCompanion.tips
     L.execute('WowCompanionDB = WowCompanionDB or {}')
@@ -302,13 +325,13 @@ def part1(chk):
     chk("tt6: tooltips on: every container shield down", all(T.boxShields[k] is None or T.boxShields[k].up is not True for k in sh))
     pr = lst(G.ACM.probes)
     chk("probe aurabox: one line per piece, made, no step refused (%s)" % [(p.key, p.made) for p in pr],
-        sorted(p.key for p in pr) == ["hud", "tbuf", "tdeb"] and all(p.made is True for p in pr)
+        sorted(p.key for p in pr) == ["hdeb", "hud", "tbuf", "tdeb"] and all(p.made is True for p in pr)
         and all(len(list(p.steps.keys())) == 0 for p in pr), [(p.key, p.made, dict(p.steps)) for p in pr])
     w = A.word()
-    chk("the hub document's word (abox): every piece ok", w.v == "ab1" and w.b.hud == "ok" and w.b.tdeb == "ok" and w.b.tbuf == "ok", dict(w.b))
+    chk("the hub document's word (abox): every piece ok", w.v == "ab1" and w.b.hud == "ok" and w.b.hdeb == "ok" and w.b.tdeb == "ok" and w.b.tbuf == "ok", dict(w.b))
     # TAGS
     hub = open(os.path.join(ADDONS, "WowCompanionHub", "Hub.lua"), encoding="utf-8").read()
-    chk("tags: Trail prd23 / ab1 / tt6, Hub hub75 / uf26", P.V == "prd25" and A.V == "ab1" and T.V == "tt6" and UF.V == "uf26"
+    chk("tags: Trail prd23 / ab1 / tt6, Hub hub75 / uf26", P.V == "prd26" and A.V == "ab1" and T.V == "tt6" and UF.V == "uf26"
         and re.search(r'local HV = "hub79"', hub) is not None, (P.V, A.V, T.V, UF.V))
 
     # A CLIENT WITHOUT THE CONTAINER (CreateFrame refuses the type): the old rows, as before, and the probe says so
