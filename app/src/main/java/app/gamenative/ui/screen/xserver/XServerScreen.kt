@@ -1961,7 +1961,11 @@ fun XServerScreen(
             val xServerViewInstance: XServerRendererView = if (useGLRenderer) {
                 XServerViewGL(context, xServerToUse)
             } else {
-                XServerView(context, xServerToUse, container.displayRenderer)
+                XServerView(context, xServerToUse, container.displayRenderer).apply {
+                    // PR 615: the surface at the X screen's size unless the quick menu's saved pick scales (SurfaceFit), decided before
+                    // the surface exists; the quick menu's every apply decides it again
+                    fitSurfaceToScreen(app.gamenative.ui.util.SurfaceFit.fixed(loadScreenEffectsConfig(container).scalingMode))
+                }
             }
             val xServerView = xServerViewInstance.apply {
                 xServerView = this

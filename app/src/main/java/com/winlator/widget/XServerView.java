@@ -38,6 +38,32 @@ public class XServerView extends SurfaceView implements SurfaceHolder.Callback, 
         }
     }
 
+    /** null = not decided yet; else whether the surface is now fixed at the X screen's size */
+    private Boolean surfaceFixed = null;
+
+    /**
+     * PR 615 (based on a pull request by RenaeTheRaven): [fixed] = the surface's buffers are the X screen's size (e.g. the game's
+     * 1280x720 on a 1080p panel), so the renderer's composite, frame generation and present work at the game's size and the display
+     * hardware scales to the panel. Without it the surface follows the view: everything after the game ran at the panel's 1920x1080
+     * (2.25x the pixels; the frame generation flow pass too). The view itself stays full size, so touch mapping (which uses the view's
+     * size) is unchanged. Not fixed = the view's size, as before: the quick menu's upscaling (FSR, DLS) and scaling modes need it
+     * (app.gamenative.ui.util.SurfaceFit; the user's ruling 2026-11-27). Called before the surface exists (the container's saved pick)
+     * and at every apply of the quick menu's screen effects; only a change touches the holder.
+     */
+    public void fitSurfaceToScreen(boolean fixed) {
+        int w = xServer.screenInfo.width, h = xServer.screenInfo.height;
+        boolean want = fixed && w > 0 && h > 0;
+        if (surfaceFixed != null && surfaceFixed == want) return;
+        surfaceFixed = want;
+        if (want) {
+            getHolder().setFixedSize(w, h);
+            timber.log.Timber.i("surface fixed at the X screen's %dx%d", w, h);
+        } else {
+            getHolder().setSizeFromLayout();
+            timber.log.Timber.i("surface follows the view (a quick-menu scaling mode)");
+        }
+    }
+
     public XServer getxServer() {
         return xServer;
     }
