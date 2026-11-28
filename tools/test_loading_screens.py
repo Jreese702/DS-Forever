@@ -45,7 +45,7 @@ WowCompanion.snapshot = function(r) SNAPS2[#SNAPS2 + 1] = r; return false end
 ''')
 
 core = open(os.path.join(ADDON, 'Core.lua'), encoding='utf-8').read()
-check('local COREV = "core2"' in core, 'Core.lua carries its version tag core2 (1529: the heartbeat in a fight, test_combat_light)')
+check('local COREV = "core3"' in core, 'Core.lua carries its version tag core3 (core2 1529: the heartbeat in a fight; core3 PR 615: the heartbeat in stages, test_combat_light)')
 
 
 def nlog():
@@ -84,7 +84,7 @@ check(reg('LOADING_SCREEN_ENABLED') and reg('LOADING_SCREEN_DISABLED'), 'both lo
 n0, t0, k0 = nlog(), timers(), tickers()
 L.execute('fire("LOADING_SCREEN_ENABLED")')
 d = docs_since(n0)
-check(d == [{'type': 'load', 'on': True, 'v': 'core2'}], 'ENABLED before the login: the one tiny document', d)
+check(d == [{'type': 'load', 'on': True, 'v': 'core3'}], 'ENABLED before the login: the one tiny document', d)
 check(pads_since(n0) > 0, 'ENABLED: flushed in the event itself (the pad lines written now)', pads_since(n0))
 check(timers() == t0 and tickers() == k0, 'ENABLED: no timer, no ticker (no polling; the load may hold timers back)', (timers() - t0, tickers() - k0))
 check(int(L.eval('#SNAPS2')) == 0, 'ENABLED: never a snapshot', int(L.eval('#SNAPS2')))
@@ -96,7 +96,7 @@ L.execute('runTimers(NOW + 1)')
 n1, t1, k1 = nlog(), timers(), tickers()
 L.execute('NOW = NOW + 5; fire("LOADING_SCREEN_ENABLED")')
 d = docs_since(n1)
-check(d == [{'type': 'load', 'on': True, 'v': 'core2'}], 'ENABLED in the world: the one tiny document', d)
+check(d == [{'type': 'load', 'on': True, 'v': 'core3'}], 'ENABLED in the world: the one tiny document', d)
 check(pads_since(n1) > 0 and timers() == t1, 'ENABLED in the world: flushed at once, nothing waits on a timer', (pads_since(n1), timers() - t1))
 check(tickers() == k1, 'ENABLED in the world: no ticker started', tickers() - k1)
 check(int(L.eval('#SNAPS2')) == 0, 'ENABLED in the world: no snapshot (the router sends it to core1, not WC.snapshot)', L.eval('SNAPS2[1]'))
@@ -104,7 +104,7 @@ check(int(L.eval('#SNAPS2')) == 0, 'ENABLED in the world: no snapshot (the route
 n2, t2 = nlog(), timers()
 L.execute('fire("LOADING_SCREEN_DISABLED")')
 d = docs_since(n2)
-check(d == [{'type': 'load', 'on': False, 'v': 'core2'}], 'DISABLED: {"on":false}', d)
+check(d == [{'type': 'load', 'on': False, 'v': 'core3'}], 'DISABLED: {"on":false}', d)
 check(timers() == t2 + 1 and pads_since(n2) == 0, 'DISABLED: the usual coalesced push (one timer, no pad yet)', (timers() - t2, pads_since(n2)))
 L.execute('runTimers(NOW + 1)')
 check(pads_since(n2) > 0, 'DISABLED: the push flushes on the next frame', pads_since(n2))

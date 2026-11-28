@@ -15,7 +15,11 @@ local WC = _G.WowCompanion
 -- (InCombatLockdown). In its place a tiny {"type":"beat","v":COREV} keeps the app's "the game is live" clock (InputGate: 25 s; the
 -- indoor builder: 30 s) going in a long fight with no other document; the full snapshot owed goes out at the fight's end
 -- (PLAYER_REGEN_ENABLED), so the app's map / bags heal at once after the fight. Out of a fight nothing changed.
-local COREV = "core2"
+-- core3 (PR 615, based on a pull request by RenaeTheRaven; the user's ruling 2026-11-27): the 15 s heartbeat's full snapshot is collected
+-- over five frames (WC.heartbeatStaged), the same document; with two fixes of ours: a snapshot sent mid-chain (WC.fullSeq moved) makes
+-- the last stage send nothing (the app already has a fresher bar / equipment, and lastBar / lastEquip keep the newer values), and a
+-- fight that starts mid-chain stops it at the next stage (WC.heartOwed: the owed heartbeat goes out at PLAYER_REGEN_ENABLED, as core2's).
+local COREV = "core3"
 function WC.onLoadingScreen(on)
     WC.send(WC.encode({ type = "load", on = on and true or false, v = COREV }))
     if on then WC.flush() else WC.push() end
@@ -60,6 +64,7 @@ function WC.snapshot(reason)
     lastBar = json
     equipped = equipped or WC.collectEquipped()
     lastEquip = equipJson or WC.encode(equipped or {})
+    WC.fullSeq = (WC.fullSeq or 0) + 1                               -- core3: a staged heartbeat under way sends nothing after this
     WC.emit({
         type = "full",
         v = WC.VERSION,
@@ -80,6 +85,51 @@ function WC.collectMapSafe()
     local ok, m = pcall(WC.collectMap)
     if ok then return m end
     return { ok = false, err = tostring(m):sub(1, 200) }
+end
+
+-- core3 THE HEARTBEAT IN STAGES, one per frame (PR 615, based on a pull request by RenaeTheRaven): exactly what WC.snapshot("heartbeat")
+-- emits (always sent, the dedup keys updated), split over five consecutive frames (a C_Timer.After(0) chain). In one go it was 82-97 ms
+-- of Lua inside a single game frame (timed on an Adreno 740 Thor: the bar 20-24 ms, the equipment 14-30, the bags 17-18, the encode
+-- 15-18, the map 3, the send 5-7), a 200-320 ms picture freeze every 15 s with frame generation; staged, the largest stage is 31-33 ms.
+-- Ours: (a) a full snapshot sent while the chain runs (an event's, WC.fullSeq moved) makes the last stage send NOTHING - the app has
+-- the newer document, and lastBar / lastEquip keep the newer values; (b) a fight that starts mid-chain stops it before the next stage
+-- (no collecting in a fight, core2's rule): WC.heartOwed, and the owed heartbeat goes out at PLAYER_REGEN_ENABLED. A second call
+-- while a chain runs is dropped; an error in a stage ends the chain (WC.hbErr keeps its first 200 characters for /dump).
+local hbBusy = false
+function WC.heartbeatStaged()
+    if hbBusy then return end
+    hbBusy = true
+    local st = {}
+    local seq = WC.fullSeq or 0
+    local stages = {
+        function() st.bar = WC.collectActionBar(); st.barJson = WC.encode(st.bar) end,
+        function() st.equipped = WC.collectEquipped() end,
+        function() st.player = WC.collectPlayer(); st.map = WC.collectMapSafe() end,
+        function() st.bags = WC.collectBags() end,
+        function()
+            if (WC.fullSeq or 0) ~= seq then return end              -- (a) a fresher full document went out mid-chain
+            lastBar = st.barJson
+            lastEquip = WC.encode(st.equipped or {})
+            WC.fullSeq = (WC.fullSeq or 0) + 1
+            WC.emit({ type = "full", v = WC.VERSION, reason = "heartbeat", actionbar = st.bar, player = st.player,
+                map = st.map, bags = st.bags, equipped = st.equipped })
+        end,
+    }
+    local i = 0
+    local function nextStage()
+        i = i + 1
+        local icl = _G.InCombatLockdown
+        if type(icl) == "function" and icl() then                    -- (b) a fight began: owed, collected after it
+            WC.heartOwed = true
+            hbBusy = false
+            return
+        end
+        local ok, err = pcall(stages[i])
+        if not ok then WC.hbErr = tostring(err):sub(1, 200) end
+        if ok and i < #stages then C_Timer.After(0, nextStage); return end
+        hbBusy = false
+    end
+    C_Timer.After(0, nextStage)
 end
 
 -- A forced snapshot, coalesced. The harvester fires on MERCHANT_SHOW etc., and the player is
@@ -187,7 +237,7 @@ local function start()
             return
         end
         WC.heartOwed = false
-        WC.snapshot("heartbeat")
+        WC.heartbeatStaged()                                         -- core3: in stages, one per frame (see WC.heartbeatStaged)
     end)
 
     -- Chat: buffered, not per-message. The General channel alone can produce several lines a
@@ -224,7 +274,7 @@ f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4, a5, a6, a7, a8, a9, a1
         pcall(WC.onLoadingScreen, event == "LOADING_SCREEN_ENABLED")             -- core1: never a snapshot (see the top)
     elseif started then
         -- core2: the heartbeat a fight held back goes out as the fight ends
-        if event == "PLAYER_REGEN_ENABLED" and WC.heartOwed then WC.heartOwed = false; WC.snapshot("heartbeat"); return end
+        if event == "PLAYER_REGEN_ENABLED" and WC.heartOwed then WC.heartOwed = false; WC.heartbeatStaged(); return end
         WC.snapshot(event)
     end
 end)

@@ -327,6 +327,18 @@ object Settings {
         get() = GraphicsDriver.sanitize(prefs?.getString(GraphicsDriver.KEY, null))
         set(v) { if (v != graphicsDriver) { prefs?.edit()?.putString(GraphicsDriver.KEY, v.id)?.apply(); changed() } }
 
+    /**
+     * RENDER SIZE (the user's rulings 2026-11-27 on PR 615, based on a pull request by RenaeTheRaven): the lines the game draws at, from
+     * the next game start ([RenderSize]: 1080 / 900 / 720). 720 on every device until the player picks; a pick is kept and always wins.
+     * Reset settings takes it back to the default (ResetPlan). The launcher reads it at each start (WoWForeverScreen.withRenderSize).
+     */
+    var renderSize: Int
+        get() = RenderSize.chosen(prefs?.takeIf { it.contains(RenderSize.KEY) }?.getInt(RenderSize.KEY, RenderSize.DEFAULT))
+        set(v) { if (v in RenderSize.CHOICES && (v != renderSize || !renderSizePicked)) { prefs?.edit()?.putInt(RenderSize.KEY, v)?.apply(); changed() } }
+
+    /** the player picked a render size (else the default applies) */
+    val renderSizePicked: Boolean get() = prefs?.contains(RenderSize.KEY) == true
+
     /** the last game start's driver line (the launcher's watch writes it; the report reads it when no game started in this run) */
     var graphicsDriverRan: String?
         get() = prefs?.getString(GraphicsDriver.KEY_RAN, null)

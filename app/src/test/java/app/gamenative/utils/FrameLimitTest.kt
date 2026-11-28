@@ -40,7 +40,9 @@ class FrameLimitTest {
         assertEquals(40, FrameGen.LIMIT_MIGRATED)
         assertTrue(FrameGen.LIMIT_MIGRATED in FrameGen.LIMITS)
         assertTrue(FrameGen.LIMIT_DEFAULT in FrameGen.LIMITS)
-        assertEquals(listOf(40, 60, 0), FrameGen.LIMITS)
+        // 30 / 40 / 60 / Off (based on a pull request by RenaeTheRaven: 30 x2 = an exact 60 on the 60 Hz panel); the default stays 60
+        assertEquals(listOf(30, 40, 60, 0), FrameGen.LIMITS)
+        assertEquals(60, FrameGen.LIMIT_DEFAULT)
     }
 
     @Test fun theLaunchersMigrationReadsTheContainerAndAQuickMenuPickClearsTheNote() {
@@ -65,6 +67,18 @@ class FrameLimitTest {
         assertFalse(FrameGen.limitNeedsRestart(40, 40))
         assertTrue(FrameGen.limitNeedsRestart(40, 60))
         assertTrue(FrameGen.limitNeedsRestart(0, 40))
+    }
+
+    // Based on a pull request by RenaeTheRaven: with frame generation on and the NATIVE backend, nothing paced the guest (the Present
+    // extension's limiter was set to 0 for "the layer"), so the Frame limit did nothing. Only the lsfg-vk LAYER really paces it
+    @Test fun theFrameLimitPacesTheGuestWithNativeFrameGeneration() {
+        val xs = java.io.File("src/main/java/app/gamenative/ui/screen/xserver/XServerScreen.kt").readText()
+        val f = xs.substringAfter("fun applyFpsLimiterToEngines(limit: Int) {").substringBefore("fun effectiveFpsLimit()")
+        assertTrue(f.contains("val layerPaces = isLsfgAvailable && lsfgMultiplier >= 2 && !LsfgVkManager.isNativeBackend(container)"))
+        assertTrue(f.contains("?.setFrameRateLimit(if (layerPaces) 0 else limit)"))
+        // the renderer's display hint stays off with frame generation, as before
+        assertTrue(f.contains("xServerView?.setFrameRateLimit(if (isLsfgAvailable && lsfgMultiplier >= 2) 0 else limit)"))
+        assertTrue(f.contains("ShmFramePacer.setFrameRateLimit(limit)"))
     }
 
     @Test fun labels() {

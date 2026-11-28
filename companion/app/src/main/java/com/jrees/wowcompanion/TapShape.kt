@@ -42,4 +42,15 @@ object TapShape {
 
     /** tests */
     @Synchronized internal fun reset() { refused = 0; game = ""; top = "" }
+
+    /**
+     * game px ([gx], [gy]) of a [pw] x [ph] game screen on a [dw] x [dh] display of the same shape, display px (not rounded). Pure: the
+     * render size test (2026-11-27: the game at 1280x720 or 1600x900 on the 1920x1080 top screen) walks every pad cell through it
+     */
+    fun displayOf(gx: Double, gy: Double, pw: Double, ph: Double, dw: Int, dh: Int): Pair<Float, Float> =
+        (gx * dw / pw).toFloat() to (gy * dh / ph).toFloat()
+
+    /** one tap's shell line for display px ([x], [y]): 2 decimals (1.0.21), InputSink makes a fraction of it. Pure */
+    fun tapLine(x: Float, y: Float): String =
+        "input -d 0 tap ${"%.2f".format(java.util.Locale.ROOT, x)} ${"%.2f".format(java.util.Locale.ROOT, y)}"
 }

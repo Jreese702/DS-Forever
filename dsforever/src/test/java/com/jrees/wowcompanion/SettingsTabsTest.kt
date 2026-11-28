@@ -110,7 +110,7 @@ class SettingsTabsTest {
             // the top of the list": the button is its own headless group, first; Imported keeps only the list (rows named by the add-ons)
             G.IMPORT to listOf("Import add-ons"),
             G.IMPORTED to emptyList<String>(),
-            G.FRAMES to listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game",
+            G.FRAMES to listOf("Frame limit", "Render size", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game",
                 "Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out", "Build in the background", "Progress", "Route data",
                 "Stream settings"))
         for (g in G.values()) assertEquals(g.heading, want[g], B.values().filter { it.group == g }.flatMap { it.rows })
@@ -144,7 +144,7 @@ class SettingsTabsTest {
             "Quest tracking", "World map", "Message input") +
             ThirdPartyAddons.SPOKEN.rowWords() + ThirdPartyAddons.POLESTAR.rowWords() + ThirdPartyAddons.QUESTTRAIL.rowWords() +
             ThirdPartyAddons.MANNERS.rowWords() +
-            listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game",
+            listOf("Frame limit", "Render size", "Lossless.dll", "Frame generation", "Multiplier", "Flow scale", "Performance mode", "Restart the game",
                 "Build in the background", "Progress", "Route data", "Language", "Reload game UI", "Battle.net login", "Problem report",
                 "Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out", "Stream settings", "Status") +
             // drawn before but in no block's list: GameUiSection's QOL Combat / Party groups, Add-ons > Polestar's top-screen row

@@ -37,7 +37,7 @@ package com.jrees.wowcompanion
  * APP PREFERENCES (SharedPreferences files)
  *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), pageOut, homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
  *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme,
- *                        graphicsDriver (an opt-in test driver: back to Recommended)
+ *                        graphicsDriver (an opt-in test driver: back to Recommended), renderSize (back to the default 720p)
  *               NEVER    browserLogin, windowsId (+ windowsIdRan*), graphicsDriverRan, gameAccountAsk, gameAccountPick, gameAccountHandover (the sign-in), polestarGuide, polestarOffBoot,
  *                        questTracking* (Polestar), theme_custom (the player's own made theme: Classic comes back, the made one stays),
  *                        swapScreensFails, settingsTab, the migration marks
@@ -76,8 +76,8 @@ package com.jrees.wowcompanion
  * else in the game is written (the leave-no-trace rule): the low-memory textures and the start's forced keys have no recorded original.
  *
  * THE GAME SETTINGS DS FOREVER CHANGES (Config.wtf, GameConfigWtf.ensure, at Play only, never while the game runs):
- *  - every start: gxApi, ResampleQuality, GamePadEnable, InputDeviceInterfaceStyle, gxMaximize, gxWindowedResolution (#305), the portal /
- *    agentUID when wrong; the defaults only where missing (CONFIG_DEFAULTS, RenderScale #489); the old defaults once per folder (#293)
+ *  - every start: gxApi, GamePadEnable, InputDeviceInterfaceStyle, gxMaximize, gxWindowedResolution (#305), the portal /
+ *    agentUID when wrong; the defaults only where missing (CONFIG_DEFAULTS, RenderScale #489, ResampleQuality since PR 615); the old defaults once per folder (#293)
  *  - Low-memory graphics: the textures (LOW_MEMORY_GRAPHICS) and, on 8 / 12 GB Thors, LOW_MEMORY_8GB (recorded: Reset gives them back)
  *  - Game account (#47): "Ask each time" removes a marked accountList; "Remembered" writes nothing (the "!" write went 2026-11-20;
  *    Browser login hands the account to the game in the Wine registry instead, never Config.wtf: GameAccountHandover, 2026-11-23)
@@ -170,7 +170,9 @@ object ResetPlan {
         exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "pageOut", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
             "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme",
             // 2026-11-23: an opt-in test graphics driver goes back to Recommended with the other settings
-            GraphicsDriver.KEY),
+            GraphicsDriver.KEY,
+            // 2026-11-27: the render size goes back to its default (720p) with the other settings
+            RenderSize.KEY),
         exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", GraphicsDriver.KEY_RAN,
             "gameAccountAsk", "gameAccountPick",
             "gameAccountHandover", "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",

@@ -156,7 +156,19 @@ fun applyScreenEffectsConfig(renderer: GLRenderer, config: ScreenEffectsConfig) 
     composer.setEffects(effects)
 }
 
+/**
+ * PR 615 (based on a pull request by RenaeTheRaven; the user's ruling 2026-11-27): whether the X surface is fixed at the X screen's
+ * size (XServerView.fitSurfaceToScreen) for the quick menu's [scalingMode]. Only with no scaling picked ("Natural" is a colour filter):
+ * the upscalers (FSR, FSR keeping the aspect, DLS) and the scaling modes (nearest, linear, fill, stretch) scale INTO a panel-sized
+ * surface, and on one the screen's own size they would silently do nothing. Pure: SurfaceFitTest.
+ */
+object SurfaceFit {
+    fun fixed(scalingMode: Int): Boolean =
+        scalingMode == ScreenEffectsConfig.SCALING_MODE_NONE || scalingMode == ScreenEffectsConfig.SCALING_MODE_NATURAL
+}
+
 fun applyScreenEffectsConfig(renderer: VulkanRenderer, config: ScreenEffectsConfig) {
+    renderer.xServerView?.fitSurfaceToScreen(SurfaceFit.fixed(config.scalingMode))
     val filterMode = when (config.scalingMode) {
         ScreenEffectsConfig.SCALING_MODE_NEAREST -> 1
         else -> 0

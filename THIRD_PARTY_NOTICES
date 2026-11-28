@@ -513,6 +513,22 @@ Ported from WoW Forever for Android (https://github.com/jaredgei/wow-forever-and
 - Proton shipped without its unused 32-bit Windows files (`tools/trim_proton_i386.py`, `ContainerManager.java`): v2.4.4, commit
   `55b0bd234c3af27f9c157936589c999f4805025a` (issue #89).
 
+## Performance changes (PR 615 by RenaeTheRaven)
+
+Ported from DS Forever PR 615 ("Adreno 740 performance") by RenaeTheRaven on 2026-11-27, GPL-3.0, with our own changes
+where noted:
+- `XServerScreen.kt`: the Frame limit paces the guest with the native frame-generation backend (the Present extension's limiter
+  stays on unless the lsfg-vk layer paces it); from PR by RenaeTheRaven.
+- `FrameGen.kt`, `PerformancePictures.kt`, `SettingsPreview.kt`: a 30 fps Frame limit choice; from PR by RenaeTheRaven.
+- `GameConfigWtf.kt`: ResampleQuality no longer forced (still a default); from PR by RenaeTheRaven.
+- `WowCompanion/Core.lua` (core3): the 15 s heartbeat collected over five frames; from PR by RenaeTheRaven, with our fixes for a
+  snapshot sent mid-chain and a fight that starts mid-chain.
+- `XServerView.java`: the X surface fixed at the X screen's size; from PR by RenaeTheRaven, kept at the view's size while a
+  quick-menu scaling mode is picked (ours).
+- `RenderSize.kt` and the launch's container screen size: the Settings > Performance "Render size" choice (ours), using the
+  PR's 1280x720 container screen mechanism; from PR by RenaeTheRaven.
+The PR's DXVK 3.1.1 and rebuilt test driver are not included.
+
 ## Samsung Performance SDK
 
 This project bundles `app/src/main/lib/perfsdk-v1.0.0.jar`, the Samsung Performance SDK

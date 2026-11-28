@@ -1302,7 +1302,8 @@ private data class GpuProfile(val driver: String, val tuDebug: String, val scree
     }
 }
 
-private fun prepareLaunch(context: Context, gameRoot: File, profile: GpuProfile, onStatus: (String) -> Unit): String {
+private fun prepareLaunch(context: Context, gameRoot: File, detected: GpuProfile, onStatus: (String) -> Unit): String {
+    val profile = withRenderSize(context, detected)
     installBundledComponents(context, onStatus)
     // 2026-11-23: Settings > General > Graphics driver (Recommended = the profile's own driver, exactly as before; a test driver only
     // on the profiles that take one), logged as REQUESTED; the watch below logs what the game's processes really LOADED
@@ -1423,6 +1424,24 @@ private fun prepareLaunch(context: Context, gameRoot: File, profile: GpuProfile,
     com.jrees.wowcompanion.GraphicsDriver.watch(driverLaunch, context.filesDir, keep = { com.jrees.wowcompanion.Settings.graphicsDriverRan = it },
         forMs = 300_000L)
     return CONTAINER_ID
+}
+
+/**
+ * RENDER SIZE (Settings > Performance; the user's rulings 2026-11-27 on PR 615, based on a pull request by RenaeTheRaven): this start's
+ * container screen size is the setting's ([com.jrees.wowcompanion.RenderSize]: 720p by default on every device, a player's own pick
+ * kept), still fitted to the panel's shape ([PanelFit.renderScreen]). Read at every Play, so a pick applies from the next game start.
+ * Nothing of the game's is written for it (Config.wtf's keys are the ones written before: gxMaximize 1, gxWindowedResolution = the
+ * panel's size); the X surface follows the screen size (XServerView.fitSurfaceToScreen).
+ */
+private fun withRenderSize(context: Context, p: GpuProfile): GpuProfile {
+    com.jrees.wowcompanion.Settings.init(context)
+    val lines = com.jrees.wowcompanion.Settings.renderSize
+    val panel = runCatching { PluviaApp.getDefaultScreenSize() }.getOrNull()
+    val screen = PanelFit.renderScreen(lines, panel)
+    com.jrees.wowcompanion.RenderSize.launched = lines
+    Timber.i("Render size %s (%s): container screen %s (profile %s)", com.jrees.wowcompanion.RenderSize.label(lines),
+        if (com.jrees.wowcompanion.Settings.renderSizePicked) "the player's pick" else "the default", screen, p.screenSize)
+    return p.copy(screenSize = screen)
 }
 
 /**
