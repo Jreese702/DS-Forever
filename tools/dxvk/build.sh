@@ -1,6 +1,6 @@
 #!/bin/bash
 # DXVK 3.1.1 for DS Forever (the Adreno 740 profile's DXVK; WoWForeverScreen.kt DXVK_3), built as plain Windows ARM64 PE DLLs
-# (dxgi.dll, d3d11.dll) and packed as app/src/main/assets/bundled_components/dxvk-3.1.1-wow-aarch64-diag2.wcp (git-ignored like the
+# (dxgi.dll, d3d11.dll) and packed as app/src/main/assets/bundled_components/dxvk-3.1.1-wow-aarch64.wcp (git-ignored like the
 # other bundled components; pinned in tools/components-dxvk.sha256).
 #
 #   tools/dxvk/build.sh <llvm-mingw dir> <work dir>
@@ -11,13 +11,12 @@
 #
 # THE PATCH: DXVK 3 creates a MUTABLE-FORMAT swapchain (to draw sRGB views of the swap images). The Winlator wrapper accepts the flag
 # but its real swapchain images are not mutable, so Turnip's debug driver aborts at vk_image.c:569 "image_view->format ==
-# image->format". The patch skips the mutable swapchain. It also adds two log lines (the driver ID and whether DXVK's tiler mode is on;
-# a view-format check that never fired after the fix) - log only, kept because the pinned, tested build has them.
+# image->format". The patch skips the mutable swapchain. It also logs one info line: the driver ID and whether DXVK's tiler mode is on.
 #
 # The tar's times differ run to run, so a rebuild is not byte-identical to the pinned file; the DLLs are.
 set -euo pipefail
 MINGW=$(readlink -f "$1"); W=$(readlink -f "$2"); HERE=$(cd "$(dirname "$0")" && pwd); ROOT=$(cd "$HERE/../.." && pwd)
-OUT=$ROOT/app/src/main/assets/bundled_components/dxvk-3.1.1-wow-aarch64-diag2.wcp
+OUT=$ROOT/app/src/main/assets/bundled_components/dxvk-3.1.1-wow-aarch64.wcp
 mkdir -p "$W" "$(dirname "$OUT")"; cd "$W"
 [ -d dxvk-3.1.1 ] || git clone --branch v3.1.1 --depth 1 --recurse-submodules --shallow-submodules https://github.com/doitsujin/dxvk dxvk-3.1.1
 git -C dxvk-3.1.1 apply --check "$HERE/dxvk-3.1.1-wow.patch" 2>/dev/null && git -C dxvk-3.1.1 apply "$HERE/dxvk-3.1.1-wow.patch"

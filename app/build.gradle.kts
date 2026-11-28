@@ -239,7 +239,7 @@ val checkTestDrivers = tasks.register("checkTestDrivers") {
             val expected = line.substringBefore(' ').lowercase()
             val f = File(dir, line.substringAfter(' ').trim().removePrefix("*"))
             if (!f.isFile) {
-                logger.warn("DS Forever: no ${f.name} (the Adreno 740 profile uses DXVK 2.4.1): see tools/dxvk/build.sh or tools/fetch_components.sh")
+                logger.warn("DS Forever: no ${f.name} (the Adreno 740 profile uses DXVK 2.4.1): see tools/dxvk/build.sh")
                 continue
             }
             val actual = MessageDigest.getInstance("SHA-256").digest(f.readBytes()).joinToString("") { "%02x".format(it) }

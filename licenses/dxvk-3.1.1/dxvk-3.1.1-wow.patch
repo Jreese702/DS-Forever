@@ -6,28 +6,9 @@ index 0221825..6dcee98 100644
                    || m_adapter->matchesDriver(VK_DRIVER_ID_MESA_KOSMICKRISP);
  
      applyTristate(tilerMode, m_options.tilerMode);
-+    Logger::info(str::format("custom-thor: driverID ", uint32_t(m_properties.vk12.driverID), ", tiler mode ", tilerMode ? "on" : "off"));
++    Logger::info(str::format("DXVK: driverID ", uint32_t(m_properties.vk12.driverID), ", tiler mode ", tilerMode ? "on" : "off"));
      hints.preferRenderPassOps = tilerMode;
      hints.preferCachedMemory = tilerMode;
- 
-diff --git a/src/dxvk/dxvk_image.cpp b/src/dxvk/dxvk_image.cpp
-index 3b5b739..4bb578d 100644
---- a/src/dxvk/dxvk_image.cpp
-+++ b/src/dxvk/dxvk_image.cpp
-@@ -703,6 +703,14 @@ namespace dxvk {
-     }
- 
-     updateProperties();
-+
-+    // custom-thor diagnostic: Turnip asserts (vk_image.c:569) when a view's format differs from a non-mutable image's
-+    if (m_key.format != m_image->info().format && !(m_image->info().flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)) {
-+      Logger::err(str::format("custom-thor: view format ", m_key.format, " on non-mutable image format ", m_image->info().format,
-+        " (view usage ", std::hex, m_key.usage, ", image usage ", m_image->info().usage, ", image flags ", m_image->info().flags,
-+        ", aspects ", m_key.aspects, std::dec, ", extent ", m_image->info().extent.width, "x", m_image->info().extent.height,
-+        ", mips ", m_image->info().mipLevels, ", layers ", m_image->info().numLayers, ")"));
-+    }
-   }
- 
  
 diff --git a/src/dxvk/dxvk_presenter.cpp b/src/dxvk/dxvk_presenter.cpp
 index f93ae8d..70fdb54 100644
@@ -38,7 +19,7 @@ index f93ae8d..70fdb54 100644
      swapInfo.clipped                = VK_TRUE;
  
 -    if (m_device->features().khrSwapchainMutableFormat && formatList.viewFormatCount) {
-+    // custom-thor: no mutable-format swapchain. The Winlator wrapper accepts the flag but its swapchain images are not mutable, so
++    // DS Forever: no mutable-format swapchain. The Winlator wrapper accepts the flag but its swapchain images are not mutable, so
 +    // DXVK's sRGB views of them trip Turnip's vk_image.c "image_view->format == image->format" assertion (2026-11-24)
 +    if (false && m_device->features().khrSwapchainMutableFormat && formatList.viewFormatCount) {
        swapInfo.flags |= VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR;

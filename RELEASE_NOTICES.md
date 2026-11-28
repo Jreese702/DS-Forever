@@ -38,7 +38,7 @@ profile, and a game folder holding a ".ds-dxvk" file that says 2.4.1, keeps dxvk
 
 | Archive | Observed provenance and terms | Remaining source/notice work |
 |---|---|---|
-| dxvk-3.1.1-wow-aarch64-diag2.wcp | Stock [DXVK v3.1.1](https://github.com/doitsujin/dxvk/tree/v3.1.1) (b1a1c99), zlib/libpng, + tools/dxvk/dxvk-3.1.1-wow.patch (no mutable-format swapchain; two log lines). Windows ARM64, llvm-mingw 20261104 (ucrt), meson release build, stripped. Archive notices: DXVK, MinGW-w64 (runtime, winpthreads, winstorecompat), LLVM, libdisplay-info (licenses/dxvk-3.1.1/). | Source tag, patch and recipe recorded. |
+| dxvk-3.1.1-wow-aarch64.wcp | Stock [DXVK v3.1.1](https://github.com/doitsujin/dxvk/tree/v3.1.1) (b1a1c99), zlib/libpng, + tools/dxvk/dxvk-3.1.1-wow.patch (no mutable-format swapchain; one log line: the driver ID and tiler mode). Windows ARM64, llvm-mingw 20261104 (ucrt), meson release build, stripped. Archive notices: DXVK, MinGW-w64 (runtime, winpthreads, winstorecompat), LLVM, libdisplay-info (licenses/dxvk-3.1.1/). | Source tag, patch and recipe recorded. |
 
 Banners-Turnip Standard v27.0.0-20261123 was downloaded and inspected but is NOT
 bundled: it lacks the vk_icd* exports, needs API 30 symbols despite minApi 28,

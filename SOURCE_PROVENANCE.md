@@ -186,11 +186,11 @@ meta.json name "Turnip-Test-Mesa-26.3.1-nostrict" (a new unpack folder, so a pho
 driverVersion "26.3.1-dsf-icd-nostrict". With it DXVK 3.1.1 starts (tiler mode on). On an Adreno 740 Thor some UI elements (the
 personal resource bars) have been seen drawing flat grey with this driver and DXVK 3.1.1; Recommended is unaffected.
 
-## DXVK 3.1.1 (dxvk-3.1.1-wow-aarch64-diag2.wcp), 2026-11-24
+## DXVK 3.1.1 (dxvk-3.1.1-wow-aarch64.wcp), 2026-11-24
 
 Source: https://github.com/doitsujin/dxvk tag v3.1.1 (b1a1c99), zlib/libpng, plus `tools/dxvk/dxvk-3.1.1-wow.patch` (no
-mutable-format swapchain: the Winlator wrapper's swapchain images are not mutable and Turnip aborts at vk_image.c:569; two log
-lines). Toolchain: llvm-mingw 20261104 (ucrt, x86_64 Linux host), cross file tools/dxvk/aarch64-windows.ini.in, meson release
+mutable-format swapchain: the Winlator wrapper's swapchain images are not mutable and Turnip aborts at vk_image.c:569; one
+info log line: driver ID and tiler mode). Toolchain: llvm-mingw 20261104 (ucrt, x86_64 Linux host), cross file tools/dxvk/aarch64-windows.ini.in, meson release
 build, stripped. Recipe: `tools/dxvk/build.sh`. Pinned in tools/components-dxvk.sha256
-(e4bd1c6f3a79ce7220281650ae4938aa4937695c161fce9a4819948db3db2539, 2,315,248 B), checked by app/build.gradle.kts and
+(2e41abdcdcd7ad3f980beb76690836b0c32f2a1e8389aa57dc70f86496c27719, 2,315,613 B), checked by app/build.gradle.kts and
 tools/build_release.py; notices in licenses/dxvk-3.1.1/.

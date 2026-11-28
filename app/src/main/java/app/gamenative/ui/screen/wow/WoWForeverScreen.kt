@@ -1258,7 +1258,7 @@ private const val DXVK_2 = "2.4.1-wow-aarch64-test"
  * ([dxvkVulkan]) and VK_KHR_load_store_op_none from the driver (the opt-in Mesa 26.3.1 test driver offers it only when built with
  * -Dandroid-strict=false: tools/turnip-test/build_mesa.sh).
  */
-private const val DXVK_3 = "3.1.1-wow-aarch64-diag2"
+private const val DXVK_3 = "3.1.1-wow-aarch64"
 
 /** the DXVK a launch uses: the profile's, unless the game folder's ".ds-dxvk" says "2.4.1", or this APK doesn't carry 3.1.1 */
 private fun dxvkFor(context: Context, gameRoot: File, profile: GpuProfile): String {

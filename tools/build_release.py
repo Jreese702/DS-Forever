@@ -24,7 +24,7 @@ COMPONENT_PREFIX = "assets/bundled_components/"
 TEST_DRIVERS = ("turnip-test-mesa-26.3.1.zip",)
 # DXVK 3.1.1 (2026-11-24; WoWForeverScreen.kt DXVK_3, the Adreno 740 profile's DXVK): built by tools/dxvk/build.sh, pinned in its own
 # tools/components-dxvk.sha256 for the same reason as the test drivers.
-EXTRA_DXVK = ("dxvk-3.1.1-wow-aarch64-diag2.wcp",)
+EXTRA_DXVK = ("dxvk-3.1.1-wow-aarch64.wcp",)
 BUNDLED = COMPONENT_NAMES + TEST_DRIVERS + EXTRA_DXVK
 # The Proton package ships trimmed of its unused 32-bit Windows files (tools/trim_proton_i386.py, after WoW Forever for Android
 # v2.4.4 55b0bd23): tools/components.sha256 still pins the original download, tools/components-trimmed.sha256 the shipped file.
