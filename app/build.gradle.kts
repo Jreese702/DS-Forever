@@ -225,12 +225,26 @@ val checkTrimmedProton = tasks.register("checkTrimmedProton") {
 // pinned in tools/components-test-drivers.sha256. A wrong file stops the build; a missing one only warns (Settings then offers only
 // Recommended: the app lists a test driver only when its zip is in the APK). tools/build_release.py requires every one.
 val testDriverPins = rootProject.file("tools/components-test-drivers.sha256")
+// DXVK 3.1.1 (tools/dxvk/build.sh) the same way: without it the Adreno 740 profile falls back to the bundled 2.4.1 (WoWForeverScreen.dxvkFor)
+val dxvkPins = rootProject.file("tools/components-dxvk.sha256")
 val testDriverDir = file("src/main/assets/bundled_components")
 val checkTestDrivers = tasks.register("checkTestDrivers") {
     val pins = testDriverPins
+    val extra = dxvkPins
     val dir = testDriverDir
     inputs.file(pins)
+    inputs.file(extra)
     doLast {
+        for (line in extra.readLines().filter { it.isNotBlank() }) {
+            val expected = line.substringBefore(' ').lowercase()
+            val f = File(dir, line.substringAfter(' ').trim().removePrefix("*"))
+            if (!f.isFile) {
+                logger.warn("DS Forever: no ${f.name} (the Adreno 740 profile uses DXVK 2.4.1): see tools/dxvk/build.sh")
+                continue
+            }
+            val actual = MessageDigest.getInstance("SHA-256").digest(f.readBytes()).joinToString("") { "%02x".format(it) }
+            require(actual == expected) { "${f.name} is $actual, not the pinned DXVK $expected (tools/components-dxvk.sha256)" }
+        }
         for (line in pins.readLines().filter { it.isNotBlank() }) {
             val expected = line.substringBefore(' ').lowercase()
             val f = File(dir, line.substringAfter(' ').trim().removePrefix("*"))

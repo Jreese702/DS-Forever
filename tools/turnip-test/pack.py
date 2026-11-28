@@ -9,16 +9,16 @@ import hashlib, json, os, sys, zipfile
 B = sys.argv[1]
 OUT = sys.argv[2]
 ZIP = os.path.join(OUT, "turnip-test-mesa-26.3.1.zip")
-DT = (2026, 11, 23, 0, 0, 0)
+DT = (2026, 11, 24, 0, 0, 0)
 
 meta = {
     "schemaVersion": 1,
-    "name": "Turnip-Test-Mesa-26.3.1",
-    "description": "OPT-IN TEST: official Mesa 26.3.1 Turnip (KGSL), upstream IR3 scheduler fix 2f8dc9eaba06 included; only local change exports vk_icd* loader entrypoints. Not yet validated on Thor.",
+    "name": "Turnip-Test-Mesa-26.3.1-nostrict",
+    "description": "OPT-IN TEST: official Mesa 26.3.1 Turnip (KGSL), upstream IR3 scheduler fix 2f8dc9eaba06 included; local change exports vk_icd* loader entrypoints; custom-thor: built with -Dandroid-strict=false so the KHR extensions Android API 29 does not allow (VK_KHR_load_store_op_none, needed by DXVK 3) are offered.",
     "author": "Mesa contributors; DS Forever local build (vk_icd export patch only)",
     "packageVersion": "1",
     "vendor": "Mesa",
-    "driverVersion": "26.3.1-dsf-icd",
+    "driverVersion": "26.3.1-dsf-icd-nostrict",
     "minApi": 29,
     "libraryName": "libvulkan_freedreno.so",
 }
@@ -27,7 +27,7 @@ so = os.path.join(B, "libvulkan_freedreno.so")
 diff = os.path.join(B, "0001-android-export-vk_icd-entrypoints.diff")
 so_sha = hashlib.sha256(open(so, "rb").read()).hexdigest()
 
-source_txt = f"""Turnip-Test-Mesa-26.3.1 - source and build record
+source_txt = f"""Turnip-Test-Mesa-26.3.1-nostrict - source and build record (custom-thor)
 
 Source: official Mesa 26.3.1 release tarball
   https://archive.mesa3d.org/mesa-26.3.1.tar.xz
@@ -38,9 +38,10 @@ Local change: 0001-android-export-vk_icd-entrypoints.diff (in this zip).
   vk_icdNegotiateLoaderICDInterfaceVersion next to HMI. No other source change.
   The IR3 scheduler fix is upstream (2f8dc9eaba06) and is NOT re-applied.
 Toolchain: Android NDK r27c (27.2.12479018), clang 18.0.3, target
-  aarch64-linux-android29, meson 1.10.1, ninja 1.13.2, WSL Ubuntu 26.04.
+  aarch64-linux-android29, meson 1.12.1, ninja 1.13.2, CachyOS Linux.
 Meson options: --wrap-mode=nofallback -Dbuildtype=release -Db_lto=false
   -Dstrip=true -Dplatforms=android -Dplatform-sdk-version=29 -Dandroid-stub=true
+  -Dandroid-strict=false
   -Dandroid-libbacktrace=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno
   -Dvulkan-beta=true -Dfreedreno-kmds=kgsl -Dopengl=false -Degl=disabled
   -Dgles1=disabled -Dgles2=disabled -Dglx=disabled -Dgbm=disabled

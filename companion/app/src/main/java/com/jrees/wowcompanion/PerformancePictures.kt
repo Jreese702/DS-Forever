@@ -23,7 +23,7 @@ import kotlin.math.sin
  *
  * - Frame limit: the game's frame lane (the kit's bar ground) with a gem per game frame in a quarter second at the limit, the mover
  *   stepping at that rate, and the heat bar under it (a thermometer at its start), cooler with a lower limit. The band's picture
- *   ([big]) puts the three choices side by side, one lane each with its own heat, the chosen one lit: 40 / 60 / Off read as the
+ *   ([big]) puts the choices side by side, one lane each with its own heat, the chosen one lit: 30 / 40 / 60 / Off read as the
  *   buttons beside them.
  * - Frame generation: a film strip; the game's frames solid, the made ones hatched in the accent at 40 %, one in every [multiplier] the
  *   game's; Off = the game's frames alone with the gaps empty. No copy of the DLL yet: what 2x would make (the view dims it).
@@ -119,7 +119,7 @@ object PerformancePictures {
     private fun withAlpha(col: Int, a: Float): Int = Color.argb((Color.alpha(col) * a).toInt(), Color.red(col), Color.green(col), Color.blue(col))
 
     /**
-     * the band's picture: the three choices side by side (40 / 60 / Off, the band's buttons' order), each its own lane and heat, the
+     * the band's picture: the choices side by side (30 / 40 / 60 / Off, the band's buttons' order), each its own lane and heat, the
      * chosen one lit in the accent and the others dim; the number over each (the limit itself, not words)
      */
     private fun frameLimits(c: Canvas, w: Float, limit: Int, t: Float) {

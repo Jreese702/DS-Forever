@@ -40,7 +40,7 @@ class FrameLimitTest {
         assertEquals(40, FrameGen.LIMIT_MIGRATED)
         assertTrue(FrameGen.LIMIT_MIGRATED in FrameGen.LIMITS)
         assertTrue(FrameGen.LIMIT_DEFAULT in FrameGen.LIMITS)
-        assertEquals(listOf(40, 60, 0), FrameGen.LIMITS)
+        assertEquals(listOf(30, 40, 60, 0), FrameGen.LIMITS)
     }
 
     @Test fun theLaunchersMigrationReadsTheContainerAndAQuickMenuPickClearsTheNote() {

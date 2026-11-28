@@ -29,6 +29,7 @@ public class XServerView extends SurfaceView implements SurfaceHolder.Callback, 
         setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         getHolder().addCallback(this);
         this.xServer = xServer;
+        fixSurfaceToScreen(xServer);
         if (selectedRenderer.equalsIgnoreCase("vulkan")) {
             Drawable.DRAWABLE_ASR_MODE(false);
             renderer = new VulkanRenderer(this, xServer);
@@ -36,6 +37,40 @@ public class XServerView extends SurfaceView implements SurfaceHolder.Callback, 
             Drawable.DRAWABLE_ASR_MODE(true);
             renderer = new ASurfaceRenderer(this, xServer);
         }
+    }
+
+    /**
+     * The surface's buffers are the X screen's size (e.g. the game's 1280x720 on a 1080p panel), so the renderer's composite, frame
+     * generation and present work at the game's size and the display hardware scales to the panel for free. Without it the surface
+     * followed the view: everything after the game ran at the panel's 1920x1080 (2.25x the pixels; LSFG's flow pass too). The view
+     * itself stays full size, so touch mapping (which uses the view's size) is unchanged. Checked in SurfaceFlinger on a Thor:
+     * swapchain 1280x720, scaled by the display controller.
+     */
+    private boolean surfaceFollowsView = false;
+
+    /**
+     * The quick menu's upscaling and scaling modes (FSR, DLS, Natural, Fill, Stretch, Nearest...) work by drawing the X screen into a
+     * surface larger than it; with the surface fixed at the X screen's size they would do nothing. So while any of them is selected the
+     * surface follows the view again (the old behaviour), and it goes back to the X screen's size when the mode is set back to None.
+     */
+    public void setSurfaceFollowsView(boolean follow) {
+        post(() -> {
+            if (follow == surfaceFollowsView) return;
+            surfaceFollowsView = follow;
+            if (follow) {
+                getHolder().setSizeFromLayout();
+                timber.log.Timber.i("surface follows the view (an upscaling or scaling mode is selected)");
+            } else {
+                fixSurfaceToScreen(xServer);
+            }
+        });
+    }
+
+    private void fixSurfaceToScreen(XServer xServer) {
+        int w = xServer.screenInfo.width, h = xServer.screenInfo.height;
+        if (w <= 0 || h <= 0) return;
+        getHolder().setFixedSize(w, h);
+        timber.log.Timber.i("surface fixed at the X screen's %dx%d", w, h);
     }
 
     public XServer getxServer() {

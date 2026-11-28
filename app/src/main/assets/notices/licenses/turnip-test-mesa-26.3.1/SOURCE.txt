@@ -1,4 +1,4 @@
-Turnip-Test-Mesa-26.3.1 - source and build record
+Turnip-Test-Mesa-26.3.1-nostrict - source and build record (custom-thor)
 
 Source: official Mesa 26.3.1 release tarball
   https://archive.mesa3d.org/mesa-26.3.1.tar.xz
@@ -9,15 +9,16 @@ Local change: 0001-android-export-vk_icd-entrypoints.diff (in this zip).
   vk_icdNegotiateLoaderICDInterfaceVersion next to HMI. No other source change.
   The IR3 scheduler fix is upstream (2f8dc9eaba06) and is NOT re-applied.
 Toolchain: Android NDK r27c (27.2.12479018), clang 18.0.3, target
-  aarch64-linux-android29, meson 1.10.1, ninja 1.13.2, WSL Ubuntu 26.04.
+  aarch64-linux-android29, meson 1.12.1, ninja 1.13.2, CachyOS Linux.
 Meson options: --wrap-mode=nofallback -Dbuildtype=release -Db_lto=false
   -Dstrip=true -Dplatforms=android -Dplatform-sdk-version=29 -Dandroid-stub=true
+  -Dandroid-strict=false
   -Dandroid-libbacktrace=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno
   -Dvulkan-beta=true -Dfreedreno-kmds=kgsl -Dopengl=false -Degl=disabled
   -Dgles1=disabled -Dgles2=disabled -Dglx=disabled -Dgbm=disabled
   -Dllvm=disabled -Dxmlconfig=disabled -Dzstd=disabled -Dvalgrind=disabled
   -Dlibunwind=disabled -Dbuild-tests=false -Dwerror=false
-libvulkan_freedreno.so sha256 d93b06280c1d4bada8117cceb812f1b10165a2a44918bc236f11703f7459d8b0
+libvulkan_freedreno.so sha256 03d86a9f117960637adee77a83ac72d588215b8cb165835d886d088cb941b2dc
 Licences: Mesa is mostly MIT; individual files carry their own SPDX terms
   (texts included: MIT, Apache-2.0, BSL-1.0, SGI-B-2.0, GPL-2.0-only,
   GPL-1.0-or-later). See mesa-docs-license.rst.

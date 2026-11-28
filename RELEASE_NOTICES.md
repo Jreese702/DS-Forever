@@ -29,7 +29,16 @@ default "Recommended" is the four archives above, exactly as before.
 
 | Archive | Observed provenance and terms | Remaining source/notice work |
 |---|---|---|
-| turnip-test-mesa-26.3.1.zip | Official Mesa 26.3.1 ([archive.mesa3d.org](https://archive.mesa3d.org/mesa-26.3.1.tar.xz), sha256 4e4e438e...8961, the 26.3.1 release notes' value) + one local patch exporting the vk_icd* entrypoints on Android (tools/turnip-test/ and in the zip). NDK r27c, API 29, KGSL only; no Meson subproject linked. Archive includes Mesa's licence texts (licenses/turnip-test-mesa-26.3.1/). | Source, patch and recipe recorded. The tarball's detached release signature was verified on 2026-11-24 (gpg: Good signature, Dylan Baker, key 71C4B75620BC75708B4BDB254C95FAAB3EB073EC); its sha256 matches the release notes. |
+| turnip-test-mesa-26.3.1.zip | Official Mesa 26.3.1 ([archive.mesa3d.org](https://archive.mesa3d.org/mesa-26.3.1.tar.xz), sha256 4e4e438e...8961, the 26.3.1 release notes' value) + one local patch exporting the vk_icd* entrypoints on Android (tools/turnip-test/ and in the zip). NDK r27c, API 29, KGSL only; no Meson subproject linked. Built with -Dandroid-strict=false (2026-11-24) so it offers VK_KHR_load_store_op_none, which DXVK 3.1.1 requires. Archive includes Mesa's licence texts (licenses/turnip-test-mesa-26.3.1/). | Source, patch and recipe recorded. The tarball's detached release signature was verified on 2026-11-24 (gpg: Good signature, Dylan Baker, key 71C4B75620BC75708B4BDB254C95FAAB3EB073EC); its sha256 matches the release notes. |
+
+### DXVK 3.1.1 (2026-11-24)
+
+Built by DS Forever (tools/dxvk/build.sh), pinned in its own tools/components-dxvk.sha256. Used by the Adreno 740 profile; every other
+profile, and a game folder holding a ".ds-dxvk" file that says 2.4.1, keeps dxvk-2.4.1-wow-aarch64-test.wcp.
+
+| Archive | Observed provenance and terms | Remaining source/notice work |
+|---|---|---|
+| dxvk-3.1.1-wow-aarch64.wcp | Stock [DXVK v3.1.1](https://github.com/doitsujin/dxvk/tree/v3.1.1) (b1a1c99), zlib/libpng, + tools/dxvk/dxvk-3.1.1-wow.patch (no mutable-format swapchain; one log line: the driver ID and tiler mode). Windows ARM64, llvm-mingw 20261104 (ucrt), meson release build, stripped. Archive notices: DXVK, MinGW-w64 (runtime, winpthreads, winstorecompat), LLVM, libdisplay-info (licenses/dxvk-3.1.1/). | Source tag, patch and recipe recorded. |
 
 Banners-Turnip Standard v27.0.0-20261123 was downloaded and inspected but is NOT
 bundled: it lacks the vk_icd* exports, needs API 30 symbols despite minApi 28,

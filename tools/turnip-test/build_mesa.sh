@@ -2,6 +2,10 @@
 # THE OPT-IN TEST DRIVER turnip-test-mesa-26.3.1.zip (2026-11-23; GraphicsDriver.kt, SOURCE_PROVENANCE.md): Turnip (freedreno Vulkan,
 # KGSL) cross-compiled from the OFFICIAL Mesa 26.3.1 release tarball for Android arm64 with ONE local change, the vk_icd export patch
 # (0001-android-export-vk_icd-entrypoints.diff, applied by mkpatch.py). The IR3 scheduler fix is upstream since 26.3.0 (2f8dc9eaba06).
+# -Dandroid-strict=false (2026-11-24): with it on (Mesa's default) an API 29 build offers only the device extensions Mesa's Android
+# allowlist permits at API 29 (vk_android_allowed_device_extensions); VK_KHR_load_store_op_none is allowed only from API 35, so the
+# driver hid it although Turnip supports it, and DXVK 3.x (which requires it) refused the GPU: "Your 3D accelerator card is not
+# supported" (its log: "Device does not support required feature 'khrLoadStoreOpNone'"). Same tarball, patch and NDK otherwise.
 #
 # Run in WSL (Ubuntu) with an Android NDK r27c and meson / ninja / mako:
 #   MESA_TARBALL=/path/mesa-26.3.1.tar.xz NDK=/root/ndk W=/root/dsf-1123 bash tools/turnip-test/build_mesa.sh
@@ -71,6 +75,7 @@ meson setup "$BUILD" \
   -Dplatforms=android \
   -Dplatform-sdk-version=$API \
   -Dandroid-stub=true \
+  -Dandroid-strict=false \
   -Dandroid-libbacktrace=disabled \
   -Dgallium-drivers= \
   -Dvulkan-drivers=freedreno \

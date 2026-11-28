@@ -102,7 +102,7 @@ fun WoWForeverScreen(
             runCatching { "${com.winlator.core.GPUInformation.getRenderer(context)} (${com.winlator.core.GPUInformation.getVersion(context)})" }.getOrDefault("?")
         }
         com.jrees.wowcompanion.LauncherHooks.gpuLine = "${gpu.edition}: recommended driver ${gpu.driver}, TU_DEBUG ${gpu.tuDebug}, screen ${gpu.screenSize}; " +
-            "GPU $renderer; DXVK $DXVK_VERSION, Wine $PROTON_VERSION"
+            "GPU $renderer; DXVK ${gpu.dxvk}, Wine $PROTON_VERSION"
     }
 
     var gamePath by remember { mutableStateOf(GamePath.load(context)) }
@@ -1250,9 +1250,29 @@ private fun Throwable.isPermissionDenied() =
 private const val DEFAULT_DRIVER = "Turnip-WoW-scheduler-test"
 private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
-private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
+private const val DXVK_2 = "2.4.1-wow-aarch64-test"
+/**
+ * Stock DXVK v3.1.1 built as Windows ARM64 DLLs (tools/dxvk/build.sh; one patch: no mutable-format swapchain, see there). DXVK 2.6+
+ * has a tiler mode for mobile GPUs (render-pass secondary command buffers, store-op discards, cached memory) that it turns on by
+ * itself on Turnip; measured on an Adreno 740 Thor it does the same frame at a lower GPU clock. It needs Vulkan 1.4 from the wrapper
+ * ([dxvkVulkan]) and VK_KHR_load_store_op_none from the driver (the opt-in Mesa 26.3.1 test driver offers it only when built with
+ * -Dandroid-strict=false: tools/turnip-test/build_mesa.sh).
+ */
+private const val DXVK_3 = "3.1.1-wow-aarch64"
 
-private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
+/** the DXVK a launch uses: the profile's, unless the game folder's ".ds-dxvk" says "2.4.1", or this APK doesn't carry 3.1.1 */
+private fun dxvkFor(context: Context, gameRoot: File, profile: GpuProfile): String {
+    if (profile.dxvk != DXVK_3) return profile.dxvk
+    val asked = runCatching { File(gameRoot, ".ds-dxvk").takeIf { it.isFile }?.readText()?.trim() }.getOrNull()
+    val bundled = runCatching { context.assets.list("bundled_components")?.contains("dxvk-$DXVK_3.wcp") }.getOrNull() == true
+    return if (asked?.startsWith("2.4") == true || !bundled) DXVK_2 else DXVK_3
+}
+
+private fun dxvkVulkan(dxvk: String) = if (dxvk.startsWith("3.")) ",vulkanVersion=1.4" else ""
+
+private data class GpuProfile(
+    val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String, val dxvk: String = DXVK_2,
+) {
     companion object {
         /**
          * THE PANEL'S SHAPE WINS (PR #256, KillgoreAlpha, measured on a Retroid Pocket Nova: "refused: display 1280x960 does not
@@ -1285,7 +1305,10 @@ private data class GpuProfile(val driver: String, val tuDebug: String, val scree
             // Snapdragon 865 / Adreno 650 got the Adreno 740's 1080p. Turnip drives the a6xx family; 720p, conservative. UNTESTED on a Lite
             GpuProfile(DEFAULT_DRIVER, "noconform", "1280x720", "Adreno 650", "Thor Lite: Snapdragon 865 / Adreno 650 (untested)")
         } else {
-            GpuProfile(DEFAULT_DRIVER, "noconform", "1920x1080", "Adreno 740", "Snapdragon 8 Series / Adreno 740")
+            // 720p like the 8xx: measured on a Thor (8 Gen 2) at a fixed spot with every limiter off, 1080p is GPU-bound at 41-46 fps
+            // (GPU 95-98% busy at its 680 MHz maximum). The X surface follows the screen size (XServerView.fixSurfaceToScreen), so the
+            // display hardware does the upscale to the panel
+            GpuProfile(DEFAULT_DRIVER, "noconform", "1280x720", "Adreno 740", "Snapdragon 8 Series / Adreno 740", dxvk = DXVK_3)
         }
 
         private fun isThorLite(context: Context): Boolean =
@@ -1302,8 +1325,10 @@ private data class GpuProfile(val driver: String, val tuDebug: String, val scree
     }
 }
 
-private fun prepareLaunch(context: Context, gameRoot: File, profile: GpuProfile, onStatus: (String) -> Unit): String {
-    installBundledComponents(context, onStatus)
+private fun prepareLaunch(context: Context, gameRoot: File, chosen: GpuProfile, onStatus: (String) -> Unit): String {
+    val profile = chosen.copy(dxvk = dxvkFor(context, gameRoot, chosen))
+    Timber.i("DXVK %s (profile %s)", profile.dxvk, chosen.dxvk)
+    installBundledComponents(context, profile.dxvk, onStatus)
     // 2026-11-23: Settings > General > Graphics driver (Recommended = the profile's own driver, exactly as before; a test driver only
     // on the profiles that take one), logged as REQUESTED; the watch below logs what the game's processes really LOADED
     val (gpu, driverLaunch) = withDriverChoice(context, profile, onStatus)
@@ -1522,10 +1547,10 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: Str
         put("envVars", envVars)
         put("graphicsDriver", "Wrapper")
         put("graphicsDriverVersion", gpu.driver)
-        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=${gfx.bcn},quality=high")
+        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=${gfx.bcn},quality=high${dxvkVulkan(gpu.dxvk)}")
         put("displayRenderer", "vulkan")
-        put("dxwrapper", "dxvk-$DXVK_VERSION-1")
-        put("dxwrapperConfig", "version=$DXVK_VERSION-1")
+        put("dxwrapper", "dxvk-${gpu.dxvk}-1")
+        put("dxwrapperConfig", "version=${gpu.dxvk}-1")
         put("wineVersion", "$PROTON_VERSION-1")
         put("containerVariant", "bionic")
         put("fexcoreVersion", "2609-0")
@@ -1542,7 +1567,7 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, executablePath: Str
     }
 }
 
-private fun installBundledComponents(context: Context, onStatus: (String) -> Unit) {
+private fun installBundledComponents(context: Context, dxvk: String, onStatus: (String) -> Unit) {
     installDriver(context, DEFAULT_DRIVER, "turnip-wow-scheduler-test.zip", onStatus)
     installDriver(context, ADRENO_8XX_DRIVER, "turnip-V32-RP6sched.zip", onStatus)
 
@@ -1556,10 +1581,10 @@ private fun installBundledComponents(context: Context, onStatus: (String) -> Uni
         }
     }
 
-    val dxvkDir = File(ContentsManager.getContentTypeDir(context, ContentProfile.ContentType.CONTENT_TYPE_DXVK), DXVK_VERSION)
+    val dxvkDir = File(ContentsManager.getContentTypeDir(context, ContentProfile.ContentType.CONTENT_TYPE_DXVK), dxvk)
     if (!File(dxvkDir, "profile.json").exists()) {
         onStatus("Extracting DXVK ARM64...")
-        if (!extractBundledWcp(context, "dxvk-$DXVK_VERSION.wcp", dxvkDir)) Timber.e("Failed to extract DXVK")
+        if (!extractBundledWcp(context, "dxvk-$dxvk.wcp", dxvkDir)) Timber.e("Failed to extract DXVK")
     }
 
     ImageFsInstaller.ensureBionicLib(context, ImageFs.find(context).rootDir)

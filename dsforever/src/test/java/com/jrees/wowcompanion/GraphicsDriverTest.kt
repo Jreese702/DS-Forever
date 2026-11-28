@@ -48,7 +48,7 @@ class GraphicsDriverTest {
         val rec = "Turnip-WoW-scheduler-test"
         assertEquals(GraphicsDriver.Pick(rec, ""), GraphicsDriver.pick(REC, rec, takesTests = true, installed = false))
         assertEquals(GraphicsDriver.Pick("Turnip-V32-RP6sched", ""), GraphicsDriver.pick(REC, "Turnip-V32-RP6sched", false, false))
-        assertEquals(GraphicsDriver.Pick("Turnip-Test-Mesa-26.3.1", ""), GraphicsDriver.pick(TEST, rec, true, true))
+        assertEquals(GraphicsDriver.Pick("Turnip-Test-Mesa-26.3.1-nostrict", ""), GraphicsDriver.pick(TEST, rec, true, true))
         assertEquals(rec, GraphicsDriver.pick(TEST, rec, true, installed = false).driver)
         assertTrue(GraphicsDriver.pick(TEST, rec, true, false).note.contains("did not unpack"))
         val on8xx = GraphicsDriver.pick(TEST, "Turnip-V32-RP6sched", takesTests = false, installed = false)
@@ -62,7 +62,8 @@ class GraphicsDriverTest {
         assertTrue("private const val DEFAULT_DRIVER = \"Turnip-WoW-scheduler-test\"" in s)
         assertTrue("installDriver(context, DEFAULT_DRIVER, \"turnip-wow-scheduler-test.zip\", onStatus)" in s)
         assertTrue("installDriver(context, ADRENO_8XX_DRIVER, \"turnip-V32-RP6sched.zip\", onStatus)" in s)
-        assertTrue("GpuProfile(DEFAULT_DRIVER, \"noconform\", \"1920x1080\", \"Adreno 740\"" in s)
+        // 2026-11-24: the Adreno 740 at 1280x720 (1080p was GPU-bound at 41-46 fps on a Thor) with DXVK 3.1.1
+        assertTrue("GpuProfile(DEFAULT_DRIVER, \"noconform\", \"1280x720\", \"Adreno 740\", \"Snapdragon 8 Series / Adreno 740\", dxvk = DXVK_3)" in s)
         // the choice: the profile itself when the pick is its own driver; the test unpack only for a test choice on a profile that takes it
         val with = s.substringAfter("private fun withDriverChoice(").substringBefore("\n}\n")
         assertTrue("(if (pick.driver == profile.driver) profile else profile.copy(driver = pick.driver))" in with)
@@ -82,8 +83,8 @@ class GraphicsDriverTest {
         val custom = sequenceOf(
             "7a00000000-7a00100000 r-xp 00000000 fd:30 123 /system/lib64/libvulkan.so",
             "7b00000000-7b00e00000 r--p 00000000 fd:30 456 /vendor/lib64/hw/vulkan.adreno.so",
-            "7c00000000-7c00e00000 r-xp 00000000 fd:30 789 $app/contents/adrenotools/Turnip-Test-Mesa-26.3.1/libvulkan_freedreno.so")
-        assertEquals("an adrenotools driver wins over the system one", "Turnip-Test-Mesa-26.3.1", GraphicsDriver.driverInMaps(custom))
+            "7c00000000-7c00e00000 r-xp 00000000 fd:30 789 $app/contents/adrenotools/Turnip-Test-Mesa-26.3.1-nostrict/libvulkan_freedreno.so")
+        assertEquals("an adrenotools driver wins over the system one", "Turnip-Test-Mesa-26.3.1-nostrict", GraphicsDriver.driverInMaps(custom))
         assertEquals("Turnip-WoW-scheduler-test", GraphicsDriver.driverInMaps(sequenceOf(
             "1-2 r-xp 0 0:0 1 $app/contents/adrenotools/Turnip-WoW-scheduler-test/libvulkan_freedreno.so (deleted)")))
         assertEquals("the wrapper fell back to the phone's driver", GraphicsDriver.SYSTEM, GraphicsDriver.driverInMaps(sequenceOf(
@@ -119,8 +120,8 @@ class GraphicsDriverTest {
             assertNull("only our own, another uid's and a previous run's processes so far", GraphicsDriver.scan(10, 10123, before, proc))
             p(40, 10123, "/vendor/lib64/hw/vulkan.adreno.so", "G:\\new\\Wow.exe")
             assertEquals(GraphicsDriver.SYSTEM to "Wow.exe", GraphicsDriver.scan(10, 10123, before, proc))
-            p(50, 10123, "$app/Turnip-Test-Mesa-26.3.1/libvulkan_freedreno.so", "G:\\new\\Wow.exe")
-            assertEquals("an adrenotools driver wins over the system one", "Turnip-Test-Mesa-26.3.1" to "Wow.exe",
+            p(50, 10123, "$app/Turnip-Test-Mesa-26.3.1-nostrict/libvulkan_freedreno.so", "G:\\new\\Wow.exe")
+            assertEquals("an adrenotools driver wins over the system one", "Turnip-Test-Mesa-26.3.1-nostrict" to "Wow.exe",
                 GraphicsDriver.scan(10, 10123, before, proc))
         } finally { proc.deleteRecursively() }
         // the report's launch line keeps its "Launch: " words
@@ -142,16 +143,16 @@ class GraphicsDriverTest {
         assertEquals("Graphics driver: Recommended chosen; no game start in this run", GraphicsDriver.reportLine(REC, null, null, null, at))
         assertEquals("Graphics driver: Test: Mesa 26.3.1 chosen; no game start in this run; the last one: X",
             GraphicsDriver.reportLine(TEST, null, null, "X", at))
-        val l = GraphicsDriver.markLaunched(TEST, "Turnip-Test-Mesa-26.3.1", "", 1L)
+        val l = GraphicsDriver.markLaunched(TEST, "Turnip-Test-Mesa-26.3.1-nostrict", "", 1L)
         assertEquals(l, GraphicsDriver.launched)
-        assertEquals("Graphics driver: chosen Test: Mesa 26.3.1; requested Turnip-Test-Mesa-26.3.1", GraphicsDriver.requestLine(l))
-        assertEquals("Graphics driver: Test: Mesa 26.3.1 chosen; 2026-11-23 10:00:00 requested Turnip-Test-Mesa-26.3.1 (Test: Mesa 26.3.1); " +
+        assertEquals("Graphics driver: chosen Test: Mesa 26.3.1; requested Turnip-Test-Mesa-26.3.1-nostrict", GraphicsDriver.requestLine(l))
+        assertEquals("Graphics driver: Test: Mesa 26.3.1 chosen; 2026-11-23 10:00:00 requested Turnip-Test-Mesa-26.3.1-nostrict (Test: Mesa 26.3.1); " +
             "loaded (still looking)", GraphicsDriver.reportLine(TEST, l, null, null, at))
-        val ok = GraphicsDriver.Loaded("Turnip-Test-Mesa-26.3.1", "26.3.1-dsf-icd", "WowClassic.exe", 14_200L, 3)
-        assertEquals("Graphics driver loaded: Turnip-Test-Mesa-26.3.1 26.3.1-dsf-icd (in WowClassic.exe, 14 s after Play)",
+        val ok = GraphicsDriver.Loaded("Turnip-Test-Mesa-26.3.1-nostrict", "26.3.1-dsf-icd-nostrict", "WowClassic.exe", 14_200L, 3)
+        assertEquals("Graphics driver loaded: Turnip-Test-Mesa-26.3.1-nostrict 26.3.1-dsf-icd-nostrict (in WowClassic.exe, 14 s after Play)",
             GraphicsDriver.loadedLine(l, ok))
         val fell = GraphicsDriver.Loaded(GraphicsDriver.SYSTEM, null, "WowClassic.exe", 9_000L, 2)
-        assertTrue(GraphicsDriver.loadedLine(l, fell).endsWith("; NOT the requested Turnip-Test-Mesa-26.3.1"))
+        assertTrue(GraphicsDriver.loadedLine(l, fell).endsWith("; NOT the requested Turnip-Test-Mesa-26.3.1-nostrict"))
         val none = GraphicsDriver.Loaded(null, null, "", 300_000L, 60)
         assertEquals("Graphics driver loaded: none seen yet (60 looks over 300 s after Play)", GraphicsDriver.loadedLine(l, none))
         // chosen back to Recommended while this run's game used the test driver: a restart is due
@@ -203,7 +204,7 @@ class GraphicsDriverTest {
 
     @Test fun theZipItsPinItsNoticesAndTheReleaseCheckAgree() {
         val pin = read("tools/components-test-drivers.sha256").trim()
-        assertEquals("3272d6189aa4202898457503236dad88980691fc0347fe56c60888cc73d09a33  ${TEST.asset}", pin)
+        assertEquals("95a028aeb061263868e828a06f873151151fd54939d19bf8ca4d56bfd4000e94  ${TEST.asset}", pin)
         // the four originals' manifest stays upstream's
         assertFalse(TEST.asset!! in read("tools/components.sha256"))
         val br = read("tools/build_release.py")

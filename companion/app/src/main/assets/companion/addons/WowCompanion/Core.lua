@@ -26,6 +26,7 @@ local function say(s)
 end
 
 local lastBar = nil
+WC.snapGen = 0                                        -- bumped by every snapshot that emits (WC.heartbeatStaged checks it)
 
 -- Emit a full snapshot. Called on login, on any action-bar change, and on /wc.
 local lastEquip = nil
@@ -58,6 +59,7 @@ function WC.snapshot(reason)
         return false
     end
     lastBar = json
+    WC.snapGen = WC.snapGen + 1                       -- a staged heartbeat that began before this must not emit its older bar after it
     equipped = equipped or WC.collectEquipped()
     lastEquip = equipJson or WC.encode(equipped or {})
     WC.emit({
@@ -80,6 +82,45 @@ function WC.collectMapSafe()
     local ok, m = pcall(WC.collectMap)
     if ok then return m end
     return { ok = false, err = tostring(m):sub(1, 200) }
+end
+
+-- THE HEARTBEAT IN STAGES, one per frame: exactly what WC.snapshot("heartbeat") emits (always sent, the dedup keys updated), split
+-- over five consecutive frames (a C_Timer.After(0) chain). In one go it was 82-97 ms of Lua inside a single game frame (timed on an
+-- Adreno 740 Thor: the bar 20-24 ms, the equipment 14-30, the bags 17-18, the encode 15-18, the map 3, the send 5-7), which showed as
+-- a 200-320 ms picture freeze exactly every 15 s (SurfaceFlinger frame times; frame generation turns one long frame into a stall).
+-- Staged, the largest stage is 31-33 ms: 59.7 fps over 58 s at a 30 limit with frame generation x2, no freeze over 100 ms (was 4).
+-- Two guards between the stages: a snapshot that emits mid-chain (WC.snapGen moved) already sent a newer full document, so stage 5
+-- skips its emit and leaves lastBar / lastEquip alone (else the app would sit on the older bar until the next heartbeat); and a fight
+-- that starts mid-chain stops it and owes the heartbeat (core2: no full snapshot mid-fight; PLAYER_REGEN_ENABLED sends it).
+local hbBusy = false
+function WC.heartbeatStaged()
+    if hbBusy then return end
+    hbBusy = true
+    local st = {}
+    local gen = WC.snapGen
+    local stages = {
+        function() st.bar = WC.collectActionBar(); st.barJson = WC.encode(st.bar) end,
+        function() st.equipped = WC.collectEquipped() end,
+        function() st.player = WC.collectPlayer(); st.map = WC.collectMapSafe() end,
+        function() st.bags = WC.collectBags() end,
+        function()
+            if WC.snapGen ~= gen then return end                 -- a newer snapshot went out mid-chain
+            lastBar = st.barJson
+            lastEquip = WC.encode(st.equipped or {})
+            WC.emit({ type = "full", v = WC.VERSION, reason = "heartbeat", actionbar = st.bar, player = st.player,
+                map = st.map, bags = st.bags, equipped = st.equipped })
+        end,
+    }
+    local i = 0
+    local function nextStage()
+        i = i + 1
+        local icl = _G.InCombatLockdown
+        if type(icl) == "function" and icl() then WC.heartOwed = true; hbBusy = false; return end
+        local ok = pcall(stages[i])
+        if ok and i < #stages then C_Timer.After(0, nextStage); return end
+        hbBusy = false
+    end
+    C_Timer.After(0, nextStage)
 end
 
 -- A forced snapshot, coalesced. The harvester fires on MERCHANT_SHOW etc., and the player is
@@ -187,7 +228,7 @@ local function start()
             return
         end
         WC.heartOwed = false
-        WC.snapshot("heartbeat")
+        WC.heartbeatStaged()                                         -- in stages, one per frame (see WC.heartbeatStaged)
     end)
 
     -- Chat: buffered, not per-message. The General channel alone can produce several lines a
@@ -224,7 +265,7 @@ f:SetScript("OnEvent", function(_, event, a1, a2, a3, a4, a5, a6, a7, a8, a9, a1
         pcall(WC.onLoadingScreen, event == "LOADING_SCREEN_ENABLED")             -- core1: never a snapshot (see the top)
     elseif started then
         -- core2: the heartbeat a fight held back goes out as the fight ends
-        if event == "PLAYER_REGEN_ENABLED" and WC.heartOwed then WC.heartOwed = false; WC.snapshot("heartbeat"); return end
+        if event == "PLAYER_REGEN_ENABLED" and WC.heartOwed then WC.heartOwed = false; WC.heartbeatStaged(); return end
         WC.snapshot(event)
     end
 end)

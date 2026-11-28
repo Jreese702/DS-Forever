@@ -1,0 +1,16 @@
+{
+  "type": "DXVK",
+  "versionName": "3.1.1-wow-aarch64",
+  "versionCode": 1,
+  "description": "DXVK 3.1.1 (Windows ARM64), no mutable-format swapchain (Winlator wrapper).",
+  "files": [
+    {
+      "source": "system32/dxgi.dll",
+      "target": "${system32}/dxgi.dll"
+    },
+    {
+      "source": "system32/d3d11.dll",
+      "target": "${system32}/d3d11.dll"
+    }
+  ]
+}
