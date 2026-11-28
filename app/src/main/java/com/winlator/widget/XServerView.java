@@ -46,6 +46,26 @@ public class XServerView extends SurfaceView implements SurfaceHolder.Callback, 
      * itself stays full size, so touch mapping (which uses the view's size) is unchanged. Checked in SurfaceFlinger on a Thor:
      * swapchain 1280x720, scaled by the display controller.
      */
+    private boolean surfaceFollowsView = false;
+
+    /**
+     * The quick menu's upscaling and scaling modes (FSR, DLS, Natural, Fill, Stretch, Nearest...) work by drawing the X screen into a
+     * surface larger than it; with the surface fixed at the X screen's size they would do nothing. So while any of them is selected the
+     * surface follows the view again (the old behaviour), and it goes back to the X screen's size when the mode is set back to None.
+     */
+    public void setSurfaceFollowsView(boolean follow) {
+        post(() -> {
+            if (follow == surfaceFollowsView) return;
+            surfaceFollowsView = follow;
+            if (follow) {
+                getHolder().setSizeFromLayout();
+                timber.log.Timber.i("surface follows the view (an upscaling or scaling mode is selected)");
+            } else {
+                fixSurfaceToScreen(xServer);
+            }
+        });
+    }
+
     private void fixSurfaceToScreen(XServer xServer) {
         int w = xServer.screenInfo.width, h = xServer.screenInfo.height;
         if (w <= 0 || h <= 0) return;

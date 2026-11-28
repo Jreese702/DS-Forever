@@ -157,6 +157,8 @@ fun applyScreenEffectsConfig(renderer: GLRenderer, config: ScreenEffectsConfig) 
 }
 
 fun applyScreenEffectsConfig(renderer: VulkanRenderer, config: ScreenEffectsConfig) {
+    // Any scaling mode needs a surface larger than the X screen; None keeps it at the X screen's size (see XServerView)
+    renderer.xServerView.setSurfaceFollowsView(config.scalingMode != ScreenEffectsConfig.SCALING_MODE_NONE)
     val filterMode = when (config.scalingMode) {
         ScreenEffectsConfig.SCALING_MODE_NEAREST -> 1
         else -> 0
