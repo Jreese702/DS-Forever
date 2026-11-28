@@ -5,6 +5,8 @@ not legal clearance or an assertion that the source/rights gaps below are closed
 Application fork: GPL-3.0; LICENSE retained. Ancestry: WoW Forever for Android,
 GameNative, Pluvia and Winlator contributors; inherited THIRD_PARTY_NOTICES kept.
 No old private repository history is part of this source snapshot.
+Contributed changes ported in: PR 615 by RenaeTheRaven (frame limit with native frame generation, 30 fps choice,
+ResampleQuality, staged heartbeat, fixed X surface, render size); see THIRD_PARTY_NOTICES.
 
 ## Four Pinned Runtime Archives
 
