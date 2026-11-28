@@ -76,8 +76,8 @@ package com.jrees.wowcompanion
  * else in the game is written (the leave-no-trace rule): the low-memory textures and the start's forced keys have no recorded original.
  *
  * THE GAME SETTINGS DS FOREVER CHANGES (Config.wtf, GameConfigWtf.ensure, at Play only, never while the game runs):
- *  - every start: gxApi, ResampleQuality, GamePadEnable, InputDeviceInterfaceStyle, gxMaximize, gxWindowedResolution (#305), the portal /
- *    agentUID when wrong; the defaults only where missing (CONFIG_DEFAULTS, RenderScale #489); the old defaults once per folder (#293)
+ *  - every start: gxApi, GamePadEnable, InputDeviceInterfaceStyle, gxMaximize, gxWindowedResolution (#305), the portal /
+ *    agentUID when wrong; the defaults only where missing (CONFIG_DEFAULTS, RenderScale #489, ResampleQuality since PR 615); the old defaults once per folder (#293)
  *  - Low-memory graphics: the textures (LOW_MEMORY_GRAPHICS) and, on 8 / 12 GB Thors, LOW_MEMORY_8GB (recorded: Reset gives them back)
  *  - Game account (#47): "Ask each time" removes a marked accountList; "Remembered" writes nothing (the "!" write went 2026-11-20;
  *    Browser login hands the account to the game in the Wine registry instead, never Config.wtf: GameAccountHandover, 2026-11-23)

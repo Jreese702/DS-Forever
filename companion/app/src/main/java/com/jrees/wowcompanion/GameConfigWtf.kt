@@ -116,7 +116,9 @@ object GameConfigWtf {
      * once / only when the player hasn't chosen, never overwrite the player's own value". It is still a default ([CONFIG_DEFAULTS]): a
      * new Config.wtf gets it and a file without the line gets it added; a value the player picked in the game's options stays.
      */
-    private val FORCED_CONFIG_KEYS = listOf("gxApi", "ResampleQuality", "GamePadEnable", "InputDeviceInterfaceStyle",
+    // ResampleQuality is no longer forced (still a default, [CONFIG_DEFAULTS]), so the game's own FSR 1.0 (ResampleQuality 3) can upscale a
+    // RenderScale below 1 (PR 615, based on a pull request by RenaeTheRaven)
+    private val FORCED_CONFIG_KEYS = listOf("gxApi", "GamePadEnable", "InputDeviceInterfaceStyle",
         "gxMaximize", "gxWindowedResolution")
 
     /**

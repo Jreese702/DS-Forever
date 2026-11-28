@@ -47,6 +47,26 @@ class GameWindowFillTest {
         assertEquals(1, File(wtfDir(root), "Config.wtf").readLines().count { it.startsWith("SET gxWindowedResolution ") })
     }
 
+    /**
+     * Based on a pull request by RenaeTheRaven (PR 615): ResampleQuality is no longer forced at every start (the #489 ruling: "only when
+     * the player hasn't chosen, never overwrite the player's own value"), so the game's own FSR 1.0 (3) can upscale a RenderScale below
+     * 1. Still a default: a new file and a file without the line get 0.
+     */
+    @Test fun thePlayersOwnResampleQualityIsKept() {
+        val root = folder("SET ResampleQuality \"3\"", "SET RenderScale \"0.75\"")
+        GameConfigWtf.ensure(root, WowProduct.LAUNCH, row, screen = "1920x1080")
+        assertEquals("\"3\"", conf(root)["ResampleQuality"])
+        assertEquals("\"0.75\"", conf(root)["RenderScale"])
+        GameConfigWtf.ensure(root, WowProduct.LAUNCH, row, screen = "1920x1080")
+        assertEquals("\"3\"", conf(root)["ResampleQuality"])
+        val bare = folder("SET farclip \"1200\"")
+        GameConfigWtf.ensure(bare, WowProduct.LAUNCH, row, screen = "1920x1080")
+        assertEquals("\"0\"", conf(bare)["ResampleQuality"])
+        val fresh = Files.createTempDirectory("cfgrq").toFile()
+        GameConfigWtf.ensure(fresh, WowProduct.LAUNCH, row, screen = "1920x1080")
+        assertEquals("\"0\"", conf(fresh)["ResampleQuality"])
+    }
+
     @Test fun aNewFileTakesTheScreensSize() {
         val root = Files.createTempDirectory("cfgnew").toFile()
         GameConfigWtf.ensure(root, WowProduct.LAUNCH, row, screen = "2400x1080")
