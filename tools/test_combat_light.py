@@ -7,7 +7,8 @@ Core.lua (core2) in Lua 5.1 (lupa) under the shared stubbed game (wowstub.GAME),
   - core2: the 15 s heartbeat out of a fight = the full snapshot (in stages: WC.heartbeatStaged); in a fight = one tiny {"type":"beat"} and NO snapshot;
     the snapshot owed goes out at PLAYER_REGEN_ENABLED, once; a fight's end with nothing owed = the usual (deduped) snapshot
   - the staged heartbeat: one collect per frame (bar, equipment, player + map, bags, then the emit), the same "full" document
-    WC.snapshot("heartbeat") sends, and a second heartbeat while one is under way is dropped
+    WC.snapshot("heartbeat") sends, and a second heartbeat while one is under way is dropped; a snapshot that emits mid-chain makes the
+    last stage skip its (older) emit; a fight that starts mid-chain stops it and owes the heartbeat
   - nothing of the game written (wowstub's spies)
 Run: python -B tools/test_combat_light.py
 """
@@ -43,6 +44,7 @@ for n in FILES:
     load(open(os.path.join(ADDON, n), encoding='utf-8').read(), '@' + n)('WowCompanion')
 L.execute(r'''
 SNAPS2 = {}
+REAL_SNAP = WowCompanion.snapshot
 WowCompanion.snapshot = function(r) SNAPS2[#SNAPS2 + 1] = r; return false end
 REAL_HB = WowCompanion.heartbeatStaged
 WowCompanion.heartbeatStaged = function() SNAPS2[#SNAPS2 + 1] = "heartbeat" end
@@ -177,6 +179,20 @@ check(int(L.eval('#EMITS')) == 1 and L.eval('EMITS[1].type') == 'full' and L.eva
 L.execute('oneFrame(); ORDER = {}; REAL_HB(); for i = 1, 5 do oneFrame() end')
 check(L.eval('orderText()') == 'bar,equipped,player,map,bags' and int(L.eval('#EMITS')) == 2, 'staged: the next heartbeat runs again once done',
       L.eval('orderText()'))
+# a snapshot that emits between stage 1 and stage 5: the heartbeat must not send its older bar after it
+L.execute('EMITS = {}; ORDER = {}; REAL_HB(); oneFrame(); oneFrame()')
+check(bool(L.eval('REAL_SNAP("manual")')), 'mid-chain: a real snapshot emits', None)
+L.execute('for i = 1, 4 do oneFrame() end')
+check(int(L.eval('#EMITS')) == 1 and L.eval('EMITS[1].reason') == 'manual',
+      'mid-chain: stage 5 skips its emit after a newer snapshot (only the snapshot\'s document went out)',
+      [L.eval('EMITS[%d].reason' % i) for i in range(1, int(L.eval('#EMITS')) + 1)])
+# a fight that starts mid-chain: the chain stops, the heartbeat is owed, and the next one runs after the fight
+L.execute('EMITS = {}; ORDER = {}; WC.heartOwed = false; REAL_HB(); oneFrame(); oneFrame(); COMBAT = true; for i = 1, 4 do oneFrame() end')
+check(int(L.eval('#EMITS')) == 0 and L.eval('orderText()') == 'bar,equipped' and L.eval('WC.heartOwed') is True,
+      'mid-chain fight: no more collects, no emit, the heartbeat owed', (L.eval('orderText()'), int(L.eval('#EMITS'))))
+L.execute('COMBAT = false; ORDER = {}; REAL_HB(); for i = 1, 5 do oneFrame() end')
+check(int(L.eval('#EMITS')) == 1 and L.eval('EMITS[1].reason') == 'heartbeat', 'after the fight: a heartbeat runs again (not stuck busy)',
+      int(L.eval('#EMITS')))
 L.execute('WC.emit = REAL_EMIT')
 
 spy = [L.eval('SPY[%d]' % i) for i in range(1, int(L.eval('#SPY')) + 1)]

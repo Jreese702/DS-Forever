@@ -30,19 +30,3 @@ for f in "${FILES[@]}"; do
 done
 
 (cd "$DEST" && shasum -a 256 -c "$REPO_DIR/tools/components.sha256")
-
-# DXVK 3.1.1 (the Adreno 740 profile's DXVK; tools/dxvk/build.sh builds it): optional, pinned in its own tools/components-dxvk.sha256.
-# Without it the launcher uses the bundled 2.4.1 everywhere.
-DXVK3=dxvk-3.1.1-wow-aarch64-diag2.wcp
-DXVK3_URL="${DXVK3_URL:-https://github.com/RenaeTheRaven/DS-Forever/releases/download/v1.0.41-custom-thor/$DXVK3}"
-if [ -s "$DEST/$DXVK3" ]; then
-    echo "have $DXVK3"
-elif [ -n "${1:-}" ] && [ -s "$1/$DXVK3" ]; then
-    cp "$1/$DXVK3" "$DEST/$DXVK3"
-    echo "copied $DXVK3"
-else
-    curl -fL --retry 3 -o "$DEST/$DXVK3.part" "$DXVK3_URL"
-    mv "$DEST/$DXVK3.part" "$DEST/$DXVK3"
-    echo "downloaded $DXVK3"
-fi
-(cd "$DEST" && shasum -a 256 -c "$REPO_DIR/tools/components-dxvk.sha256")
