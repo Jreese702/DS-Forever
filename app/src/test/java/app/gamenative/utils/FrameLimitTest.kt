@@ -40,7 +40,9 @@ class FrameLimitTest {
         assertEquals(40, FrameGen.LIMIT_MIGRATED)
         assertTrue(FrameGen.LIMIT_MIGRATED in FrameGen.LIMITS)
         assertTrue(FrameGen.LIMIT_DEFAULT in FrameGen.LIMITS)
-        assertEquals(listOf(40, 60, 0), FrameGen.LIMITS)
+        // 30 / 40 / 60 / Off (based on a pull request by RenaeTheRaven: 30 x2 = an exact 60 on the 60 Hz panel); the default stays 60
+        assertEquals(listOf(30, 40, 60, 0), FrameGen.LIMITS)
+        assertEquals(60, FrameGen.LIMIT_DEFAULT)
     }
 
     @Test fun theLaunchersMigrationReadsTheContainerAndAQuickMenuPickClearsTheNote() {

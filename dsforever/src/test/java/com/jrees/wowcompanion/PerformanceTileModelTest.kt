@@ -180,8 +180,9 @@ class PerformanceTileModelTest {
         // terse: the Restart line and the hourglass say a change waits, no status line repeats it
         assertEquals("", M.status(M.LIMIT, PerformanceTileModel.State(limit = 60, limitWaits = true)))
         assertEquals("", M.status(M.FG, PerformanceTileModel.State(hasDll = true, fgOn = true, fgWaits = true, lastPick = "x")))
-        assertEquals(1, M.lines(M.LIMIT, PerformanceTileModel.State(limit = 60))[0].chosen)
-        assertEquals(listOf("40", "60", "Off"), M.lines(M.LIMIT, PerformanceTileModel.State())[0].words)
+        assertEquals(FrameGen.LIMITS.indexOf(60), M.lines(M.LIMIT, PerformanceTileModel.State(limit = 60))[0].chosen)
+        assertEquals(listOf("30", "40", "60", "Off"), M.lines(M.LIMIT, PerformanceTileModel.State())[0].words)
+        assertEquals(0, M.lines(M.LIMIT, PerformanceTileModel.State(limit = 30))[0].chosen)
         // a launcher-menu value: none lit, the status line says where it came from
         assertEquals(-1, M.lines(M.LIMIT, PerformanceTileModel.State(limit = 45))[0].chosen)
         assertEquals("45 fps, set in the launcher's menu", M.status(M.LIMIT, PerformanceTileModel.State(limit = 45)))

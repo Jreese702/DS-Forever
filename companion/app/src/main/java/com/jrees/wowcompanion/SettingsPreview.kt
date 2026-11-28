@@ -827,13 +827,15 @@ object SettingsPreview {
 
     private fun frameLimit(c: Canvas, r: RectF, s: State, t: Float, live: Live?) {
         val icon = mover(live)
-        val lanes = listOf(40, 60, 0)
+        val lanes = FrameGen.LIMITS
         val x0 = r.left + 92f; val x1 = r.right - 20f
+        val step = (r.height() - 110f) / lanes.size
+        val rowH = minOf(96f, step - 4f)
         for ((i, fps) in lanes.withIndex()) {
-            val top = r.top + 14f + i * ((r.height() - 110f) / 3f)
+            val top = r.top + 14f + i * step
             val on = fps == s.fpsLimit
-            choiceRow(c, r, top, 96f, on)
-            val y = top + 66f
+            choiceRow(c, r, top, rowH, on)
+            val y = top + rowH * 0.69f
             gText(c, if (fps > 0) "$fps" else "Off", r.left + 22f, y + 10f, 30f, if (on) GOLD else DIMC, kind = 2)
             lane(c, x0, x1, y, if (fps > 0) fps else 90, t, if (on) GOLD else DIMC, icon = icon)
         }
