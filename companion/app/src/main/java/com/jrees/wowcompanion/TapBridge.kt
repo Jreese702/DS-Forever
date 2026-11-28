@@ -242,7 +242,7 @@ object TapBridge {
         }
         // 1.0.21: not rounded to a whole display pixel (a 1080p Thor pixel is 1.33 game px on a 1440p PC: rows were lost); the tap line
         // carries 2 decimals and InputSink makes a fraction of it
-        return PointF((gx * d.x / pw).toFloat(), (gy * d.y / ph).toFloat())
+        return TapShape.displayOf(gx, gy, pw, ph, d.x, d.y).let { (x, y) -> PointF(x, y) }
     }
 
     /**
@@ -427,7 +427,7 @@ object TapBridge {
         val taps = pts.mapIndexed { i, c ->
             val wait = if (i == 0) 0L else at[i] - at[i - 1]
             (if (wait > 0L) "sleep ${"%.3f".format(java.util.Locale.ROOT, wait / 1000.0)}\n" else "") +
-                "input -d 0 tap ${"%.2f".format(java.util.Locale.ROOT, c.x)} ${"%.2f".format(java.util.Locale.ROOT, c.y)}"
+                TapShape.tapLine(c.x, c.y)
         }.joinToString("\n") + "\nsleep 0.08"
         val queuedAt = SystemClock.uptimeMillis()
         watchPad()

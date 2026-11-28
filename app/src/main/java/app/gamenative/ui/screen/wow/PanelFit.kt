@@ -27,4 +27,10 @@ internal object PanelFit {
         val have = ratio(panel) ?: return size
         return if (abs(want - have) <= TOLERANCE) size else panel!!
     }
+
+    /**
+     * Render size (Settings > Performance, based on a pull request by RenaeTheRaven): the container screen for [lines] (1080 / 900 /
+     * 720, com.jrees.wowcompanion.RenderSize), fitted to the [panel]'s shape as every profile's size is ([fit])
+     */
+    fun renderScreen(lines: Int, panel: String?): String = fit(com.jrees.wowcompanion.RenderSize.size(lines), panel)
 }

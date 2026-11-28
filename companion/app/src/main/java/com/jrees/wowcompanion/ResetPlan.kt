@@ -37,7 +37,7 @@ package com.jrees.wowcompanion
  * APP PREFERENCES (SharedPreferences files)
  *  settings     SETTINGS lighterMode, lowMemGraphics, vramCap (#56), pageOut, homeMapFull, homeMapTerrain, indoorBuild, swapScreens, voiceTyping,
  *                        voiceLanguage (#477), minimapYd, minimapIndoorYd, worldMapFog, avoidDanger, chatDefaultInput, theme,
- *                        graphicsDriver (an opt-in test driver: back to Recommended)
+ *                        graphicsDriver (an opt-in test driver: back to Recommended), renderSize (back to the default 720p)
  *               NEVER    browserLogin, windowsId (+ windowsIdRan*), graphicsDriverRan, gameAccountAsk, gameAccountPick, gameAccountHandover (the sign-in), polestarGuide, polestarOffBoot,
  *                        questTracking* (Polestar), theme_custom (the player's own made theme: Classic comes back, the made one stays),
  *                        swapScreensFails, settingsTab, the migration marks
@@ -170,7 +170,9 @@ object ResetPlan {
         exact("settings", Kind.SETTINGS, "lighterMode", "lowMemGraphics", "vramCap", "pageOut", "homeMapFull", "homeMapTerrain", "indoorBuild", "swapScreens",
             "voiceTyping", "voiceLanguage", "minimapYd", "minimapIndoorYd", "worldMapFog", "avoidDanger", "chatDefaultInput", "theme",
             // 2026-11-23: an opt-in test graphics driver goes back to Recommended with the other settings
-            GraphicsDriver.KEY),
+            GraphicsDriver.KEY,
+            // 2026-11-27: the render size goes back to its default (720p) with the other settings
+            RenderSize.KEY),
         exact("settings", null, "browserLogin", "windowsId", "windowsIdRan", "windowsIdRanAt", "windowsIdRanOk", GraphicsDriver.KEY_RAN,
             "gameAccountAsk", "gameAccountPick",
             "gameAccountHandover", "polestarGuide", "polestarOffBoot", "questTracking", "questTrackingSafePath", "questTrackingPolestar1112", "questTrailRetire1112",

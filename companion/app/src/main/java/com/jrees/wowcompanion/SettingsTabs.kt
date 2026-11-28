@@ -180,7 +180,7 @@ object SettingsTabs {
         // the imported list and the replacements waiting (ImportedAddons; SettingsView.drawImported): rows named by the add-ons themselves
         IMPORTED(Group.IMPORTED, "Imported", emptyList()),
         // ---- Performance
-        FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Lossless.dll", "Frame generation", "Multiplier",
+        FRAMES(Group.FRAMES, "Frame limit and generation", listOf("Frame limit", "Render size", "Lossless.dll", "Frame generation", "Multiplier",
             "Flow scale", "Performance mode", "Restart the game"), Drawer.TILES),
         // 1.0.17 (the user's pick "A setting, off by default"): the lighter behaviour on any Thor
         LIGHTER(Group.FRAMES, "Lighter mode", listOf("Lighter mode", "Low-memory graphics", "Home map: full detail", "Map style when zoomed out"), Drawer.TILES),

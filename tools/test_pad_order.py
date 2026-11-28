@@ -14,7 +14,9 @@ Proven here, with every add-on, six full bags, the cast bar, both radials and th
   h `drop` names each registered row this layout does not place (a shared row once, by its host), and only those;
   i a name nobody ranked takes the lowest free row (as every row did before); pad19's opts.last still pins one to the last row;
   j the calibration strip still covers exactly the rows that fit (pad24: the stream's row y logic unchanged);
-  k the fixtures the app's PadFitTest reads equal what the add-on publishes now.
+  k the fixtures the app's PadFitTest reads equal what the add-on publishes now;
+  l 1280x720 at the game's own UI scale (render size 720p, 126.6): the switches placed, nothing dropped;
+  m 1280x720 with 1080p's UI scale kept (84.4): rows 35-55 dropped (mapw onward), the switches placed.
 Needs lupa. Exit code 1 on any failure."""
 import json
 import os
@@ -219,6 +221,13 @@ small("1280x720, UI scale lowered (#249)", 1280, 720, 107.6, "e",
       ["prof", "profsel", "profopen", "gf", "gfl", "gfw", "gfclose", "keytest", "bmv"], "pad_1280x720_low")
 Lf, df = small("960x540, the reporter's", 960, 540, 135 * 540 / 768.0, "f", RANK[40:], "pad_960x540")
 small("960x540, smallest UI scale", 960, 540, 135 * 540 / 1200.0, "g", RANK[23:], "pad_960x540_min")
+# l / m. RENDER SIZE 720p (the default on every device since 2026-11-27, PR 615): the pad's cells are game px, so the rows that fit depend
+# on where the dialogs start in game px (135 UI units x ph / UIParent's height). l: the game's own UI scale at 720p (UIParent 768 units
+# tall, the same as 960x540's: popupTop 126.6) - every row placed, nothing dropped. m: a UI scale slider that keeps 1080p's UIParent
+# (1151.7 units: the Thor's 126.6 at 1080p, so 84.4 at 720p) - rows 35-55 dropped (the Map room's mapw onward); the app's taps say
+# "No pad row" for those rooms there. Which one a Thor gets is a device check (the pad document's popupTop / drop at 720p).
+small("1280x720, the game's own UI scale (render size 720p)", 1280, 720, 135 * 720 / 768.0, "l", [])
+small("1280x720, the 1080p UI scale kept (render size 720p)", 1280, 720, 126.6 * 720 / 1080.0, "m", RANK[35:])
 # f: the switches work there: a tap on "uisw" (the world markers on) and on "ui" reach the Hub
 n0 = Lf.eval('WowCompanion.hub.taps')
 check(tap(Lf, "uisw", 9), "f. a tap on uisw:9 lands on a shown cell")

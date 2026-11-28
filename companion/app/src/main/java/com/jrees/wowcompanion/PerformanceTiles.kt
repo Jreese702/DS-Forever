@@ -57,6 +57,8 @@ object PerformanceTileModel {
     /** what the tiles show and their lines offer, read once per draw from FrameGen / Settings / the bake's status */
     data class State(
         val limit: Int = FrameGen.LIMIT_DEFAULT,
+        /** 2026-11-27 (PR 615): Render size, the lines the game draws at ([RenderSize]); a restart would change the running game's */
+        val renderSize: Int = RenderSize.DEFAULT, val renderWaits: Boolean = false,
         /** a restart would change the running game's frame limit / frame generation (the game runs, no restart under way) */
         val limitWaits: Boolean = false, val fgWaits: Boolean = false,
         val hasDll: Boolean = false, val fgOn: Boolean = false, val multiplier: Int = 2, val flow: Float = FrameGen.FLOW_DEFAULT,
@@ -102,7 +104,7 @@ object PerformanceTileModel {
                     val off: Set<Int> = emptySet())
 
     // the lines' keys (the view's presses)
-    const val L_LIMIT = "limit"; const val L_RESTART = "restart"
+    const val L_LIMIT = "limit"; const val L_RESTART = "restart"; const val L_RENDER = "render"
     const val L_FG = "fg"; const val L_MULT = "mult"; const val L_FLOW = "flow"; const val L_PERF = "perf"; const val L_DLL = "dll"
     const val L_LIGHTER = "lighter"; const val L_LOWGFX = "lowgfx"; const val L_MAP = "homemap"; const val L_STYLE = "homestyle"
     const val L_VRAM = "vram"; const val L_PAGEOUT = "pageout"
@@ -111,6 +113,8 @@ object PerformanceTileModel {
     const val L_TOOLS = "tools"
 
     private val ON_OFF = listOf("On", "Off")
+    /** the Render size line's label (terse; es / fr in the app's i18n) */
+    const val RENDER_LABEL = "Render size"
     /** the Build now line's label (terse; es / fr in the app's i18n) */
     const val NOW_LABEL = "During play"
 
@@ -125,7 +129,10 @@ object PerformanceTileModel {
     fun lines(id: String, s: State, deferredOpen: Boolean = false): List<Line> = when (id) {
         LIMIT -> buildList {
             add(Line(L_LIMIT, null, null, FrameGen.LIMITS.map { FrameGen.limitLabel(it) }, FrameGen.LIMITS.indexOf(s.limit), Kind.CHOICE))
-            if (s.limitWaits || s.fgWaits) add(restart())
+            // 2026-11-27 (the user's rulings on PR 615, based on a pull request by RenaeTheRaven): the size the game draws at, 720p by
+            // default on every device, from the next game start
+            add(Line(L_RENDER, RENDER_LABEL, null, RenderSize.CHOICES.map { RenderSize.label(it) }, RenderSize.CHOICES.indexOf(s.renderSize), Kind.CHOICE))
+            if (s.limitWaits || s.fgWaits || s.renderWaits) add(restart())
         }
         FG -> buildList {
             if (s.hasDll) add(Line(L_FG, null, null, ON_OFF, if (s.fgOn) 0 else 1, Kind.CHOICE))
@@ -199,7 +206,7 @@ object PerformanceTileModel {
      * game", which none of these tiles is: Off reads from the dimmed picture and the value word instead (Memory's leaf: the view's)
      */
     fun badge(id: String, s: State): GameUiTiles.Badge? = when (id) {
-        LIMIT -> if (s.limitWaits) GameUiTiles.Badge.SENT else null
+        LIMIT -> if (s.limitWaits || s.renderWaits) GameUiTiles.Badge.SENT else null
         FG -> if (s.fgWaits) GameUiTiles.Badge.SENT else null
         else -> null
     }
@@ -211,7 +218,7 @@ object PerformanceTileModel {
     fun status(id: String, s: State): String = when (id) {
         // a waiting change: the Restart line and the hourglass say it, no line under them
         LIMIT -> when {
-            s.limitWaits || s.fgWaits -> ""
+            s.limitWaits || s.fgWaits || s.renderWaits -> ""
             s.limit > 0 && s.limit !in FrameGen.LIMITS -> "${s.limit} fps, set in the launcher's menu"
             else -> ""
         }
@@ -496,6 +503,8 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
         return PerformanceTileModel.State(
             limit = lim,
             limitWaits = up && !restarting && FrameGen.limitNeedsRestart(FrameGen.launchedLimit, lim),
+            renderSize = Settings.renderSize,
+            renderWaits = up && !restarting && RenderSize.needsRestart(RenderSize.launched, Settings.renderSize),
             fgWaits = FrameGen.showRestart(up, restarting, FrameGen.launched, FrameGen.current()),
             hasDll = FrameGen.hasDll(), fgOn = FrameGen.enabled, multiplier = FrameGen.multiplier, flow = FrameGen.flowScale,
             perfMode = FrameGen.performance, lastPick = FrameGen.lastPick,
@@ -659,6 +668,7 @@ class PerformanceTiles(context: Context, private val host: SettingsView) : View(
     private fun press(line: PerformanceTileModel.Line, k: Int) {
         when (line.key) {
             M.L_LIMIT -> FrameGen.askLimit(FrameGen.LIMITS[k])
+            M.L_RENDER -> Settings.renderSize = RenderSize.CHOICES[k]
             M.L_FG -> if (k == 0) { if (FrameGen.hasDll()) FrameGen.enabled = true } else FrameGen.enabled = false
             M.L_MULT -> FrameGen.multiplier = FrameGen.MULTIPLIERS[k]
             M.L_FLOW -> FrameGen.flowScale = FrameGen.stepFlow(FrameGen.flowScale, if (k == 0) -1 else 1)

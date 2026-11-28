@@ -175,8 +175,8 @@ class PerformanceTileModelTest {
     }
 
     @Test fun frameLimitRestartOnlyWhileAChangeWaits() {
-        assertEquals(listOf(M.L_LIMIT), keys(M.LIMIT, PerformanceTileModel.State(limit = 40)))
-        assertEquals(listOf(M.L_LIMIT, M.L_RESTART), keys(M.LIMIT, PerformanceTileModel.State(limit = 60, limitWaits = true)))
+        assertEquals(listOf(M.L_LIMIT, M.L_RENDER), keys(M.LIMIT, PerformanceTileModel.State(limit = 40)))
+        assertEquals(listOf(M.L_LIMIT, M.L_RENDER, M.L_RESTART), keys(M.LIMIT, PerformanceTileModel.State(limit = 60, limitWaits = true)))
         // terse: the Restart line and the hourglass say a change waits, no status line repeats it
         assertEquals("", M.status(M.LIMIT, PerformanceTileModel.State(limit = 60, limitWaits = true)))
         assertEquals("", M.status(M.FG, PerformanceTileModel.State(hasDll = true, fgOn = true, fgWaits = true, lastPick = "x")))
